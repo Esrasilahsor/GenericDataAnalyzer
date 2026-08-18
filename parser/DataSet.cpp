@@ -19,7 +19,9 @@ QString DataSet::filePath() const
     return m_filePath;
 }
 
-void DataSet::setFilePath(const QString &filePath)
+void DataSet::setFilePath(
+    const QString &filePath
+    )
 {
     m_filePath = filePath;
 }
@@ -29,17 +31,23 @@ QString DataSet::sheetName() const
     return m_sheetName;
 }
 
-void DataSet::setSheetName(const QString &sheetName)
+void DataSet::setSheetName(
+    const QString &sheetName
+    )
 {
     m_sheetName = sheetName;
 }
 
-void DataSet::addColumn(const ColumnInfo &column)
+void DataSet::addColumn(
+    const ColumnInfo &column
+    )
 {
     m_columns.append(column);
 }
 
-void DataSet::setColumns(const QVector<ColumnInfo> &columns)
+void DataSet::setColumns(
+    const QVector<ColumnInfo> &columns
+    )
 {
     m_columns = columns;
 }
@@ -69,10 +77,26 @@ bool DataSet::isEmpty() const
     return m_columns.isEmpty();
 }
 
+const ColumnInfo *DataSet::findColumn(
+    const QString &columnName
+    ) const
+{
+    for (const ColumnInfo &column : m_columns)
+    {
+        if (column.name() == columnName)
+        {
+            return &column;
+        }
+    }
+
+    return nullptr;
+}
+
 void DataSet::clear()
 {
     m_name.clear();
     m_filePath.clear();
     m_sheetName.clear();
+
     m_columns.clear();
 }

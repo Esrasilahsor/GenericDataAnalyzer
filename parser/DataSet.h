@@ -21,7 +21,10 @@ public:
     void setSheetName(const QString &sheetName);
 
     void addColumn(const ColumnInfo &column);
-    void setColumns(const QVector<ColumnInfo> &columns);
+
+    void setColumns(
+        const QVector<ColumnInfo> &columns
+        );
 
     QVector<ColumnInfo> columns() const;
 
@@ -29,6 +32,10 @@ public:
     int rowCount() const;
 
     bool isEmpty() const;
+
+    const ColumnInfo *findColumn(
+        const QString &columnName
+        ) const;
 
     void clear();
 
