@@ -2,10 +2,14 @@
 #define ANALYSISENGINE_H
 
 #include <QString>
+#include <QStringList>
+#include <QVector>
 
 #include "../parser/DataSet.h"
 #include "../parser/ColumnInfo.h"
+
 #include "Statistics.h"
+
 
 // =========================================================
 // TEK SÜTUN ANALİZ SONUCU
@@ -23,6 +27,21 @@ struct ColumnAnalysisResult
 
 
 // =========================================================
+// TEK SÜTUN OUTLIER ANALİZ SONUCU
+// =========================================================
+
+struct ColumnOutlierAnalysisResult
+{
+    bool success = false;
+
+    QString columnName;
+    QString errorMessage;
+
+    IqrOutlierResult outlierResult;
+};
+
+
+// =========================================================
 // İKİ SÜTUN KARŞILAŞTIRMA SONUCU
 // =========================================================
 
@@ -35,13 +54,11 @@ struct ColumnComparisonResult
 
     QString errorMessage;
 
-    // Dataset 1 istatistikleri
     StatisticsResult sourceStatistics;
-
-    // Dataset 2 istatistikleri
     StatisticsResult targetStatistics;
 
     // Dataset 2 - Dataset 1
+
     double meanDifference = 0.0;
     double medianDifference = 0.0;
 
@@ -60,17 +77,52 @@ struct ColumnComparisonResult
 
 
 // =========================================================
+// DATASET QUALITY SONUCU
+// =========================================================
+
+struct DatasetQualityResult
+{
+    bool success = false;
+
+    QString errorMessage;
+
+    int rowCount = 0;
+    int columnCount = 0;
+
+    int totalMissingValues = 0;
+
+    double missingPercentage = 0.0;
+
+    int columnsWithMissingValues = 0;
+
+    int duplicateRowCount = 0;
+
+    double duplicatePercentage = 0.0;
+
+    int constantColumnCount = 0;
+
+    int numericColumnCount = 0;
+    int nonNumericColumnCount = 0;
+
+    QStringList columnsWithMissing;
+    QStringList constantColumns;
+};
+
+
+// =========================================================
 // ANALYSIS ENGINE
 // =========================================================
 
 class AnalysisEngine
 {
 public:
+
     AnalysisEngine();
 
-    // -----------------------------------------------------
+
+    // =====================================================
     // TEK SÜTUN ANALİZİ
-    // -----------------------------------------------------
+    // =====================================================
 
     ColumnAnalysisResult analyzeColumn(
         const DataSet &dataSet,
@@ -78,9 +130,20 @@ public:
         ) const;
 
 
-    // -----------------------------------------------------
-    // İKİ DATASET ARASINDA SÜTUN KARŞILAŞTIRMA
-    // -----------------------------------------------------
+    // =====================================================
+    // IQR OUTLIER ANALİZİ
+    // =====================================================
+
+    ColumnOutlierAnalysisResult analyzeColumnOutliers(
+        const DataSet &dataSet,
+        const QString &columnName,
+        double multiplier = 1.5
+        ) const;
+
+
+    // =====================================================
+    // İKİ SÜTUN KARŞILAŞTIRMA
+    // =====================================================
 
     ColumnComparisonResult compareColumns(
         const DataSet &sourceDataSet,
@@ -91,11 +154,37 @@ public:
         ) const;
 
 
-private:
+    // =====================================================
+    // DATA QUALITY
+    // =====================================================
 
-    // -----------------------------------------------------
-    // SÜTUN BULMA
-    // -----------------------------------------------------
+    DatasetQualityResult analyzeDataQuality(
+        const DataSet &dataSet
+        ) const;
+
+
+    // =====================================================
+    // DUPLICATE SATIR INDEXLERİ
+    // =====================================================
+
+    QVector<int> findDuplicateRowIndexes(
+        const DataSet &dataSet
+        ) const;
+
+
+    // =====================================================
+    // MISSING SATIR INDEXLERİ
+    //
+    // Satırdaki herhangi bir sütunda missing varsa
+    // ilgili satır indexi döndürülür.
+    // =====================================================
+
+    QVector<int> findRowsWithMissingValues(
+        const DataSet &dataSet
+        ) const;
+
+
+private:
 
     const ColumnInfo *findColumn(
         const DataSet &dataSet,
@@ -103,20 +192,23 @@ private:
         ) const;
 
 
-    // -----------------------------------------------------
-    // NUMERIC KONTROL
-    // -----------------------------------------------------
-
     bool isColumnNumeric(
         const ColumnInfo &column
         ) const;
 
 
-    // -----------------------------------------------------
-    // STATISTICS ENGINE
-    // -----------------------------------------------------
+    int calculateDuplicateRowCount(
+        const DataSet &dataSet
+        ) const;
+
+
+    bool isMissingValue(
+        const QVariant &value
+        ) const;
+
 
     Statistics m_statistics;
 };
+
 
 #endif // ANALYSISENGINE_H

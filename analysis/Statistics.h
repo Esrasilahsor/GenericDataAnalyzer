@@ -4,6 +4,11 @@
 #include <QVector>
 #include <QVariant>
 
+
+// =========================================================
+// BASIC STATISTICS RESULT
+// =========================================================
+
 struct StatisticsResult
 {
     int count = 0;
@@ -23,19 +28,81 @@ struct StatisticsResult
     double iqr = 0.0;
 };
 
+
+// =========================================================
+// IQR OUTLIER RESULT
+// =========================================================
+
+struct IqrOutlierResult
+{
+    bool success = false;
+
+    QString errorMessage;
+
+    int validValueCount = 0;
+
+    double q1 = 0.0;
+    double q3 = 0.0;
+    double iqr = 0.0;
+
+    double lowerBound = 0.0;
+    double upperBound = 0.0;
+
+    int outlierCount = 0;
+    double outlierPercentage = 0.0;
+
+    /*
+     * Outlier olan orijinal değerleri tutuyoruz.
+     *
+     * Şimdilik sadece analiz için kullanacağız.
+     * Cleaning fazında index bilgisi de ekleyeceğiz.
+     */
+    QVector<double> outlierValues;
+};
+
+
+// =========================================================
+// STATISTICS
+// =========================================================
+
 class Statistics
 {
 public:
     Statistics();
 
+    // =====================================================
+    // BASIC STATISTICS
+    // =====================================================
+
     StatisticsResult calculate(
         const QVector<QVariant> &values
         ) const;
 
+
+    // =====================================================
+    // IQR OUTLIER ANALYSIS
+    // =====================================================
+
+    IqrOutlierResult calculateIqrOutliers(
+        const QVector<QVariant> &values,
+        double multiplier = 1.5
+        ) const;
+
+
 private:
+
+    // =====================================================
+    // NUMERIC EXTRACTION
+    // =====================================================
+
     QVector<double> extractNumericValues(
         const QVector<QVariant> &values
         ) const;
+
+
+    // =====================================================
+    // BASIC CALCULATIONS
+    // =====================================================
 
     double calculateMean(
         const QVector<double> &values

@@ -2,8 +2,16 @@
 
 #include <QFileInfo>
 #include <QSet>
+#include <QHash>
+#include <QVariant>
+#include <QVector>
 #include <QDate>
 #include <QDateTime>
+
+#include <cmath>
+
+#include "DataType.h"
+#include "MetadataValidator.h"
 
 #include "xlsxdocument.h"
 #include "xlsxworksheet.h"
@@ -11,175 +19,193 @@
 
 using namespace QXlsx;
 
-ExcelParser::ExcelParser()
+
+// =========================================================
+// HELPER FUNCTIONS
+// =========================================================
+
+namespace
 {
+
+QString normalizeHeader(const QString &header)
+{
+    QString result =
+        header.trimmed().toUpper();
+
+    result.replace(' ', '_');
+    result.replace('-', '_');
+
+    while (result.contains(QStringLiteral("__"))) {
+        result.replace(
+            QStringLiteral("__"),
+            QStringLiteral("_"));
+    }
+
+    return result;
 }
 
-bool ExcelParser::loadFile(const QString &filePath)
+
+int findColumn(
+    const QHash<QString, int> &headers,
+    const QString &name)
 {
-    m_lastError.clear();
-    m_dataSet.clear();
+    return headers.value(
+        normalizeHeader(name),
+        -1);
+}
 
-    QFileInfo fileInfo(filePath);
 
-    if (!fileInfo.exists())
-    {
-        m_lastError = "Dosya bulunamadı.";
+QString readOptionalString(
+    Document &document,
+    int row,
+    int column)
+{
+    if (column <= 0)
+        return QString();
+
+    const QVariant value =
+        document.read(row, column);
+
+    if (!value.isValid())
+        return QString();
+
+    return value.toString().trimmed();
+}
+
+
+bool readRequiredInt(
+    Document &document,
+    int row,
+    int column,
+    const QString &fieldName,
+    int &result,
+    QString &errorMessage)
+{
+    result = 0;
+
+    if (column <= 0) {
+        errorMessage =
+            QStringLiteral(
+                "Required column '%1' was not found.")
+                .arg(fieldName);
+
         return false;
     }
 
-    if (fileInfo.suffix().toLower() != "xlsx")
-    {
-        m_lastError = "Desteklenmeyen dosya formatı. Şimdilik sadece .xlsx destekleniyor.";
+    const QVariant cellValue =
+        document.read(row, column);
+
+    if (!cellValue.isValid() ||
+        cellValue.toString().trimmed().isEmpty()) {
+
+        errorMessage =
+            QStringLiteral(
+                "%1 is empty.")
+                .arg(fieldName);
+
         return false;
     }
 
-    Document document(filePath);
+    bool ok = false;
 
-    if (!document.load())
-    {
-        m_lastError = "Excel dosyası açılamadı.";
+    const int parsed =
+        cellValue.toString()
+            .trimmed()
+            .toInt(&ok);
+
+    if (!ok) {
+        errorMessage =
+            QStringLiteral(
+                "%1 must be an integer. Received: '%2'")
+                .arg(fieldName)
+                .arg(cellValue.toString());
+
         return false;
     }
 
-    QStringList sheetNames = document.sheetNames();
-
-    if (sheetNames.isEmpty())
-    {
-        m_lastError = "Excel dosyasında sheet bulunamadı.";
-        return false;
-    }
-
-    QString firstSheet = sheetNames.first();
-
-    if (!document.selectSheet(firstSheet))
-    {
-        m_lastError = "Excel sheet seçilemedi.";
-        return false;
-    }
-
-    Worksheet *worksheet =
-        dynamic_cast<Worksheet *>(document.currentWorksheet());
-
-    if (!worksheet)
-    {
-        m_lastError = "Worksheet okunamadı.";
-        return false;
-    }
-
-    CellRange range = worksheet->dimension();
-
-    int firstRow = range.firstRow();
-    int lastRow = range.lastRow();
-
-    int firstColumn = range.firstColumn();
-    int lastColumn = range.lastColumn();
-
-    if (lastRow < firstRow || lastColumn < firstColumn)
-    {
-        m_lastError = "Excel dosyası boş.";
-        return false;
-    }
-
-    /*
-     * İlk satırı header olarak kabul ediyoruz.
-     *
-     * Örneğin:
-     *
-     * Temperature | RPM | Status
-     * 80.5        | 2400| ON
-     * 82.0        | 2450| OFF
-     */
-
-    QVector<ColumnInfo> columns;
-
-    for (int columnIndex = firstColumn;
-         columnIndex <= lastColumn;
-         ++columnIndex)
-    {
-        QVariant headerValue =
-            worksheet->read(firstRow, columnIndex);
-
-        QString columnName =
-            headerValue.toString().trimmed();
-
-        if (columnName.isEmpty())
-        {
-            columnName =
-                QString("Column_%1").arg(columnIndex);
-        }
-
-        ColumnInfo column(columnName);
-
-        column.setOriginalName(columnName);
-
-        QVector<QVariant> values;
-
-        for (int rowIndex = firstRow + 1;
-             rowIndex <= lastRow;
-             ++rowIndex)
-        {
-            QVariant value =
-                worksheet->read(rowIndex, columnIndex);
-
-            values.append(value);
-        }
-
-        column.setValues(values);
-
-        ColumnInfo::DataType detectedType =
-            detectColumnType(values);
-
-        column.setDataType(detectedType);
-
-        int missingCount =
-            calculateMissingCount(values);
-
-        column.setMissingCount(missingCount);
-
-        double missingPercentage = 0.0;
-
-        if (!values.isEmpty())
-        {
-            missingPercentage =
-                (static_cast<double>(missingCount)
-                 / values.size())
-                * 100.0;
-        }
-
-        column.setMissingPercentage(
-            missingPercentage);
-
-        column.setUniqueCount(
-            calculateUniqueCount(values));
-
-        columns.append(column);
-    }
-
-    m_dataSet.setName(fileInfo.fileName());
-
-    m_dataSet.setFilePath(
-        fileInfo.absoluteFilePath());
-
-    m_dataSet.setSheetName(firstSheet);
-
-    m_dataSet.setColumns(columns);
+    result = parsed;
 
     return true;
 }
 
-DataSet ExcelParser::dataSet() const
+
+bool readOptionalDouble(
+    Document &document,
+    int row,
+    int column,
+    const QString &fieldName,
+    double defaultValue,
+    double &result,
+    QString &errorMessage)
 {
-    return m_dataSet;
+    result = defaultValue;
+
+    if (column <= 0)
+        return true;
+
+    const QVariant cellValue =
+        document.read(row, column);
+
+    if (!cellValue.isValid() ||
+        cellValue.toString().trimmed().isEmpty()) {
+
+        return true;
+    }
+
+    bool ok = false;
+
+    const double parsed =
+        cellValue.toString()
+            .trimmed()
+            .toDouble(&ok);
+
+    if (!ok ||
+        !std::isfinite(parsed)) {
+
+        errorMessage =
+            QStringLiteral(
+                "%1 must be a finite numeric value. Received: '%2'")
+                .arg(fieldName)
+                .arg(cellValue.toString());
+
+        return false;
+    }
+
+    result = parsed;
+
+    return true;
 }
 
-QString ExcelParser::lastError() const
+
+bool rowIsCompletelyEmpty(
+    Document &document,
+    int row,
+    int columnCount)
 {
-    return m_lastError;
+    for (int column = 1;
+         column <= columnCount;
+         ++column) {
+
+        const QVariant value =
+            document.read(row, column);
+
+        if (value.isValid() &&
+            !value.toString().trimmed().isEmpty()) {
+
+            return false;
+        }
+    }
+
+    return true;
 }
 
-ColumnInfo::DataType ExcelParser::detectColumnType(
-    const QVector<QVariant> &values) const
+
+// =========================================================
+// COLUMN TYPE DETECTION
+// =========================================================
+
+ColumnInfo::DataType detectColumnDataType(
+    const QVector<QVariant> &values)
 {
     bool hasInteger = false;
     bool hasDouble = false;
@@ -187,172 +213,1170 @@ ColumnInfo::DataType ExcelParser::detectColumnType(
     bool hasBoolean = false;
     bool hasDateTime = false;
 
-    for (const QVariant &value : values)
-    {
-        if (isMissingValue(value))
-        {
+    for (const QVariant &value : values) {
+
+        if (!value.isValid() ||
+            value.isNull()) {
             continue;
         }
 
-        switch (value.type())
-        {
+        const QString text =
+            value.toString().trimmed();
 
-        case QVariant::Int:
-        case QVariant::LongLong:
-        case QVariant::UInt:
-        case QVariant::ULongLong:
-
-            hasInteger = true;
-            break;
+        if (text.isEmpty())
+            continue;
 
 
-        case QVariant::Double:
+        // -------------------------------------------------
+        // DATETIME
+        // -------------------------------------------------
 
-            hasDouble = true;
-            break;
-
-
-        case QVariant::Bool:
-
-            hasBoolean = true;
-            break;
-
-
-        case QVariant::Date:
-        case QVariant::DateTime:
-        case QVariant::Time:
+        if (value.type() == QVariant::DateTime ||
+            value.type() == QVariant::Date) {
 
             hasDateTime = true;
-            break;
-
-
-        default:
-
-            hasString = true;
-            break;
+            continue;
         }
+
+
+        // -------------------------------------------------
+        // BOOLEAN
+        // -------------------------------------------------
+
+        const QString lower =
+            text.toLower();
+
+        if (lower == QStringLiteral("true") ||
+            lower == QStringLiteral("false")) {
+
+            hasBoolean = true;
+            continue;
+        }
+
+
+        // -------------------------------------------------
+        // INTEGER
+        // -------------------------------------------------
+
+        bool intOk = false;
+
+        text.toLongLong(&intOk);
+
+        if (intOk) {
+            hasInteger = true;
+            continue;
+        }
+
+
+        // -------------------------------------------------
+        // DOUBLE
+        // -------------------------------------------------
+
+        bool doubleOk = false;
+
+        text.toDouble(&doubleOk);
+
+        if (doubleOk) {
+            hasDouble = true;
+            continue;
+        }
+
+
+        // -------------------------------------------------
+        // STRING
+        // -------------------------------------------------
+
+        hasString = true;
     }
 
-    /*
-     * String varsa sütunu String kabul ediyoruz.
-     *
-     * Örnek:
-     *
-     * 80
-     * 82
-     * ERROR
-     *
-     * Bu sütun artık saf numeric değildir.
-     */
 
+    /*
+     * Mixed data varsa daha güvenli olan tip seçiliyor.
+     *
+     * String varsa tamamını string kabul ediyoruz.
+     */
     if (hasString)
-    {
         return ColumnInfo::DataType::String;
-    }
+
 
     /*
-     * Integer ve Double birlikte varsa
-     * Double kabul ediyoruz.
-     *
-     * Örnek:
-     *
-     * 80
-     * 81.5
-     * 82
+     * Integer + Double varsa Double.
      */
-
     if (hasDouble)
-    {
         return ColumnInfo::DataType::Double;
-    }
+
 
     if (hasInteger)
-    {
         return ColumnInfo::DataType::Integer;
-    }
+
 
     if (hasBoolean)
-    {
         return ColumnInfo::DataType::Boolean;
-    }
+
 
     if (hasDateTime)
-    {
         return ColumnInfo::DataType::DateTime;
-    }
+
 
     return ColumnInfo::DataType::Unknown;
 }
 
-bool ExcelParser::isMissingValue(
-    const QVariant &value) const
-{
-    if (!value.isValid())
-    {
-        return true;
-    }
-
-    if (value.isNull())
-    {
-        return true;
-    }
-
-    if (value.type() == QVariant::String)
-    {
-        QString text =
-            value.toString().trimmed();
-
-        if (text.isEmpty())
-        {
-            return true;
-        }
-
-        QString lower =
-            text.toLower();
-
-        if (lower == "null"
-            || lower == "nan"
-            || lower == "na"
-            || lower == "n/a")
-        {
-            return true;
-        }
-    }
-
-    return false;
 }
 
-int ExcelParser::calculateMissingCount(
-    const QVector<QVariant> &values) const
+
+// =========================================================
+// CONSTRUCTOR
+// =========================================================
+
+ExcelParser::ExcelParser()
 {
-    int count = 0;
-
-    for (const QVariant &value : values)
-    {
-        if (isMissingValue(value))
-        {
-            ++count;
-        }
-    }
-
-    return count;
 }
 
-int ExcelParser::calculateUniqueCount(
-    const QVector<QVariant> &values) const
-{
-    QSet<QString> uniqueValues;
 
-    for (const QVariant &value : values)
-    {
-        if (isMissingValue(value))
-        {
+// =========================================================
+// NORMAL DATASET LOADING
+// =========================================================
+
+bool ExcelParser::loadFile(
+    const QString &filePath)
+{
+    m_lastError.clear();
+
+    m_dataSet.clear();
+
+
+    // -----------------------------------------------------
+    // FILE CHECK
+    // -----------------------------------------------------
+
+    const QFileInfo fileInfo(filePath);
+
+    if (!fileInfo.exists() ||
+        !fileInfo.isFile()) {
+
+        m_lastError =
+            QStringLiteral(
+                "Dosya bulunamadı.");
+
+        return false;
+    }
+
+
+    if (fileInfo.suffix().compare(
+            QStringLiteral("xlsx"),
+            Qt::CaseInsensitive) != 0) {
+
+        m_lastError =
+            QStringLiteral(
+                "Desteklenmeyen dosya formatı. "
+                "Lütfen .xlsx dosyası seçin.");
+
+        return false;
+    }
+
+
+    // -----------------------------------------------------
+    // OPEN EXCEL
+    // -----------------------------------------------------
+
+    Document document(filePath);
+
+    if (!document.load()) {
+
+        m_lastError =
+            QStringLiteral(
+                "Excel dosyası açılamadı.");
+
+        return false;
+    }
+
+
+    const QStringList sheets =
+        document.sheetNames();
+
+    if (sheets.isEmpty()) {
+
+        m_lastError =
+            QStringLiteral(
+                "Excel dosyasında sheet bulunamadı.");
+
+        return false;
+    }
+
+
+    const QString selectedSheet =
+        sheets.first();
+
+
+    if (!document.selectSheet(
+            selectedSheet)) {
+
+        m_lastError =
+            QStringLiteral(
+                "Excel sheet seçilemedi.");
+
+        return false;
+    }
+
+
+    Worksheet *worksheet =
+        dynamic_cast<Worksheet *>(
+            document.currentWorksheet());
+
+    if (!worksheet) {
+
+        m_lastError =
+            QStringLiteral(
+                "Excel worksheet okunamadı.");
+
+        return false;
+    }
+
+
+    const CellRange range =
+        worksheet->dimension();
+
+
+    const int rowCount =
+        range.rowCount();
+
+    const int columnCount =
+        range.columnCount();
+
+
+    if (rowCount <= 0 ||
+        columnCount <= 0) {
+
+        m_lastError =
+            QStringLiteral(
+                "Excel dosyası boş.");
+
+        return false;
+    }
+
+
+    if (rowCount < 2) {
+
+        m_lastError =
+            QStringLiteral(
+                "Excel dosyasında veri satırı bulunamadı.");
+
+        return false;
+    }
+
+
+    // -----------------------------------------------------
+    // DATASET INFO
+    // -----------------------------------------------------
+
+    m_dataSet.setName(
+        fileInfo.baseName());
+
+    m_dataSet.setFilePath(
+        filePath);
+
+    m_dataSet.setSheetName(
+        selectedSheet);
+
+
+    // -----------------------------------------------------
+    // READ COLUMNS
+    // -----------------------------------------------------
+
+    for (int columnIndex = 1;
+         columnIndex <= columnCount;
+         ++columnIndex) {
+
+        QString columnName =
+            document.read(
+                        1,
+                        columnIndex)
+                .toString()
+                .trimmed();
+
+
+        if (columnName.isEmpty()) {
+            columnName =
+                QStringLiteral("Column_%1")
+                    .arg(columnIndex);
+        }
+
+
+        QVector<QVariant> values;
+
+        values.reserve(
+            rowCount - 1);
+
+
+        int missingCount = 0;
+
+        QSet<QString> uniqueValues;
+
+
+        for (int rowIndex = 2;
+             rowIndex <= rowCount;
+             ++rowIndex) {
+
+            const QVariant value =
+                document.read(
+                    rowIndex,
+                    columnIndex);
+
+
+            values.append(value);
+
+
+            const QString text =
+                value.toString().trimmed();
+
+
+            if (!value.isValid() ||
+                value.isNull() ||
+                text.isEmpty()) {
+
+                ++missingCount;
+                continue;
+            }
+
+
+            uniqueValues.insert(
+                text);
+        }
+
+
+        // -------------------------------------------------
+        // COLUMN INFO
+        // -------------------------------------------------
+
+        ColumnInfo columnInfo(
+            columnName);
+
+
+        columnInfo.setOriginalName(
+            columnName);
+
+
+        columnInfo.setValues(
+            values);
+
+
+        columnInfo.setMissingCount(
+            missingCount);
+
+
+        columnInfo.setUniqueCount(
+            uniqueValues.size());
+
+
+        const int totalValues =
+            values.size();
+
+
+        double missingPercentage =
+            0.0;
+
+
+        if (totalValues > 0) {
+
+            missingPercentage =
+                (static_cast<double>(
+                     missingCount)
+                 /
+                 static_cast<double>(
+                     totalValues))
+                * 100.0;
+        }
+
+
+        columnInfo.setMissingPercentage(
+            missingPercentage);
+
+
+        columnInfo.setDataType(
+            detectColumnDataType(values));
+
+
+        m_dataSet.addColumn(
+            columnInfo);
+    }
+
+
+    return true;
+}
+
+
+// =========================================================
+// DATASET GETTER
+// =========================================================
+
+const DataSet &ExcelParser::dataSet() const
+{
+    return m_dataSet;
+}
+
+
+// =========================================================
+// LAST ERROR
+// =========================================================
+
+QString ExcelParser::lastError() const
+{
+    return m_lastError;
+}
+
+
+// =========================================================
+// PARAMETER METADATA LOADING
+// =========================================================
+
+QList<ParameterDefinition>
+ExcelParser::loadParameterDefinitions(
+    const QString &filePath,
+    QStringList *errors,
+    QStringList *warnings)
+{
+    QList<ParameterDefinition> definitions;
+
+
+    if (errors)
+        errors->clear();
+
+    if (warnings)
+        warnings->clear();
+
+
+    // -----------------------------------------------------
+    // FILE CHECK
+    // -----------------------------------------------------
+
+    const QFileInfo fileInfo(filePath);
+
+
+    if (!fileInfo.exists() ||
+        !fileInfo.isFile()) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "File does not exist: %1")
+                    .arg(filePath));
+        }
+
+        return definitions;
+    }
+
+
+    if (fileInfo.suffix().compare(
+            QStringLiteral("xlsx"),
+            Qt::CaseInsensitive) != 0) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Unsupported file format. "
+                    "Parameter metadata must be .xlsx."));
+        }
+
+        return definitions;
+    }
+
+
+    // -----------------------------------------------------
+    // OPEN DOCUMENT
+    // -----------------------------------------------------
+
+    Document document(filePath);
+
+
+    if (!document.load()) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Excel file could not be opened."));
+        }
+
+        return definitions;
+    }
+
+
+    const QStringList sheets =
+        document.sheetNames();
+
+
+    if (sheets.isEmpty()) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Excel file contains no worksheets."));
+        }
+
+        return definitions;
+    }
+
+
+    if (!document.selectSheet(
+            sheets.first())) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Worksheet could not be selected."));
+        }
+
+        return definitions;
+    }
+
+
+    Worksheet *worksheet =
+        dynamic_cast<Worksheet *>(
+            document.currentWorksheet());
+
+
+    if (!worksheet) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Current worksheet is invalid."));
+        }
+
+        return definitions;
+    }
+
+
+    const CellRange range =
+        worksheet->dimension();
+
+
+    const int rowCount =
+        range.rowCount();
+
+    const int columnCount =
+        range.columnCount();
+
+
+    if (columnCount <= 0) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Metadata sheet contains no columns."));
+        }
+
+        return definitions;
+    }
+
+
+    if (rowCount < 2) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Metadata sheet contains no data rows."));
+        }
+
+        return definitions;
+    }
+
+
+    // -----------------------------------------------------
+    // HEADER MAP
+    // -----------------------------------------------------
+
+    QHash<QString, int> headers;
+
+
+    for (int column = 1;
+         column <= columnCount;
+         ++column) {
+
+        const QString originalHeader =
+            document.read(
+                        1,
+                        column)
+                .toString()
+                .trimmed();
+
+
+        if (originalHeader.isEmpty())
+            continue;
+
+
+        const QString normalized =
+            normalizeHeader(
+                originalHeader);
+
+
+        if (headers.contains(
+                normalized)) {
+
+            if (warnings) {
+                warnings->append(
+                    QStringLiteral(
+                        "Duplicate header '%1'. "
+                        "First occurrence will be used.")
+                        .arg(originalHeader));
+            }
+
             continue;
         }
 
-        uniqueValues.insert(
-            value.toString());
+
+        headers.insert(
+            normalized,
+            column);
     }
 
-    return uniqueValues.size();
+
+    // -----------------------------------------------------
+    // REQUIRED HEADERS
+    // -----------------------------------------------------
+
+    const QStringList requiredHeaders = {
+
+    QStringLiteral("DATA_NAME"),
+        QStringLiteral("BYTE_OFFSET"),
+        QStringLiteral("BYTE_SIZE"),
+        QStringLiteral("BIT_OFFSET"),
+        QStringLiteral("BIT_SIZE"),
+        QStringLiteral("DATA_TYPE")
+};
+
+
+bool missingRequiredHeader =
+    false;
+
+
+for (const QString &header :
+     requiredHeaders) {
+
+    if (!headers.contains(
+            normalizeHeader(header))) {
+
+        missingRequiredHeader =
+            true;
+
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Required Excel column '%1' is missing.")
+                    .arg(header));
+        }
+    }
+}
+
+
+if (missingRequiredHeader)
+    return definitions;
+
+
+// -----------------------------------------------------
+// COLUMN INDEXES
+// -----------------------------------------------------
+
+const int structNameColumn =
+    findColumn(
+        headers,
+        QStringLiteral("STRUCT_NAME"));
+
+
+const int packageNameColumn =
+    findColumn(
+        headers,
+        QStringLiteral("PACKAGE_OR_DATA_NAME"));
+
+
+const int dataNameColumn =
+    findColumn(
+        headers,
+        QStringLiteral("DATA_NAME"));
+
+
+const int byteOffsetColumn =
+    findColumn(
+        headers,
+        QStringLiteral("BYTE_OFFSET"));
+
+
+const int byteSizeColumn =
+    findColumn(
+        headers,
+        QStringLiteral("BYTE_SIZE"));
+
+
+const int bitOffsetColumn =
+    findColumn(
+        headers,
+        QStringLiteral("BIT_OFFSET"));
+
+
+const int bitSizeColumn =
+    findColumn(
+        headers,
+        QStringLiteral("BIT_SIZE"));
+
+
+const int dataTypeColumn =
+    findColumn(
+        headers,
+        QStringLiteral("DATA_TYPE"));
+
+
+const int minValueColumn =
+    findColumn(
+        headers,
+        QStringLiteral("MIN_VALUE"));
+
+
+const int maxValueColumn =
+    findColumn(
+        headers,
+        QStringLiteral("MAX_VALUE"));
+
+
+const int initialColumn =
+    findColumn(
+        headers,
+        QStringLiteral("INITIAL"));
+
+
+const int unitColumn =
+    findColumn(
+        headers,
+        QStringLiteral("UNIT"));
+
+
+const int infoColumn =
+    findColumn(
+        headers,
+        QStringLiteral("INFO"));
+
+
+const int resolutionColumn =
+    findColumn(
+        headers,
+        QStringLiteral("RESOLUTION"));
+
+
+// -----------------------------------------------------
+// ROW LOOP
+// -----------------------------------------------------
+
+for (int row = 2;
+     row <= rowCount;
+     ++row) {
+
+
+    if (rowIsCompletelyEmpty(
+            document,
+            row,
+            columnCount)) {
+
+        continue;
+    }
+
+
+    ParameterDefinition definition;
+
+
+    // -------------------------------------------------
+    // STRINGS
+    // -------------------------------------------------
+
+    definition.dataName =
+        readOptionalString(
+            document,
+            row,
+            dataNameColumn);
+
+
+    definition.structName =
+        readOptionalString(
+            document,
+            row,
+            structNameColumn);
+
+
+    definition.packageOrDataName =
+        readOptionalString(
+            document,
+            row,
+            packageNameColumn);
+
+
+    definition.unit =
+        readOptionalString(
+            document,
+            row,
+            unitColumn);
+
+
+    definition.info =
+        readOptionalString(
+            document,
+            row,
+            infoColumn);
+
+
+    // -------------------------------------------------
+    // DATA TYPE
+    // -------------------------------------------------
+
+    definition.dataTypeString =
+        readOptionalString(
+            document,
+            row,
+            dataTypeColumn);
+
+
+    definition.dataType =
+        DataTypeUtils::fromString(
+            definition.dataTypeString);
+
+
+    definition.endianness =
+        Endianness::LittleEndian;
+
+
+    QString rowError;
+
+
+    // -------------------------------------------------
+    // BYTE OFFSET
+    // -------------------------------------------------
+
+    if (!readRequiredInt(
+            document,
+            row,
+            byteOffsetColumn,
+            QStringLiteral("BYTE_OFFSET"),
+            definition.byteOffset,
+            rowError)) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Row %1 (%2): %3")
+                    .arg(row)
+                    .arg(
+                        definition.dataName.isEmpty()
+                            ? QStringLiteral("<unnamed>")
+                            : definition.dataName)
+                    .arg(rowError));
+        }
+
+        continue;
+    }
+
+
+    // -------------------------------------------------
+    // BYTE SIZE
+    // -------------------------------------------------
+
+    if (!readRequiredInt(
+            document,
+            row,
+            byteSizeColumn,
+            QStringLiteral("BYTE_SIZE"),
+            definition.byteSize,
+            rowError)) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Row %1 (%2): %3")
+                    .arg(row)
+                    .arg(definition.dataName)
+                    .arg(rowError));
+        }
+
+        continue;
+    }
+
+
+    // -------------------------------------------------
+    // BIT OFFSET
+    // -------------------------------------------------
+
+    if (!readRequiredInt(
+            document,
+            row,
+            bitOffsetColumn,
+            QStringLiteral("BIT_OFFSET"),
+            definition.bitOffset,
+            rowError)) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Row %1 (%2): %3")
+                    .arg(row)
+                    .arg(definition.dataName)
+                    .arg(rowError));
+        }
+
+        continue;
+    }
+
+
+    // -------------------------------------------------
+    // BIT SIZE
+    // -------------------------------------------------
+
+    if (!readRequiredInt(
+            document,
+            row,
+            bitSizeColumn,
+            QStringLiteral("BIT_SIZE"),
+            definition.bitSize,
+            rowError)) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Row %1 (%2): %3")
+                    .arg(row)
+                    .arg(definition.dataName)
+                    .arg(rowError));
+        }
+
+        continue;
+    }
+
+
+    // -------------------------------------------------
+    // RESOLUTION
+    // -------------------------------------------------
+
+    if (!readOptionalDouble(
+            document,
+            row,
+            resolutionColumn,
+            QStringLiteral("RESOLUTION"),
+            1.0,
+            definition.resolution,
+            rowError)) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Row %1 (%2): %3")
+                    .arg(row)
+                    .arg(definition.dataName)
+                    .arg(rowError));
+        }
+
+        continue;
+    }
+
+
+    // -------------------------------------------------
+    // INITIAL
+    // -------------------------------------------------
+
+    if (!readOptionalDouble(
+            document,
+            row,
+            initialColumn,
+            QStringLiteral("INITIAL"),
+            0.0,
+            definition.initialValue,
+            rowError)) {
+
+        if (errors) {
+            errors->append(
+                QStringLiteral(
+                    "Row %1 (%2): %3")
+                    .arg(row)
+                    .arg(definition.dataName)
+                    .arg(rowError));
+        }
+
+        continue;
+    }
+
+
+    // -------------------------------------------------
+    // MIN / MAX EXISTENCE
+    // -------------------------------------------------
+
+    bool hasMin = false;
+    bool hasMax = false;
+
+
+    if (minValueColumn > 0) {
+
+        hasMin =
+            !document.read(
+                         row,
+                         minValueColumn)
+                 .toString()
+                 .trimmed()
+                 .isEmpty();
+    }
+
+
+    if (maxValueColumn > 0) {
+
+        hasMax =
+            !document.read(
+                         row,
+                         maxValueColumn)
+                 .toString()
+                 .trimmed()
+                 .isEmpty();
+    }
+
+
+    // -------------------------------------------------
+    // ONLY ONE PROVIDED
+    // -------------------------------------------------
+
+    if (hasMin != hasMax) {
+
+        definition.hasMinMax =
+            false;
+
+
+        if (warnings) {
+            warnings->append(
+                QStringLiteral(
+                    "Row %1 (%2): MIN_VALUE and MAX_VALUE "
+                    "must both exist. Range check disabled.")
+                    .arg(row)
+                    .arg(definition.dataName));
+        }
+    }
+
+
+    // -------------------------------------------------
+    // BOTH PROVIDED
+    // -------------------------------------------------
+
+    else if (hasMin &&
+             hasMax) {
+
+        double minValue = 0.0;
+        double maxValue = 0.0;
+
+        QString minError;
+        QString maxError;
+
+
+        const bool minOk =
+            readOptionalDouble(
+                document,
+                row,
+                minValueColumn,
+                QStringLiteral("MIN_VALUE"),
+                0.0,
+                minValue,
+                minError);
+
+
+        const bool maxOk =
+            readOptionalDouble(
+                document,
+                row,
+                maxValueColumn,
+                QStringLiteral("MAX_VALUE"),
+                0.0,
+                maxValue,
+                maxError);
+
+
+        if (!minOk ||
+            !maxOk) {
+
+            if (errors) {
+                errors->append(
+                    QStringLiteral(
+                        "Row %1 (%2): %3")
+                        .arg(row)
+                        .arg(definition.dataName)
+                        .arg(
+                            !minOk
+                                ? minError
+                                : maxError));
+            }
+
+            continue;
+        }
+
+
+        definition.minValue =
+            minValue;
+
+        definition.maxValue =
+            maxValue;
+
+        definition.hasMinMax =
+            true;
+    }
+
+
+    // -------------------------------------------------
+    // FINAL VALIDATION
+    // -------------------------------------------------
+
+    const ValidationResult validation =
+        MetadataValidator::validate(
+            definition);
+
+
+    if (!validation.valid) {
+
+        if (errors) {
+
+            for (const QString &message :
+                 validation.errors) {
+
+                errors->append(
+                    QStringLiteral(
+                        "Row %1 (%2): %3")
+                        .arg(row)
+                        .arg(
+                            definition.dataName.isEmpty()
+                                ? QStringLiteral("<unnamed>")
+                                : definition.dataName)
+                        .arg(message));
+            }
+        }
+
+        continue;
+    }
+
+
+    // -------------------------------------------------
+    // VALIDATION WARNINGS
+    // -------------------------------------------------
+
+    if (warnings) {
+
+        for (const QString &message :
+             validation.warnings) {
+
+            warnings->append(
+                QStringLiteral(
+                    "Row %1 (%2): %3")
+                    .arg(row)
+                    .arg(definition.dataName)
+                    .arg(message));
+        }
+    }
+
+
+    // -------------------------------------------------
+    // VALID DEFINITION
+    // -------------------------------------------------
+
+    definitions.append(
+        definition);
+}
+
+
+return definitions;
 }
