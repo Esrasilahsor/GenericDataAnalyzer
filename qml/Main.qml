@@ -80,6 +80,8 @@ ApplicationWindow {
             dataset1OutlierColumn.currentIndex = -1
             dataset1FillColumn.currentIndex = -1
             dataset1CleaningOutlierColumn.currentIndex = -1
+            dataset1CleaningOutlierMethod.currentIndex = 0
+            dataset1CleaningOutlierAction.currentIndex = 0
         }
     }
 
@@ -110,6 +112,8 @@ ApplicationWindow {
             dataset2OutlierColumn.currentIndex = -1
             dataset2FillColumn.currentIndex = -1
             dataset2CleaningOutlierColumn.currentIndex = -1
+            dataset2CleaningOutlierMethod.currentIndex = 0
+            dataset2CleaningOutlierAction.currentIndex = 0
         }
     }
 
@@ -1470,7 +1474,7 @@ ApplicationWindow {
 
             Row {
                 width: parent.width - 60
-                height: 1040
+                height: 1280
 
                 anchors.horizontalCenter: parent.horizontalCenter
 
@@ -1848,12 +1852,10 @@ ApplicationWindow {
                         }
 
 
-                        Rectangle {
-                            width: parent.width
-                            height: 1
 
-                            color: "#30394A"
-                        }
+                        // =================================================
+                        // OUTLIER CLEANING
+                        // =================================================
 
                         Rectangle {
                             width: parent.width
@@ -1863,16 +1865,13 @@ ApplicationWindow {
 
                         Text {
                             text: "Outlier Cleaning"
-
                             color: "#FFB4A9"
-
                             font.pixelSize: 15
                             font.bold: true
                         }
 
                         Text {
-                            text: "Select a numeric column"
-
+                            text: "Select Numeric Column"
                             color: "#AAB2C0"
                         }
 
@@ -1882,11 +1881,8 @@ ApplicationWindow {
                             width: parent.width
                             height: 42
 
-                            model:
-                                appController.dataset1ColumnModel
-
+                            model: appController.dataset1ColumnModel
                             textRole: "name"
-
                             currentIndex: -1
 
                             enabled:
@@ -1894,20 +1890,43 @@ ApplicationWindow {
                         }
 
                         Text {
-                            text: "IQR Multiplier"
+                            text: "Detection Method"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset1CleaningOutlierMethod
+
+                            width: parent.width
+                            height: 42
+
+                            model: [
+                                "IQR",
+                                "Z-Score"
+                            ]
+
+                            currentIndex: 0
+                        }
+
+                        Text {
+                            text:
+                                dataset1CleaningOutlierMethod.currentText === "IQR"
+                                ? "IQR Multiplier"
+                                : "Z-Score Threshold"
 
                             color: "#AAB2C0"
                         }
 
                         TextField {
-                            id: dataset1CleaningOutlierMultiplier
+                            id: dataset1CleaningOutlierParameter
 
                             width: parent.width
                             height: 42
 
-                            text: "1.5"
-
-                            placeholderText: "1.5"
+                            text:
+                                dataset1CleaningOutlierMethod.currentText === "IQR"
+                                ? "1.5"
+                                : "3.0"
 
                             validator: DoubleValidator {
                                 bottom: 0.01
@@ -1916,61 +1935,49 @@ ApplicationWindow {
                             }
                         }
 
-                        Rectangle {
+                        Text {
+                            text: "Action"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset1CleaningOutlierAction
+
                             width: parent.width
-                            height: 38
+                            height: 42
 
-                            radius: 5
+                            model: [
+                                "Keep",
+                                "Mark",
+                                "Remove"
+                            ]
 
-                            color: "#262E3D"
-
-                            Text {
-                                anchors.centerIn: parent
-
-                                text:
-                                    dataset1CleaningOutlierColumn.currentIndex >= 0
-                                    ?
-                                    "Selected: "
-                                    + dataset1CleaningOutlierColumn.currentText
-                                    :
-                                    "No column selected"
-
-                                color:
-                                    dataset1CleaningOutlierColumn.currentIndex >= 0
-                                    ? "#FFB4A9"
-                                    : "#7F899A"
-
-                                font.bold:
-                                    dataset1CleaningOutlierColumn.currentIndex >= 0
-                            }
+                            currentIndex: 0
                         }
 
                         Button {
                             width: parent.width
                             height: 42
 
-                            text: "Remove Outlier Rows"
+                            text: "Apply Outlier Operation"
 
                             enabled:
                                 dataset1CleaningOutlierColumn.currentIndex >= 0
                                 &&
-                                dataset1CleaningOutlierMultiplier.text.length > 0
+                                dataset1CleaningOutlierParameter.text.length > 0
 
                             onClicked: {
-
-                                var multiplier =
-                                        Number(
-                                            dataset1CleaningOutlierMultiplier.text
-                                        )
-
                                 var success =
-                                        appController.removeDataset1Outliers(
+                                        appController.applyDataset1OutlierAction(
                                             dataset1CleaningOutlierColumn.currentText,
-                                            multiplier
+                                            dataset1CleaningOutlierMethod.currentText,
+                                            dataset1CleaningOutlierAction.currentText,
+                                            Number(
+                                                dataset1CleaningOutlierParameter.text
+                                            )
                                         )
 
                                 if (!success) {
-
                                     errorDialog.text =
                                             appController.lastError
 
@@ -1979,6 +1986,83 @@ ApplicationWindow {
                             }
                         }
 
+                        Rectangle {
+                            width: parent.width
+                            height: 150
+
+                            visible:
+                                Object.keys(
+                                    appController.dataset1OutlierCleaningResult
+                                ).length > 0
+
+                            radius: 6
+                            color: "#262E3D"
+
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 5
+
+                                Text {
+                                    text:
+                                        "Method: "
+                                        + (
+                                            appController.dataset1OutlierCleaningResult["method"]
+                                            || "-"
+                                        )
+
+                                    color: "#AAB2C0"
+                                }
+
+                                Text {
+                                    text:
+                                        "Action: "
+                                        + (
+                                            appController.dataset1OutlierCleaningResult["action"]
+                                            || "-"
+                                        )
+
+                                    color: "#AAB2C0"
+                                }
+
+                                Text {
+                                    text:
+                                        "Outliers: "
+                                        + (
+                                            appController.dataset1OutlierCleaningResult["outlierCount"]
+                                            || 0
+                                        )
+
+                                    color: "#FFB4A9"
+                                    font.bold: true
+                                }
+
+                                Text {
+                                    width: parent.width
+
+                                    text:
+                                        "Marked Rows: "
+                                        + (
+                                            appController.dataset1OutlierCleaningResult["markedRows"]
+                                            || []
+                                        ).join(", ")
+
+                                    color: "#FFE29A"
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Text {
+                                    width: parent.width
+
+                                    text:
+                                        appController.dataset1OutlierCleaningResult["message"]
+                                        || ""
+
+                                    color: "#9FE3B5"
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
 
                         // =================================================
                         // RESTORE
@@ -2341,12 +2425,10 @@ ApplicationWindow {
                         }
 
 
-                        Rectangle {
-                            width: parent.width
-                            height: 1
 
-                            color: "#30394A"
-                        }
+                        // =================================================
+                        // OUTLIER CLEANING
+                        // =================================================
 
                         Rectangle {
                             width: parent.width
@@ -2356,16 +2438,13 @@ ApplicationWindow {
 
                         Text {
                             text: "Outlier Cleaning"
-
                             color: "#FFB4A9"
-
                             font.pixelSize: 15
                             font.bold: true
                         }
 
                         Text {
-                            text: "Select a numeric column"
-
+                            text: "Select Numeric Column"
                             color: "#AAB2C0"
                         }
 
@@ -2375,11 +2454,8 @@ ApplicationWindow {
                             width: parent.width
                             height: 42
 
-                            model:
-                                appController.dataset2ColumnModel
-
+                            model: appController.dataset2ColumnModel
                             textRole: "name"
-
                             currentIndex: -1
 
                             enabled:
@@ -2387,20 +2463,43 @@ ApplicationWindow {
                         }
 
                         Text {
-                            text: "IQR Multiplier"
+                            text: "Detection Method"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset2CleaningOutlierMethod
+
+                            width: parent.width
+                            height: 42
+
+                            model: [
+                                "IQR",
+                                "Z-Score"
+                            ]
+
+                            currentIndex: 0
+                        }
+
+                        Text {
+                            text:
+                                dataset2CleaningOutlierMethod.currentText === "IQR"
+                                ? "IQR Multiplier"
+                                : "Z-Score Threshold"
 
                             color: "#AAB2C0"
                         }
 
                         TextField {
-                            id: dataset2CleaningOutlierMultiplier
+                            id: dataset2CleaningOutlierParameter
 
                             width: parent.width
                             height: 42
 
-                            text: "1.5"
-
-                            placeholderText: "1.5"
+                            text:
+                                dataset2CleaningOutlierMethod.currentText === "IQR"
+                                ? "1.5"
+                                : "3.0"
 
                             validator: DoubleValidator {
                                 bottom: 0.01
@@ -2409,61 +2508,49 @@ ApplicationWindow {
                             }
                         }
 
-                        Rectangle {
+                        Text {
+                            text: "Action"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset2CleaningOutlierAction
+
                             width: parent.width
-                            height: 38
+                            height: 42
 
-                            radius: 5
+                            model: [
+                                "Keep",
+                                "Mark",
+                                "Remove"
+                            ]
 
-                            color: "#262E3D"
-
-                            Text {
-                                anchors.centerIn: parent
-
-                                text:
-                                    dataset2CleaningOutlierColumn.currentIndex >= 0
-                                    ?
-                                    "Selected: "
-                                    + dataset2CleaningOutlierColumn.currentText
-                                    :
-                                    "No column selected"
-
-                                color:
-                                    dataset2CleaningOutlierColumn.currentIndex >= 0
-                                    ? "#FFB4A9"
-                                    : "#7F899A"
-
-                                font.bold:
-                                    dataset2CleaningOutlierColumn.currentIndex >= 0
-                            }
+                            currentIndex: 0
                         }
 
                         Button {
                             width: parent.width
                             height: 42
 
-                            text: "Remove Outlier Rows"
+                            text: "Apply Outlier Operation"
 
                             enabled:
                                 dataset2CleaningOutlierColumn.currentIndex >= 0
                                 &&
-                                dataset2CleaningOutlierMultiplier.text.length > 0
+                                dataset2CleaningOutlierParameter.text.length > 0
 
                             onClicked: {
-
-                                var multiplier =
-                                        Number(
-                                            dataset2CleaningOutlierMultiplier.text
-                                        )
-
                                 var success =
-                                        appController.removeDataset2Outliers(
+                                        appController.applyDataset2OutlierAction(
                                             dataset2CleaningOutlierColumn.currentText,
-                                            multiplier
+                                            dataset2CleaningOutlierMethod.currentText,
+                                            dataset2CleaningOutlierAction.currentText,
+                                            Number(
+                                                dataset2CleaningOutlierParameter.text
+                                            )
                                         )
 
                                 if (!success) {
-
                                     errorDialog.text =
                                             appController.lastError
 
@@ -2472,6 +2559,83 @@ ApplicationWindow {
                             }
                         }
 
+                        Rectangle {
+                            width: parent.width
+                            height: 150
+
+                            visible:
+                                Object.keys(
+                                    appController.dataset2OutlierCleaningResult
+                                ).length > 0
+
+                            radius: 6
+                            color: "#262E3D"
+
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 5
+
+                                Text {
+                                    text:
+                                        "Method: "
+                                        + (
+                                            appController.dataset2OutlierCleaningResult["method"]
+                                            || "-"
+                                        )
+
+                                    color: "#AAB2C0"
+                                }
+
+                                Text {
+                                    text:
+                                        "Action: "
+                                        + (
+                                            appController.dataset2OutlierCleaningResult["action"]
+                                            || "-"
+                                        )
+
+                                    color: "#AAB2C0"
+                                }
+
+                                Text {
+                                    text:
+                                        "Outliers: "
+                                        + (
+                                            appController.dataset2OutlierCleaningResult["outlierCount"]
+                                            || 0
+                                        )
+
+                                    color: "#FFB4A9"
+                                    font.bold: true
+                                }
+
+                                Text {
+                                    width: parent.width
+
+                                    text:
+                                        "Marked Rows: "
+                                        + (
+                                            appController.dataset2OutlierCleaningResult["markedRows"]
+                                            || []
+                                        ).join(", ")
+
+                                    color: "#FFE29A"
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Text {
+                                    width: parent.width
+
+                                    text:
+                                        appController.dataset2OutlierCleaningResult["message"]
+                                        || ""
+
+                                    color: "#9FE3B5"
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
 
                         Button {
                             width: parent.width
