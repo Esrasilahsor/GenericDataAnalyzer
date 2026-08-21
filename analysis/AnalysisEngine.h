@@ -44,6 +44,18 @@ struct ZScoreOutlierResult
     QVector<int> outlierRowIndexes;
 };
 
+struct CorrelationResult
+{
+    bool success = false;
+
+    QString firstColumnName;
+    QString secondColumnName;
+    QString errorMessage;
+
+    int pairedValueCount = 0;
+    double correlation = 0.0;
+};
+
 struct ColumnComparisonResult
 {
     bool success = false;
@@ -122,6 +134,12 @@ public:
         const DataSet &dataSet,
         const QString &columnName,
         double threshold = 3.0
+        ) const;
+
+    CorrelationResult calculateCorrelation(
+        const DataSet &dataSet,
+        const QString &firstColumnName,
+        const QString &secondColumnName
         ) const;
 
     ColumnComparisonResult compareColumns(

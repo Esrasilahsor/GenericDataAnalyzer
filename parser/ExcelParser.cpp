@@ -7,6 +7,8 @@
 #include <QVector>
 #include <QDate>
 #include <QDateTime>
+#include <QFile>
+#include <QTextStream>
 
 #include <cmath>
 
@@ -26,6 +28,9 @@ using namespace QXlsx;
 
 namespace
 {
+
+ColumnInfo::DataType detectColumnDataType(
+    const QVector<QVariant> &values);
 
 QString normalizeHeader(const QString &header)
 {
@@ -200,6 +205,199 @@ bool rowIsCompletelyEmpty(
 }
 
 
+
+// =========================================================
+// DELIMITED FILE HELPERS
+// =========================================================
+
+QChar detectDelimiter(
+    const QString &line,
+    const QString &suffix)
+{
+    if (suffix.compare(
+            QStringLiteral("csv"),
+            Qt::CaseInsensitive) == 0) {
+
+        const int commaCount = line.count(',');
+        const int semicolonCount = line.count(';');
+
+        return semicolonCount > commaCount ? ';' : ',';
+    }
+
+    const QList<QChar> candidates = {
+        '\t',
+        ',',
+        ';',
+        '|'
+    };
+
+    QChar bestDelimiter = '\t';
+    int bestCount = -1;
+
+    for (const QChar delimiter : candidates) {
+        const int count = line.count(delimiter);
+
+        if (count > bestCount) {
+            bestCount = count;
+            bestDelimiter = delimiter;
+        }
+    }
+
+    return bestDelimiter;
+}
+
+
+QStringList parseDelimitedLine(
+    const QString &line,
+    QChar delimiter)
+{
+    QStringList fields;
+    QString currentField;
+
+    bool insideQuotes = false;
+
+    for (int i = 0;
+         i < line.size();
+         ++i) {
+
+        const QChar character =
+            line.at(i);
+
+        if (character == '"') {
+
+            if (insideQuotes &&
+                i + 1 < line.size() &&
+                line.at(i + 1) == '"') {
+
+                currentField.append('"');
+                ++i;
+                continue;
+            }
+
+            insideQuotes = !insideQuotes;
+            continue;
+        }
+
+        if (character == delimiter &&
+            !insideQuotes) {
+
+            fields.append(currentField);
+            currentField.clear();
+            continue;
+        }
+
+        currentField.append(character);
+    }
+
+    fields.append(currentField);
+
+    return fields;
+}
+
+
+QVariant textToVariant(
+    const QString &text)
+{
+    const QString trimmed =
+        text.trimmed();
+
+    if (trimmed.isEmpty())
+        return QVariant();
+
+    const QString lower =
+        trimmed.toLower();
+
+    if (lower == QStringLiteral("true"))
+        return QVariant(true);
+
+    if (lower == QStringLiteral("false"))
+        return QVariant(false);
+
+    bool integerOk = false;
+
+    const qlonglong integerValue =
+        trimmed.toLongLong(&integerOk);
+
+    if (integerOk)
+        return QVariant::fromValue(integerValue);
+
+    bool doubleOk = false;
+
+    const double doubleValue =
+        trimmed.toDouble(&doubleOk);
+
+    if (doubleOk &&
+        std::isfinite(doubleValue)) {
+
+        return QVariant(doubleValue);
+    }
+
+    const QDateTime dateTime =
+        QDateTime::fromString(
+            trimmed,
+            Qt::ISODate);
+
+    if (dateTime.isValid())
+        return QVariant(dateTime);
+
+    const QDate date =
+        QDate::fromString(
+            trimmed,
+            Qt::ISODate);
+
+    if (date.isValid())
+        return QVariant(date);
+
+    return QVariant(trimmed);
+}
+
+
+void finalizeColumnInfo(
+    ColumnInfo &columnInfo,
+    const QVector<QVariant> &values)
+{
+    int missingCount = 0;
+    QSet<QString> uniqueValues;
+
+    for (const QVariant &value : values) {
+
+        const QString text =
+            value.toString().trimmed();
+
+        if (!value.isValid() ||
+            value.isNull() ||
+            text.isEmpty()) {
+
+            ++missingCount;
+            continue;
+        }
+
+        uniqueValues.insert(text);
+    }
+
+    columnInfo.setValues(values);
+    columnInfo.setMissingCount(missingCount);
+    columnInfo.setUniqueCount(uniqueValues.size());
+
+    const int totalValues =
+        values.size();
+
+    const double missingPercentage =
+        totalValues > 0
+            ? (
+                  static_cast<double>(missingCount)
+                  /
+                  static_cast<double>(totalValues)
+                  ) * 100.0
+            : 0.0;
+
+    columnInfo.setMissingPercentage(
+        missingPercentage);
+
+    columnInfo.setDataType(
+        detectColumnDataType(values));
+}
+
 // =========================================================
 // COLUMN TYPE DETECTION
 // =========================================================
@@ -341,13 +539,7 @@ bool ExcelParser::loadFile(
     const QString &filePath)
 {
     m_lastError.clear();
-
     m_dataSet.clear();
-
-
-    // -----------------------------------------------------
-    // FILE CHECK
-    // -----------------------------------------------------
 
     const QFileInfo fileInfo(filePath);
 
@@ -361,23 +553,33 @@ bool ExcelParser::loadFile(
         return false;
     }
 
+    const QString suffix =
+        fileInfo.suffix().toLower();
 
-    if (fileInfo.suffix().compare(
-            QStringLiteral("xlsx"),
-            Qt::CaseInsensitive) != 0) {
+    if (suffix == QStringLiteral("xlsx"))
+        return loadExcelDataSet(filePath);
 
-        m_lastError =
-            QStringLiteral(
-                "Desteklenmeyen dosya formatı. "
-                "Lütfen .xlsx dosyası seçin.");
+    if (suffix == QStringLiteral("csv") ||
+        suffix == QStringLiteral("txt"))
+        return loadDelimitedDataSet(filePath);
 
-        return false;
-    }
+    m_lastError =
+        QStringLiteral(
+            "Desteklenmeyen dosya formatı. "
+            "Desteklenen formatlar: .xlsx, .csv, .txt");
+
+    return false;
+}
 
 
-    // -----------------------------------------------------
-    // OPEN EXCEL
-    // -----------------------------------------------------
+// =========================================================
+// XLSX DATASET LOADING
+// =========================================================
+
+bool ExcelParser::loadExcelDataSet(
+    const QString &filePath)
+{
+    const QFileInfo fileInfo(filePath);
 
     Document document(filePath);
 
@@ -389,7 +591,6 @@ bool ExcelParser::loadFile(
 
         return false;
     }
-
 
     const QStringList sheets =
         document.sheetNames();
@@ -403,10 +604,8 @@ bool ExcelParser::loadFile(
         return false;
     }
 
-
     const QString selectedSheet =
         sheets.first();
-
 
     if (!document.selectSheet(
             selectedSheet)) {
@@ -417,7 +616,6 @@ bool ExcelParser::loadFile(
 
         return false;
     }
-
 
     Worksheet *worksheet =
         dynamic_cast<Worksheet *>(
@@ -432,17 +630,14 @@ bool ExcelParser::loadFile(
         return false;
     }
 
-
     const CellRange range =
         worksheet->dimension();
-
 
     const int rowCount =
         range.rowCount();
 
     const int columnCount =
         range.columnCount();
-
 
     if (rowCount <= 0 ||
         columnCount <= 0) {
@@ -454,7 +649,6 @@ bool ExcelParser::loadFile(
         return false;
     }
 
-
     if (rowCount < 2) {
 
         m_lastError =
@@ -464,11 +658,6 @@ bool ExcelParser::loadFile(
         return false;
     }
 
-
-    // -----------------------------------------------------
-    // DATASET INFO
-    // -----------------------------------------------------
-
     m_dataSet.setName(
         fileInfo.baseName());
 
@@ -477,11 +666,6 @@ bool ExcelParser::loadFile(
 
     m_dataSet.setSheetName(
         selectedSheet);
-
-
-    // -----------------------------------------------------
-    // READ COLUMNS
-    // -----------------------------------------------------
 
     for (int columnIndex = 1;
          columnIndex <= columnCount;
@@ -494,112 +678,228 @@ bool ExcelParser::loadFile(
                 .toString()
                 .trimmed();
 
-
         if (columnName.isEmpty()) {
             columnName =
                 QStringLiteral("Column_%1")
                     .arg(columnIndex);
         }
 
-
         QVector<QVariant> values;
 
         values.reserve(
             rowCount - 1);
 
-
-        int missingCount = 0;
-
-        QSet<QString> uniqueValues;
-
-
         for (int rowIndex = 2;
              rowIndex <= rowCount;
              ++rowIndex) {
 
-            const QVariant value =
+            values.append(
                 document.read(
                     rowIndex,
-                    columnIndex);
-
-
-            values.append(value);
-
-
-            const QString text =
-                value.toString().trimmed();
-
-
-            if (!value.isValid() ||
-                value.isNull() ||
-                text.isEmpty()) {
-
-                ++missingCount;
-                continue;
-            }
-
-
-            uniqueValues.insert(
-                text);
+                    columnIndex));
         }
-
-
-        // -------------------------------------------------
-        // COLUMN INFO
-        // -------------------------------------------------
 
         ColumnInfo columnInfo(
             columnName);
 
-
         columnInfo.setOriginalName(
             columnName);
 
-
-        columnInfo.setValues(
+        finalizeColumnInfo(
+            columnInfo,
             values);
-
-
-        columnInfo.setMissingCount(
-            missingCount);
-
-
-        columnInfo.setUniqueCount(
-            uniqueValues.size());
-
-
-        const int totalValues =
-            values.size();
-
-
-        double missingPercentage =
-            0.0;
-
-
-        if (totalValues > 0) {
-
-            missingPercentage =
-                (static_cast<double>(
-                     missingCount)
-                 /
-                 static_cast<double>(
-                     totalValues))
-                * 100.0;
-        }
-
-
-        columnInfo.setMissingPercentage(
-            missingPercentage);
-
-
-        columnInfo.setDataType(
-            detectColumnDataType(values));
-
 
         m_dataSet.addColumn(
             columnInfo);
     }
 
+    return true;
+}
+
+
+// =========================================================
+// CSV / TXT DATASET LOADING
+// =========================================================
+
+bool ExcelParser::loadDelimitedDataSet(
+    const QString &filePath)
+{
+    const QFileInfo fileInfo(filePath);
+
+    QFile file(filePath);
+
+    if (!file.open(
+            QIODevice::ReadOnly |
+            QIODevice::Text)) {
+
+        m_lastError =
+            QStringLiteral(
+                "CSV/TXT dosyası açılamadı.");
+
+        return false;
+    }
+
+    QTextStream stream(&file);
+
+    stream.setCodec("UTF-8");
+
+    QStringList lines;
+
+    while (!stream.atEnd()) {
+
+        QString line =
+            stream.readLine();
+
+        if (line.endsWith('\r'))
+            line.chop(1);
+
+        if (!line.trimmed().isEmpty())
+            lines.append(line);
+    }
+
+    file.close();
+
+    if (lines.isEmpty()) {
+
+        m_lastError =
+            QStringLiteral(
+                "CSV/TXT dosyası boş.");
+
+        return false;
+    }
+
+    if (lines.size() < 2) {
+
+        m_lastError =
+            QStringLiteral(
+                "CSV/TXT dosyasında veri satırı bulunamadı.");
+
+        return false;
+    }
+
+    const QChar delimiter =
+        detectDelimiter(
+            lines.first(),
+            fileInfo.suffix());
+
+    const QStringList headerFields =
+        parseDelimitedLine(
+            lines.first(),
+            delimiter);
+
+    if (headerFields.isEmpty()) {
+
+        m_lastError =
+            QStringLiteral(
+                "CSV/TXT sütun başlıkları okunamadı.");
+
+        return false;
+    }
+
+    const int columnCount =
+        headerFields.size();
+
+    QVector<QString> columnNames;
+    columnNames.reserve(columnCount);
+
+    QSet<QString> usedNames;
+
+    for (int columnIndex = 0;
+         columnIndex < columnCount;
+         ++columnIndex) {
+
+        QString columnName =
+            headerFields.at(
+                            columnIndex)
+                .trimmed();
+
+        if (columnName.isEmpty()) {
+            columnName =
+                QStringLiteral("Column_%1")
+                    .arg(columnIndex + 1);
+        }
+
+        QString uniqueName =
+            columnName;
+
+        int duplicateIndex = 2;
+
+        while (usedNames.contains(
+            uniqueName)) {
+
+            uniqueName =
+                QStringLiteral("%1_%2")
+                    .arg(columnName)
+                    .arg(duplicateIndex);
+
+            ++duplicateIndex;
+        }
+
+        usedNames.insert(uniqueName);
+        columnNames.append(uniqueName);
+    }
+
+    QVector<QVector<QVariant>> columns;
+    columns.resize(columnCount);
+
+    for (int lineIndex = 1;
+         lineIndex < lines.size();
+         ++lineIndex) {
+
+        const QStringList rowFields =
+            parseDelimitedLine(
+                lines.at(lineIndex),
+                delimiter);
+
+        for (int columnIndex = 0;
+             columnIndex < columnCount;
+             ++columnIndex) {
+
+            if (columnIndex <
+                rowFields.size()) {
+
+                columns[columnIndex].append(
+                    textToVariant(
+                        rowFields.at(
+                            columnIndex)));
+            }
+            else {
+                columns[columnIndex].append(
+                    QVariant());
+            }
+        }
+    }
+
+    m_dataSet.setName(
+        fileInfo.baseName());
+
+    m_dataSet.setFilePath(
+        filePath);
+
+    m_dataSet.setSheetName(
+        QStringLiteral("N/A"));
+
+    for (int columnIndex = 0;
+         columnIndex < columnCount;
+         ++columnIndex) {
+
+        ColumnInfo columnInfo(
+            columnNames.at(
+                columnIndex));
+
+        columnInfo.setOriginalName(
+            headerFields.at(
+                            columnIndex)
+                .trimmed());
+
+        finalizeColumnInfo(
+            columnInfo,
+            columns.at(
+                columnIndex));
+
+        m_dataSet.addColumn(
+            columnInfo);
+    }
 
     return true;
 }

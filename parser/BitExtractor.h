@@ -3,8 +3,9 @@
 
 #include <QtGlobal>
 
-#include "BitExtractionResult.h"
+#include "ParserTypes.h"
 #include "RawDataBuffer.h"
+
 
 class BitExtractor
 {
@@ -33,5 +34,6 @@ private:
     static quint64 createMask(
         int bitSize);
 };
+
 
 #endif // BITEXTRACTOR_H

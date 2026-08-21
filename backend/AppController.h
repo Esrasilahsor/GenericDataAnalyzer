@@ -10,7 +10,7 @@
 
 #include "../parser/ExcelParser.h"
 #include "../parser/DataSet.h"
-#include "../parser/ParameterDefinition.h"
+#include "../parser/ParserTypes.h"
 #include "../parser/RawDataParser.h"
 
 #include "../models/ColumnModel.h"
@@ -19,6 +19,10 @@
 
 #include "../analysis/ComparisonEngine.h"
 #include "../analysis/AnalysisEngine.h"
+#include "../analysis/EdaEngine.h"
+#include "../cleaning/CleaningEngine.h"
+#include "../visualization/VisualizationEngine.h"
+#include "../export/ExportEngine.h"
 
 class AppController : public QObject
 {
@@ -46,6 +50,16 @@ class AppController : public QObject
 
     Q_PROPERTY(QVariantMap analysisResult READ analysisResult NOTIFY analysisResultChanged)
     Q_PROPERTY(bool analysisAvailable READ analysisAvailable NOTIFY analysisResultChanged)
+
+    Q_PROPERTY(QVariantMap dataset1EdaResult READ dataset1EdaResult NOTIFY dataset1EdaChanged)
+    Q_PROPERTY(QVariantMap dataset2EdaResult READ dataset2EdaResult NOTIFY dataset2EdaChanged)
+    Q_PROPERTY(bool dataset1EdaAvailable READ dataset1EdaAvailable NOTIFY dataset1EdaChanged)
+    Q_PROPERTY(bool dataset2EdaAvailable READ dataset2EdaAvailable NOTIFY dataset2EdaChanged)
+
+    Q_PROPERTY(QVariantMap dataset1CorrelationResult READ dataset1CorrelationResult NOTIFY dataset1CorrelationChanged)
+    Q_PROPERTY(QVariantMap dataset2CorrelationResult READ dataset2CorrelationResult NOTIFY dataset2CorrelationChanged)
+    Q_PROPERTY(bool dataset1CorrelationAvailable READ dataset1CorrelationAvailable NOTIFY dataset1CorrelationChanged)
+    Q_PROPERTY(bool dataset2CorrelationAvailable READ dataset2CorrelationAvailable NOTIFY dataset2CorrelationChanged)
 
     Q_PROPERTY(QVariantMap dataset1QualityResult READ dataset1QualityResult NOTIFY dataset1QualityChanged)
     Q_PROPERTY(QVariantMap dataset2QualityResult READ dataset2QualityResult NOTIFY dataset2QualityChanged)
@@ -101,6 +115,16 @@ public:
 
     QVariantMap analysisResult() const;
     bool analysisAvailable() const;
+
+    QVariantMap dataset1EdaResult() const;
+    QVariantMap dataset2EdaResult() const;
+    bool dataset1EdaAvailable() const;
+    bool dataset2EdaAvailable() const;
+
+    QVariantMap dataset1CorrelationResult() const;
+    QVariantMap dataset2CorrelationResult() const;
+    bool dataset1CorrelationAvailable() const;
+    bool dataset2CorrelationAvailable() const;
 
     QVariantMap dataset1QualityResult() const;
     QVariantMap dataset2QualityResult() const;
@@ -186,6 +210,95 @@ public:
 
     Q_INVOKABLE void clearAnalysis();
 
+    Q_INVOKABLE bool analyzeDataset1Eda(
+        const QString &columnName
+        );
+
+    Q_INVOKABLE bool analyzeDataset2Eda(
+        const QString &columnName
+        );
+
+    Q_INVOKABLE void clearDataset1Eda();
+    Q_INVOKABLE void clearDataset2Eda();
+
+    Q_INVOKABLE bool analyzeDataset1Correlation(
+        const QString &firstColumnName,
+        const QString &secondColumnName
+        );
+
+    Q_INVOKABLE bool analyzeDataset2Correlation(
+        const QString &firstColumnName,
+        const QString &secondColumnName
+        );
+
+    Q_INVOKABLE void clearDataset1Correlation();
+    Q_INVOKABLE void clearDataset2Correlation();
+
+    // =====================================================
+    // VISUALIZATION
+    // =====================================================
+
+    Q_INVOKABLE QVariantMap createDataset1Histogram(
+        const QString &columnName,
+        int binCount = 10
+        );
+
+    Q_INVOKABLE QVariantMap createDataset2Histogram(
+        const QString &columnName,
+        int binCount = 10
+        );
+
+    Q_INVOKABLE QVariantMap createDataset1BoxPlot(
+        const QString &columnName,
+        double multiplier = 1.5
+        );
+
+    Q_INVOKABLE QVariantMap createDataset2BoxPlot(
+        const QString &columnName,
+        double multiplier = 1.5
+        );
+
+    Q_INVOKABLE QVariantMap createDataset1TimeSeries(
+        const QString &xColumnName,
+        const QString &yColumnName
+        );
+
+    Q_INVOKABLE QVariantMap createDataset2TimeSeries(
+        const QString &xColumnName,
+        const QString &yColumnName
+        );
+
+    Q_INVOKABLE QVariantMap createDataset1Distribution(
+        const QString &columnName,
+        int binCount = 10
+        );
+
+    Q_INVOKABLE QVariantMap createDataset2Distribution(
+        const QString &columnName,
+        int binCount = 10
+        );
+
+    Q_INVOKABLE QVariantMap createDataset1CorrelationMatrix();
+    Q_INVOKABLE QVariantMap createDataset2CorrelationMatrix();
+
+    Q_INVOKABLE QVariantMap createDatasetComparisonChart(
+        const QString &sourceColumnName,
+        const QString &targetColumnName
+        );
+
+    // =====================================================
+    // EXPORT
+    // =====================================================
+
+    Q_INVOKABLE bool exportDataset1ToCsv(const QString &filePath);
+    Q_INVOKABLE bool exportDataset2ToCsv(const QString &filePath);
+
+    Q_INVOKABLE bool exportDataset1ToJson(const QString &filePath);
+    Q_INVOKABLE bool exportDataset2ToJson(const QString &filePath);
+
+    Q_INVOKABLE bool exportDataset1ToXlsx(const QString &filePath);
+    Q_INVOKABLE bool exportDataset2ToXlsx(const QString &filePath);
+
     Q_INVOKABLE bool analyzeDataset1Quality();
     Q_INVOKABLE bool analyzeDataset2Quality();
 
@@ -220,6 +333,12 @@ signals:
     void mappingsChanged();
     void errorChanged();
     void analysisResultChanged();
+
+    void dataset1EdaChanged();
+    void dataset2EdaChanged();
+
+    void dataset1CorrelationChanged();
+    void dataset2CorrelationChanged();
 
     void dataset1QualityChanged();
     void dataset2QualityChanged();
@@ -257,9 +376,23 @@ private:
 
     ComparisonEngine m_comparisonEngine;
     AnalysisEngine m_analysisEngine;
+    EdaEngine m_edaEngine;
+    CleaningEngine m_cleaningEngine;
+    VisualizationEngine m_visualizationEngine;
+    ExportEngine m_exportEngine;
 
     QVariantMap m_analysisResult;
     bool m_analysisAvailable = false;
+
+    QVariantMap m_dataset1EdaResult;
+    QVariantMap m_dataset2EdaResult;
+    bool m_dataset1EdaAvailable = false;
+    bool m_dataset2EdaAvailable = false;
+
+    QVariantMap m_dataset1CorrelationResult;
+    QVariantMap m_dataset2CorrelationResult;
+    bool m_dataset1CorrelationAvailable = false;
+    bool m_dataset2CorrelationAvailable = false;
 
     QVariantMap m_dataset1QualityResult;
     QVariantMap m_dataset2QualityResult;
@@ -298,45 +431,35 @@ private:
         const StatisticsResult &statistics
         ) const;
 
-    QVariantMap qualityToVariantMap(
-        const DatasetQualityResult &quality
+
+
+    QVariantMap histogramToVariantMap(
+        const HistogramResult &result
         ) const;
 
-    QVariantMap outlierToVariantMap(
-        const ColumnOutlierAnalysisResult &result
+    QVariantMap boxPlotToVariantMap(
+        const BoxPlotResult &result
         ) const;
 
-    bool fillMissingWithMean(
-        DataSet &dataSet,
-        ColumnModel &columnModel,
-        const QString &columnName,
-        bool dataset1
-        );
+    QVariantMap timeSeriesToVariantMap(
+        const TimeSeriesResult &result
+        ) const;
 
-    bool fillMissingWithMedian(
-        DataSet &dataSet,
-        ColumnModel &columnModel,
-        const QString &columnName,
-        bool dataset1
-        );
+    QVariantMap distributionToVariantMap(
+        const DistributionResult &result
+        ) const;
 
-    bool fillMissingWithMode(
-        DataSet &dataSet,
-        ColumnModel &columnModel,
-        const QString &columnName,
-        bool dataset1
-        );
+    QVariantMap correlationMatrixToVariantMap(
+        const CorrelationMatrixResult &result
+        ) const;
 
-    bool applyOutlierAction(
-        DataSet &dataSet,
-        ColumnModel &columnModel,
-        QVariantMap &cleaningResult,
-        const QString &columnName,
-        const QString &method,
-        const QString &action,
-        double parameter,
-        bool dataset1
-        );
+    QVariantMap comparisonChartToVariantMap(
+        const ComparisonChartResult &result
+        ) const;
+
+
+
+
 };
 
 #endif // APPCONTROLLER_H

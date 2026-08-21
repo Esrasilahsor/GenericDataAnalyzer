@@ -3,10 +3,6 @@
 #include "../raw/FileRawDataSource.h"
 
 #include <QUrl>
-#include <QMap>
-
-#include <algorithm>
-#include <cmath>
 
 AppController::AppController(QObject *parent)
     : QObject(parent),
@@ -45,6 +41,18 @@ ParameterModel *AppController::parameterModel() { return &m_parameterModel; }
 
 QVariantMap AppController::analysisResult() const { return m_analysisResult; }
 bool AppController::analysisAvailable() const { return m_analysisAvailable; }
+
+QVariantMap AppController::dataset1EdaResult() const { return m_dataset1EdaResult; }
+QVariantMap AppController::dataset2EdaResult() const { return m_dataset2EdaResult; }
+
+bool AppController::dataset1EdaAvailable() const { return m_dataset1EdaAvailable; }
+bool AppController::dataset2EdaAvailable() const { return m_dataset2EdaAvailable; }
+
+QVariantMap AppController::dataset1CorrelationResult() const { return m_dataset1CorrelationResult; }
+QVariantMap AppController::dataset2CorrelationResult() const { return m_dataset2CorrelationResult; }
+
+bool AppController::dataset1CorrelationAvailable() const { return m_dataset1CorrelationAvailable; }
+bool AppController::dataset2CorrelationAvailable() const { return m_dataset2CorrelationAvailable; }
 
 QVariantMap AppController::dataset1QualityResult() const { return m_dataset1QualityResult; }
 QVariantMap AppController::dataset2QualityResult() const { return m_dataset2QualityResult; }
@@ -108,6 +116,8 @@ bool AppController::loadDataset1(const QString &filePath)
     clearDataset1Quality();
     clearDataset1Outliers();
     clearDataset1OutlierCleaning();
+    clearDataset1Eda();
+    clearDataset1Correlation();
 
     const QString normalizedPath = normalizeFilePath(filePath);
 
@@ -166,6 +176,8 @@ bool AppController::loadDataset2(const QString &filePath)
     clearDataset2Quality();
     clearDataset2Outliers();
     clearDataset2OutlierCleaning();
+    clearDataset2Eda();
+    clearDataset2Correlation();
 
     const QString normalizedPath = normalizeFilePath(filePath);
 
@@ -239,6 +251,8 @@ bool AppController::restoreDataset1()
     clearDataset1Quality();
     clearDataset1Outliers();
     clearDataset1OutlierCleaning();
+    clearDataset1Eda();
+    clearDataset1Correlation();
     clearAnalysis();
 
     emit dataset1Changed();
@@ -266,6 +280,8 @@ bool AppController::restoreDataset2()
     clearDataset2Quality();
     clearDataset2Outliers();
     clearDataset2OutlierCleaning();
+    clearDataset2Eda();
+    clearDataset2Correlation();
     clearAnalysis();
 
     emit dataset2Changed();
@@ -276,40 +292,38 @@ bool AppController::restoreDataset2()
 }
 
 // =========================================================
-// DUPLICATE CLEANING
+// CLEANING
 // =========================================================
 
 bool AppController::removeDataset1Duplicates()
 {
     clearError();
 
-    if (m_dataset1.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 1 is not loaded."));
-        return false;
-    }
+    const CleaningResult result =
+        m_cleaningEngine.removeDuplicateRows(
+            m_dataset1
+            );
 
-    const QVector<int> rows =
-        m_analysisEngine.findDuplicateRowIndexes(m_dataset1);
-
-    if (rows.isEmpty())
+    if (!result.success)
     {
-        setError(QStringLiteral("Dataset 1 does not contain duplicate rows."));
-        return false;
-    }
+        setError(
+            result.errorMessage
+            );
 
-    if (!m_dataset1.removeRows(rows))
-    {
-        setError(QStringLiteral("Dataset 1 duplicate rows could not be removed."));
         return false;
     }
 
     m_dataset1Modified = true;
-    m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+
+    m_dataset1ColumnModel.setColumns(
+        m_dataset1.columns()
+        );
 
     clearDataset1Quality();
     clearDataset1Outliers();
     clearDataset1OutlierCleaning();
+    clearDataset1Eda();
+    clearDataset1Correlation();
     clearAnalysis();
 
     emit dataset1Changed();
@@ -323,33 +337,31 @@ bool AppController::removeDataset2Duplicates()
 {
     clearError();
 
-    if (m_dataset2.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 2 is not loaded."));
-        return false;
-    }
+    const CleaningResult result =
+        m_cleaningEngine.removeDuplicateRows(
+            m_dataset2
+            );
 
-    const QVector<int> rows =
-        m_analysisEngine.findDuplicateRowIndexes(m_dataset2);
-
-    if (rows.isEmpty())
+    if (!result.success)
     {
-        setError(QStringLiteral("Dataset 2 does not contain duplicate rows."));
-        return false;
-    }
+        setError(
+            result.errorMessage
+            );
 
-    if (!m_dataset2.removeRows(rows))
-    {
-        setError(QStringLiteral("Dataset 2 duplicate rows could not be removed."));
         return false;
     }
 
     m_dataset2Modified = true;
-    m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+
+    m_dataset2ColumnModel.setColumns(
+        m_dataset2.columns()
+        );
 
     clearDataset2Quality();
     clearDataset2Outliers();
     clearDataset2OutlierCleaning();
+    clearDataset2Eda();
+    clearDataset2Correlation();
     clearAnalysis();
 
     emit dataset2Changed();
@@ -359,41 +371,35 @@ bool AppController::removeDataset2Duplicates()
     return true;
 }
 
-// =========================================================
-// MISSING ROW CLEANING
-// =========================================================
-
 bool AppController::removeDataset1MissingRows()
 {
     clearError();
 
-    if (m_dataset1.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 1 is not loaded."));
-        return false;
-    }
+    const CleaningResult result =
+        m_cleaningEngine.removeRowsWithMissingValues(
+            m_dataset1
+            );
 
-    const QVector<int> rows =
-        m_analysisEngine.findRowsWithMissingValues(m_dataset1);
-
-    if (rows.isEmpty())
+    if (!result.success)
     {
-        setError(QStringLiteral("Dataset 1 does not contain rows with missing values."));
-        return false;
-    }
+        setError(
+            result.errorMessage
+            );
 
-    if (!m_dataset1.removeRows(rows))
-    {
-        setError(QStringLiteral("Dataset 1 rows with missing values could not be removed."));
         return false;
     }
 
     m_dataset1Modified = true;
-    m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+
+    m_dataset1ColumnModel.setColumns(
+        m_dataset1.columns()
+        );
 
     clearDataset1Quality();
     clearDataset1Outliers();
     clearDataset1OutlierCleaning();
+    clearDataset1Eda();
+    clearDataset1Correlation();
     clearAnalysis();
 
     emit dataset1Changed();
@@ -407,33 +413,31 @@ bool AppController::removeDataset2MissingRows()
 {
     clearError();
 
-    if (m_dataset2.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 2 is not loaded."));
-        return false;
-    }
+    const CleaningResult result =
+        m_cleaningEngine.removeRowsWithMissingValues(
+            m_dataset2
+            );
 
-    const QVector<int> rows =
-        m_analysisEngine.findRowsWithMissingValues(m_dataset2);
-
-    if (rows.isEmpty())
+    if (!result.success)
     {
-        setError(QStringLiteral("Dataset 2 does not contain rows with missing values."));
-        return false;
-    }
+        setError(
+            result.errorMessage
+            );
 
-    if (!m_dataset2.removeRows(rows))
-    {
-        setError(QStringLiteral("Dataset 2 rows with missing values could not be removed."));
         return false;
     }
 
     m_dataset2Modified = true;
-    m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+
+    m_dataset2ColumnModel.setColumns(
+        m_dataset2.columns()
+        );
 
     clearDataset2Quality();
     clearDataset2Outliers();
     clearDataset2OutlierCleaning();
+    clearDataset2Eda();
+    clearDataset2Correlation();
     clearAnalysis();
 
     emit dataset2Changed();
@@ -443,454 +447,251 @@ bool AppController::removeDataset2MissingRows()
     return true;
 }
 
-// =========================================================
-// MISSING FILL WRAPPERS
-// =========================================================
-
-bool AppController::fillDataset1MissingWithMean(const QString &columnName)
-{
-    return fillMissingWithMean(
-        m_dataset1,
-        m_dataset1ColumnModel,
-        columnName,
-        true
-        );
-}
-
-bool AppController::fillDataset2MissingWithMean(const QString &columnName)
-{
-    return fillMissingWithMean(
-        m_dataset2,
-        m_dataset2ColumnModel,
-        columnName,
-        false
-        );
-}
-
-bool AppController::fillDataset1MissingWithMedian(const QString &columnName)
-{
-    return fillMissingWithMedian(
-        m_dataset1,
-        m_dataset1ColumnModel,
-        columnName,
-        true
-        );
-}
-
-bool AppController::fillDataset2MissingWithMedian(const QString &columnName)
-{
-    return fillMissingWithMedian(
-        m_dataset2,
-        m_dataset2ColumnModel,
-        columnName,
-        false
-        );
-}
-
-bool AppController::fillDataset1MissingWithMode(const QString &columnName)
-{
-    return fillMissingWithMode(
-        m_dataset1,
-        m_dataset1ColumnModel,
-        columnName,
-        true
-        );
-}
-
-bool AppController::fillDataset2MissingWithMode(const QString &columnName)
-{
-    return fillMissingWithMode(
-        m_dataset2,
-        m_dataset2ColumnModel,
-        columnName,
-        false
-        );
-}
-
-bool AppController::fillMissingWithMean(
-    DataSet &dataSet,
-    ColumnModel &columnModel,
-    const QString &columnName,
-    bool dataset1
+bool AppController::fillDataset1MissingWithMean(
+    const QString &columnName
     )
 {
     clearError();
 
-    if (dataSet.isEmpty())
+    const CleaningResult result =
+        m_cleaningEngine.fillMissingWithMean(
+            m_dataset1,
+            columnName
+            );
+
+    if (!result.success)
     {
-        setError(dataset1
-                     ? QStringLiteral("Dataset 1 is not loaded.")
-                     : QStringLiteral("Dataset 2 is not loaded."));
+        setError(
+            result.errorMessage
+            );
+
         return false;
     }
 
-    const ColumnInfo *column = dataSet.findColumn(columnName);
+    m_dataset1Modified = true;
 
-    if (!column)
-    {
-        setError(QStringLiteral("Selected column was not found."));
-        return false;
-    }
+    m_dataset1ColumnModel.setColumns(
+        m_dataset1.columns()
+        );
 
-    if (!column->isNumeric())
-    {
-        setError(QStringLiteral("Mean filling can only be applied to numeric columns."));
-        return false;
-    }
-
-    QVector<QVariant> values = column->values();
-
-    double total = 0.0;
-    int validCount = 0;
-    int missingCount = 0;
-
-    for (const QVariant &value : values)
-    {
-        const bool missing =
-            !value.isValid() ||
-            value.isNull() ||
-            (value.type() == QVariant::String &&
-             value.toString().trimmed().isEmpty());
-
-        if (missing)
-        {
-            ++missingCount;
-            continue;
-        }
-
-        bool ok = false;
-        const double number = value.toDouble(&ok);
-
-        if (ok && std::isfinite(number))
-        {
-            total += number;
-            ++validCount;
-        }
-    }
-
-    if (missingCount == 0)
-    {
-        setError(QStringLiteral("Selected column does not contain missing values."));
-        return false;
-    }
-
-    if (validCount == 0)
-    {
-        setError(QStringLiteral("Mean cannot be calculated."));
-        return false;
-    }
-
-    const double mean = total / static_cast<double>(validCount);
-
-    for (int i = 0; i < values.size(); ++i)
-    {
-        const QVariant &value = values.at(i);
-
-        const bool missing =
-            !value.isValid() ||
-            value.isNull() ||
-            (value.type() == QVariant::String &&
-             value.toString().trimmed().isEmpty());
-
-        if (missing)
-            values[i] = mean;
-    }
-
-    if (!dataSet.setColumnValues(columnName, values))
-    {
-        setError(QStringLiteral("Column could not be updated."));
-        return false;
-    }
-
-    if (dataset1)
-        m_dataset1Modified = true;
-    else
-        m_dataset2Modified = true;
-
-    columnModel.setColumns(dataSet.columns());
-
-    if (dataset1)
-    {
-        clearDataset1Quality();
-        clearDataset1Outliers();
-        clearDataset1OutlierCleaning();
-        emit dataset1Changed();
-    }
-    else
-    {
-        clearDataset2Quality();
-        clearDataset2Outliers();
-        clearDataset2OutlierCleaning();
-        emit dataset2Changed();
-    }
-
+    clearDataset1Quality();
+    clearDataset1Outliers();
+    clearDataset1OutlierCleaning();
+    clearDataset1Eda();
+    clearDataset1Correlation();
     clearAnalysis();
+
+    emit dataset1Changed();
+
     tryGenerateMappings();
 
     return true;
 }
 
-bool AppController::fillMissingWithMedian(
-    DataSet &dataSet,
-    ColumnModel &columnModel,
-    const QString &columnName,
-    bool dataset1
+bool AppController::fillDataset2MissingWithMean(
+    const QString &columnName
     )
 {
     clearError();
 
-    if (dataSet.isEmpty())
+    const CleaningResult result =
+        m_cleaningEngine.fillMissingWithMean(
+            m_dataset2,
+            columnName
+            );
+
+    if (!result.success)
     {
-        setError(dataset1
-                     ? QStringLiteral("Dataset 1 is not loaded.")
-                     : QStringLiteral("Dataset 2 is not loaded."));
+        setError(
+            result.errorMessage
+            );
+
         return false;
     }
 
-    const ColumnInfo *column = dataSet.findColumn(columnName);
+    m_dataset2Modified = true;
 
-    if (!column)
-    {
-        setError(QStringLiteral("Selected column was not found."));
-        return false;
-    }
+    m_dataset2ColumnModel.setColumns(
+        m_dataset2.columns()
+        );
 
-    if (!column->isNumeric())
-    {
-        setError(QStringLiteral("Median filling can only be applied to numeric columns."));
-        return false;
-    }
-
-    QVector<QVariant> values = column->values();
-    QVector<double> numericValues;
-
-    int missingCount = 0;
-
-    for (const QVariant &value : values)
-    {
-        const bool missing =
-            !value.isValid() ||
-            value.isNull() ||
-            (value.type() == QVariant::String &&
-             value.toString().trimmed().isEmpty());
-
-        if (missing)
-        {
-            ++missingCount;
-            continue;
-        }
-
-        bool ok = false;
-        const double number = value.toDouble(&ok);
-
-        if (ok && std::isfinite(number))
-            numericValues.append(number);
-    }
-
-    if (missingCount == 0)
-    {
-        setError(QStringLiteral("Selected column does not contain missing values."));
-        return false;
-    }
-
-    if (numericValues.isEmpty())
-    {
-        setError(QStringLiteral("Median cannot be calculated."));
-        return false;
-    }
-
-    std::sort(numericValues.begin(), numericValues.end());
-
-    const int size = numericValues.size();
-    const int middle = size / 2;
-
-    const double median =
-        (size % 2 == 0)
-            ? (numericValues[middle - 1] + numericValues[middle]) / 2.0
-            : numericValues[middle];
-
-    for (int i = 0; i < values.size(); ++i)
-    {
-        const QVariant &value = values.at(i);
-
-        const bool missing =
-            !value.isValid() ||
-            value.isNull() ||
-            (value.type() == QVariant::String &&
-             value.toString().trimmed().isEmpty());
-
-        if (missing)
-            values[i] = median;
-    }
-
-    if (!dataSet.setColumnValues(columnName, values))
-    {
-        setError(QStringLiteral("Column could not be updated."));
-        return false;
-    }
-
-    if (dataset1)
-        m_dataset1Modified = true;
-    else
-        m_dataset2Modified = true;
-
-    columnModel.setColumns(dataSet.columns());
-
-    if (dataset1)
-    {
-        clearDataset1Quality();
-        clearDataset1Outliers();
-        clearDataset1OutlierCleaning();
-        emit dataset1Changed();
-    }
-    else
-    {
-        clearDataset2Quality();
-        clearDataset2Outliers();
-        clearDataset2OutlierCleaning();
-        emit dataset2Changed();
-    }
-
+    clearDataset2Quality();
+    clearDataset2Outliers();
+    clearDataset2OutlierCleaning();
+    clearDataset2Eda();
+    clearDataset2Correlation();
     clearAnalysis();
+
+    emit dataset2Changed();
+
     tryGenerateMappings();
 
     return true;
 }
 
-bool AppController::fillMissingWithMode(
-    DataSet &dataSet,
-    ColumnModel &columnModel,
-    const QString &columnName,
-    bool dataset1
+bool AppController::fillDataset1MissingWithMedian(
+    const QString &columnName
     )
 {
     clearError();
 
-    if (dataSet.isEmpty())
+    const CleaningResult result =
+        m_cleaningEngine.fillMissingWithMedian(
+            m_dataset1,
+            columnName
+            );
+
+    if (!result.success)
     {
-        setError(dataset1
-                     ? QStringLiteral("Dataset 1 is not loaded.")
-                     : QStringLiteral("Dataset 2 is not loaded."));
+        setError(
+            result.errorMessage
+            );
+
         return false;
     }
 
-    const ColumnInfo *column = dataSet.findColumn(columnName);
+    m_dataset1Modified = true;
 
-    if (!column)
-    {
-        setError(QStringLiteral("Selected column was not found."));
-        return false;
-    }
+    m_dataset1ColumnModel.setColumns(
+        m_dataset1.columns()
+        );
 
-    QVector<QVariant> values = column->values();
-
-    QMap<QString, int> frequency;
-    QMap<QString, QVariant> originalValues;
-
-    int missingCount = 0;
-
-    for (const QVariant &value : values)
-    {
-        const bool missing =
-            !value.isValid() ||
-            value.isNull() ||
-            (value.type() == QVariant::String &&
-             value.toString().trimmed().isEmpty());
-
-        if (missing)
-        {
-            ++missingCount;
-            continue;
-        }
-
-        const QString key =
-            QString::number(static_cast<int>(value.type())) +
-            QStringLiteral(":") +
-            value.toString();
-
-        frequency[key] += 1;
-        originalValues.insert(key, value);
-    }
-
-    if (missingCount == 0)
-    {
-        setError(QStringLiteral("Selected column does not contain missing values."));
-        return false;
-    }
-
-    if (frequency.isEmpty())
-    {
-        setError(QStringLiteral("Mode cannot be calculated."));
-        return false;
-    }
-
-    QString modeKey;
-    int maxCount = -1;
-
-    for (auto it = frequency.constBegin();
-         it != frequency.constEnd();
-         ++it)
-    {
-        if (it.value() > maxCount)
-        {
-            maxCount = it.value();
-            modeKey = it.key();
-        }
-    }
-
-    const QVariant modeValue = originalValues.value(modeKey);
-
-    for (int i = 0; i < values.size(); ++i)
-    {
-        const QVariant &value = values.at(i);
-
-        const bool missing =
-            !value.isValid() ||
-            value.isNull() ||
-            (value.type() == QVariant::String &&
-             value.toString().trimmed().isEmpty());
-
-        if (missing)
-            values[i] = modeValue;
-    }
-
-    if (!dataSet.setColumnValues(columnName, values))
-    {
-        setError(QStringLiteral("Column could not be updated."));
-        return false;
-    }
-
-    if (dataset1)
-        m_dataset1Modified = true;
-    else
-        m_dataset2Modified = true;
-
-    columnModel.setColumns(dataSet.columns());
-
-    if (dataset1)
-    {
-        clearDataset1Quality();
-        clearDataset1Outliers();
-        clearDataset1OutlierCleaning();
-        emit dataset1Changed();
-    }
-    else
-    {
-        clearDataset2Quality();
-        clearDataset2Outliers();
-        clearDataset2OutlierCleaning();
-        emit dataset2Changed();
-    }
-
+    clearDataset1Quality();
+    clearDataset1Outliers();
+    clearDataset1OutlierCleaning();
+    clearDataset1Eda();
+    clearDataset1Correlation();
     clearAnalysis();
+
+    emit dataset1Changed();
+
     tryGenerateMappings();
 
     return true;
 }
 
-// =========================================================
-// OUTLIER CLEANING
-// =========================================================
+bool AppController::fillDataset2MissingWithMedian(
+    const QString &columnName
+    )
+{
+    clearError();
+
+    const CleaningResult result =
+        m_cleaningEngine.fillMissingWithMedian(
+            m_dataset2,
+            columnName
+            );
+
+    if (!result.success)
+    {
+        setError(
+            result.errorMessage
+            );
+
+        return false;
+    }
+
+    m_dataset2Modified = true;
+
+    m_dataset2ColumnModel.setColumns(
+        m_dataset2.columns()
+        );
+
+    clearDataset2Quality();
+    clearDataset2Outliers();
+    clearDataset2OutlierCleaning();
+    clearDataset2Eda();
+    clearDataset2Correlation();
+    clearAnalysis();
+
+    emit dataset2Changed();
+
+    tryGenerateMappings();
+
+    return true;
+}
+
+bool AppController::fillDataset1MissingWithMode(
+    const QString &columnName
+    )
+{
+    clearError();
+
+    const CleaningResult result =
+        m_cleaningEngine.fillMissingWithMode(
+            m_dataset1,
+            columnName
+            );
+
+    if (!result.success)
+    {
+        setError(
+            result.errorMessage
+            );
+
+        return false;
+    }
+
+    m_dataset1Modified = true;
+
+    m_dataset1ColumnModel.setColumns(
+        m_dataset1.columns()
+        );
+
+    clearDataset1Quality();
+    clearDataset1Outliers();
+    clearDataset1OutlierCleaning();
+    clearDataset1Eda();
+    clearDataset1Correlation();
+    clearAnalysis();
+
+    emit dataset1Changed();
+
+    tryGenerateMappings();
+
+    return true;
+}
+
+bool AppController::fillDataset2MissingWithMode(
+    const QString &columnName
+    )
+{
+    clearError();
+
+    const CleaningResult result =
+        m_cleaningEngine.fillMissingWithMode(
+            m_dataset2,
+            columnName
+            );
+
+    if (!result.success)
+    {
+        setError(
+            result.errorMessage
+            );
+
+        return false;
+    }
+
+    m_dataset2Modified = true;
+
+    m_dataset2ColumnModel.setColumns(
+        m_dataset2.columns()
+        );
+
+    clearDataset2Quality();
+    clearDataset2Outliers();
+    clearDataset2OutlierCleaning();
+    clearDataset2Eda();
+    clearDataset2Correlation();
+    clearAnalysis();
+
+    emit dataset2Changed();
+
+    tryGenerateMappings();
+
+    return true;
+}
 
 bool AppController::removeDataset1Outliers(
     const QString &columnName,
@@ -925,16 +726,52 @@ bool AppController::applyDataset1OutlierAction(
     double parameter
     )
 {
-    return applyOutlierAction(
-        m_dataset1,
-        m_dataset1ColumnModel,
-        m_dataset1OutlierCleaningResult,
-        columnName,
-        method,
-        action,
-        parameter,
-        true
-        );
+    clearError();
+    clearDataset1OutlierCleaning();
+
+    const CleaningResult result =
+        m_cleaningEngine.applyOutlierAction(
+            m_dataset1,
+            columnName,
+            method,
+            action,
+            parameter
+            );
+
+    if (!result.success)
+    {
+        setError(
+            result.errorMessage
+            );
+
+        return false;
+    }
+
+    m_dataset1OutlierCleaningResult =
+        result.details;
+
+    if (result.modified)
+    {
+        m_dataset1Modified = true;
+
+        m_dataset1ColumnModel.setColumns(
+            m_dataset1.columns()
+            );
+
+        clearDataset1Quality();
+        clearDataset1Outliers();
+        clearDataset1Eda();
+        clearDataset1Correlation();
+        clearAnalysis();
+
+        emit dataset1Changed();
+
+        tryGenerateMappings();
+    }
+
+    emit dataset1OutlierCleaningChanged();
+
+    return true;
 }
 
 bool AppController::applyDataset2OutlierAction(
@@ -944,279 +781,52 @@ bool AppController::applyDataset2OutlierAction(
     double parameter
     )
 {
-    return applyOutlierAction(
-        m_dataset2,
-        m_dataset2ColumnModel,
-        m_dataset2OutlierCleaningResult,
-        columnName,
-        method,
-        action,
-        parameter,
-        false
-        );
-}
-
-bool AppController::applyOutlierAction(
-    DataSet &dataSet,
-    ColumnModel &columnModel,
-    QVariantMap &cleaningResult,
-    const QString &columnName,
-    const QString &method,
-    const QString &action,
-    double parameter,
-    bool dataset1
-    )
-{
     clearError();
+    clearDataset2OutlierCleaning();
 
-    if (!cleaningResult.isEmpty())
+    const CleaningResult result =
+        m_cleaningEngine.applyOutlierAction(
+            m_dataset2,
+            columnName,
+            method,
+            action,
+            parameter
+            );
+
+    if (!result.success)
     {
-        cleaningResult.clear();
+        setError(
+            result.errorMessage
+            );
 
-        if (dataset1)
-            emit dataset1OutlierCleaningChanged();
-        else
-            emit dataset2OutlierCleaningChanged();
-    }
-
-    if (dataSet.isEmpty())
-    {
-        setError(dataset1
-                     ? QStringLiteral("Dataset 1 is not loaded.")
-                     : QStringLiteral("Dataset 2 is not loaded."));
         return false;
     }
 
-    if (!std::isfinite(parameter) || parameter <= 0.0)
+    m_dataset2OutlierCleaningResult =
+        result.details;
+
+    if (result.modified)
     {
-        setError(QStringLiteral("Outlier parameter must be a finite positive value."));
-        return false;
-    }
+        m_dataset2Modified = true;
 
-    const ColumnInfo *column = dataSet.findColumn(columnName);
-
-    if (!column)
-    {
-        setError(QStringLiteral("Selected column was not found."));
-        return false;
-    }
-
-    if (!column->isNumeric())
-    {
-        setError(QStringLiteral("Outlier operations can only be applied to numeric columns."));
-        return false;
-    }
-
-    QVector<int> outlierRows;
-    QVariantList outlierValues;
-    QVariantMap resultMap;
-
-    resultMap.insert(QStringLiteral("columnName"), columnName);
-    resultMap.insert(QStringLiteral("method"), method);
-    resultMap.insert(QStringLiteral("action"), action);
-    resultMap.insert(QStringLiteral("parameter"), parameter);
-
-    if (method.compare(QStringLiteral("IQR"), Qt::CaseInsensitive) == 0)
-    {
-        const ColumnOutlierAnalysisResult result =
-            m_analysisEngine.analyzeColumnOutliers(
-                dataSet,
-                columnName,
-                parameter
-                );
-
-        if (!result.success)
-        {
-            setError(result.errorMessage);
-            return false;
-        }
-
-        outlierRows =
-            m_analysisEngine.findIqrOutlierRowIndexes(
-                dataSet,
-                columnName,
-                parameter
-                );
-
-        for (double value : result.outlierResult.outlierValues)
-            outlierValues.append(value);
-
-        resultMap.insert(
-            QStringLiteral("validValueCount"),
-            result.outlierResult.validValueCount
+        m_dataset2ColumnModel.setColumns(
+            m_dataset2.columns()
             );
 
-        resultMap.insert(
-            QStringLiteral("lowerBound"),
-            result.outlierResult.lowerBound
-            );
+        clearDataset2Quality();
+        clearDataset2Outliers();
+        clearDataset2Eda();
+        clearDataset2Correlation();
+        clearAnalysis();
 
-        resultMap.insert(
-            QStringLiteral("upperBound"),
-            result.outlierResult.upperBound
-            );
-
-        resultMap.insert(
-            QStringLiteral("outlierPercentage"),
-            result.outlierResult.outlierPercentage
-            );
-    }
-    else if (method.compare(
-                 QStringLiteral("Z-Score"),
-                 Qt::CaseInsensitive) == 0)
-    {
-        const ZScoreOutlierResult result =
-            m_analysisEngine.analyzeColumnZScoreOutliers(
-                dataSet,
-                columnName,
-                parameter
-                );
-
-        if (!result.success)
-        {
-            setError(result.errorMessage);
-            return false;
-        }
-
-        outlierRows = result.outlierRowIndexes;
-
-        for (double value : result.outlierValues)
-            outlierValues.append(value);
-
-        resultMap.insert(
-            QStringLiteral("validValueCount"),
-            result.validValueCount
-            );
-
-        resultMap.insert(
-            QStringLiteral("mean"),
-            result.mean
-            );
-
-        resultMap.insert(
-            QStringLiteral("standardDeviation"),
-            result.standardDeviation
-            );
-
-        resultMap.insert(
-            QStringLiteral("threshold"),
-            result.threshold
-            );
-
-        resultMap.insert(
-            QStringLiteral("outlierPercentage"),
-            result.outlierPercentage
-            );
-    }
-    else
-    {
-        setError(QStringLiteral("Unknown outlier detection method."));
-        return false;
-    }
-
-    QVariantList rowList;
-
-    for (int index : outlierRows)
-        rowList.append(index + 1);
-
-    resultMap.insert(QStringLiteral("outlierCount"), outlierRows.size());
-    resultMap.insert(QStringLiteral("outlierValues"), outlierValues);
-    resultMap.insert(QStringLiteral("markedRows"), rowList);
-
-    if (action.compare(
-            QStringLiteral("Keep"),
-            Qt::CaseInsensitive) == 0)
-    {
-        resultMap.insert(
-            QStringLiteral("message"),
-            QStringLiteral("Outliers were detected and kept unchanged.")
-            );
-
-        cleaningResult = resultMap;
-
-        if (dataset1)
-            emit dataset1OutlierCleaningChanged();
-        else
-            emit dataset2OutlierCleaningChanged();
-
-        return true;
-    }
-
-    if (action.compare(
-            QStringLiteral("Mark"),
-            Qt::CaseInsensitive) == 0)
-    {
-        resultMap.insert(
-            QStringLiteral("message"),
-            QStringLiteral("Outliers were marked. Dataset values were not changed.")
-            );
-
-        cleaningResult = resultMap;
-
-        if (dataset1)
-            emit dataset1OutlierCleaningChanged();
-        else
-            emit dataset2OutlierCleaningChanged();
-
-        return true;
-    }
-
-    if (action.compare(
-            QStringLiteral("Remove"),
-            Qt::CaseInsensitive) == 0)
-    {
-        if (outlierRows.isEmpty())
-        {
-            setError(QStringLiteral("Selected column does not contain outliers."));
-            return false;
-        }
-
-        if (!dataSet.removeRows(outlierRows))
-        {
-            setError(QStringLiteral("Outlier rows could not be removed."));
-            return false;
-        }
-
-        if (dataset1)
-            m_dataset1Modified = true;
-        else
-            m_dataset2Modified = true;
-
-        columnModel.setColumns(dataSet.columns());
-
-        resultMap.insert(
-            QStringLiteral("message"),
-            QStringLiteral("%1 outlier row(s) removed.")
-                .arg(outlierRows.size())
-            );
-
-        cleaningResult = resultMap;
-
-        if (dataset1)
-        {
-            clearDataset1Quality();
-            clearDataset1Outliers();
-            clearAnalysis();
-
-            emit dataset1Changed();
-            emit dataset1OutlierCleaningChanged();
-        }
-        else
-        {
-            clearDataset2Quality();
-            clearDataset2Outliers();
-            clearAnalysis();
-
-            emit dataset2Changed();
-            emit dataset2OutlierCleaningChanged();
-        }
+        emit dataset2Changed();
 
         tryGenerateMappings();
-        return true;
     }
 
-    setError(QStringLiteral("Unknown outlier action."));
-    return false;
+    emit dataset2OutlierCleaningChanged();
+
+    return true;
 }
 
 void AppController::clearDataset1OutlierCleaning()
@@ -1225,6 +835,7 @@ void AppController::clearDataset1OutlierCleaning()
         return;
 
     m_dataset1OutlierCleaningResult.clear();
+
     emit dataset1OutlierCleaningChanged();
 }
 
@@ -1234,6 +845,7 @@ void AppController::clearDataset2OutlierCleaning()
         return;
 
     m_dataset2OutlierCleaningResult.clear();
+
     emit dataset2OutlierCleaningChanged();
 }
 
@@ -1361,6 +973,559 @@ void AppController::clearAnalysis()
 }
 
 // =========================================================
+// EDA SUMMARY
+// =========================================================
+
+bool AppController::analyzeDataset1Eda(
+    const QString &columnName
+    )
+{
+    clearError();
+    clearDataset1Eda();
+
+    const EdaOperationResult result =
+        m_edaEngine.analyzeSummary(
+            m_dataset1,
+            columnName
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    m_dataset1EdaResult = result.data;
+    m_dataset1EdaAvailable = true;
+
+    emit dataset1EdaChanged();
+
+    return true;
+}
+
+bool AppController::analyzeDataset2Eda(
+    const QString &columnName
+    )
+{
+    clearError();
+    clearDataset2Eda();
+
+    const EdaOperationResult result =
+        m_edaEngine.analyzeSummary(
+            m_dataset2,
+            columnName
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    m_dataset2EdaResult = result.data;
+    m_dataset2EdaAvailable = true;
+
+    emit dataset2EdaChanged();
+
+    return true;
+}
+
+void AppController::clearDataset1Eda()
+{
+    const bool hadResult =
+        m_dataset1EdaAvailable ||
+        !m_dataset1EdaResult.isEmpty();
+
+    m_dataset1EdaResult.clear();
+    m_dataset1EdaAvailable = false;
+
+    if (hadResult)
+        emit dataset1EdaChanged();
+}
+
+void AppController::clearDataset2Eda()
+{
+    const bool hadResult =
+        m_dataset2EdaAvailable ||
+        !m_dataset2EdaResult.isEmpty();
+
+    m_dataset2EdaResult.clear();
+    m_dataset2EdaAvailable = false;
+
+    if (hadResult)
+        emit dataset2EdaChanged();
+}
+
+// =========================================================
+// CORRELATION ANALYSIS
+// =========================================================
+
+bool AppController::analyzeDataset1Correlation(
+    const QString &firstColumnName,
+    const QString &secondColumnName
+    )
+{
+    clearError();
+    clearDataset1Correlation();
+
+    const EdaOperationResult result =
+        m_edaEngine.analyzeCorrelation(
+            m_dataset1,
+            firstColumnName,
+            secondColumnName
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    m_dataset1CorrelationResult = result.data;
+    m_dataset1CorrelationAvailable = true;
+
+    emit dataset1CorrelationChanged();
+
+    return true;
+}
+
+bool AppController::analyzeDataset2Correlation(
+    const QString &firstColumnName,
+    const QString &secondColumnName
+    )
+{
+    clearError();
+    clearDataset2Correlation();
+
+    const EdaOperationResult result =
+        m_edaEngine.analyzeCorrelation(
+            m_dataset2,
+            firstColumnName,
+            secondColumnName
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    m_dataset2CorrelationResult = result.data;
+    m_dataset2CorrelationAvailable = true;
+
+    emit dataset2CorrelationChanged();
+
+    return true;
+}
+
+void AppController::clearDataset1Correlation()
+{
+    const bool hadResult =
+        m_dataset1CorrelationAvailable ||
+        !m_dataset1CorrelationResult.isEmpty();
+
+    m_dataset1CorrelationResult.clear();
+    m_dataset1CorrelationAvailable = false;
+
+    if (hadResult)
+        emit dataset1CorrelationChanged();
+}
+
+void AppController::clearDataset2Correlation()
+{
+    const bool hadResult =
+        m_dataset2CorrelationAvailable ||
+        !m_dataset2CorrelationResult.isEmpty();
+
+    m_dataset2CorrelationResult.clear();
+    m_dataset2CorrelationAvailable = false;
+
+    if (hadResult)
+        emit dataset2CorrelationChanged();
+}
+
+// =========================================================
+// VISUALIZATION
+// =========================================================
+
+QVariantMap AppController::createDataset1Histogram(
+    const QString &columnName,
+    int binCount
+    )
+{
+    clearError();
+
+    const HistogramResult result =
+        m_visualizationEngine.createHistogram(
+            m_dataset1,
+            columnName,
+            binCount
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return histogramToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset2Histogram(
+    const QString &columnName,
+    int binCount
+    )
+{
+    clearError();
+
+    const HistogramResult result =
+        m_visualizationEngine.createHistogram(
+            m_dataset2,
+            columnName,
+            binCount
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return histogramToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset1BoxPlot(
+    const QString &columnName,
+    double multiplier
+    )
+{
+    clearError();
+
+    const BoxPlotResult result =
+        m_visualizationEngine.createBoxPlot(
+            m_dataset1,
+            columnName,
+            multiplier
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return boxPlotToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset2BoxPlot(
+    const QString &columnName,
+    double multiplier
+    )
+{
+    clearError();
+
+    const BoxPlotResult result =
+        m_visualizationEngine.createBoxPlot(
+            m_dataset2,
+            columnName,
+            multiplier
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return boxPlotToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset1TimeSeries(
+    const QString &xColumnName,
+    const QString &yColumnName
+    )
+{
+    clearError();
+
+    const TimeSeriesResult result =
+        m_visualizationEngine.createTimeSeries(
+            m_dataset1,
+            xColumnName,
+            yColumnName
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return timeSeriesToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset2TimeSeries(
+    const QString &xColumnName,
+    const QString &yColumnName
+    )
+{
+    clearError();
+
+    const TimeSeriesResult result =
+        m_visualizationEngine.createTimeSeries(
+            m_dataset2,
+            xColumnName,
+            yColumnName
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return timeSeriesToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset1Distribution(
+    const QString &columnName,
+    int binCount
+    )
+{
+    clearError();
+
+    const DistributionResult result =
+        m_visualizationEngine.createDistribution(
+            m_dataset1,
+            columnName,
+            binCount
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return distributionToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset2Distribution(
+    const QString &columnName,
+    int binCount
+    )
+{
+    clearError();
+
+    const DistributionResult result =
+        m_visualizationEngine.createDistribution(
+            m_dataset2,
+            columnName,
+            binCount
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return distributionToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset1CorrelationMatrix()
+{
+    clearError();
+
+    const CorrelationMatrixResult result =
+        m_visualizationEngine.createCorrelationMatrix(
+            m_dataset1
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return correlationMatrixToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset2CorrelationMatrix()
+{
+    clearError();
+
+    const CorrelationMatrixResult result =
+        m_visualizationEngine.createCorrelationMatrix(
+            m_dataset2
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return correlationMatrixToVariantMap(result);
+}
+
+QVariantMap AppController::createDatasetComparisonChart(
+    const QString &sourceColumnName,
+    const QString &targetColumnName
+    )
+{
+    clearError();
+
+    const ComparisonChartResult result =
+        m_visualizationEngine.createComparisonChart(
+            m_dataset1,
+            sourceColumnName,
+            m_dataset2,
+            targetColumnName
+            );
+
+    if (!result.success)
+        setError(result.errorMessage);
+
+    return comparisonChartToVariantMap(result);
+}
+
+// =========================================================
+// EXPORT
+// =========================================================
+
+bool AppController::exportDataset1ToCsv(const QString &filePath)
+{
+    clearError();
+
+    if (m_dataset1.isEmpty())
+    {
+        setError(QStringLiteral("Dataset 1 is not loaded."));
+        return false;
+    }
+
+    const QString normalizedPath = normalizeFilePath(filePath);
+
+    const ExportResult result =
+        m_exportEngine.exportDataSetToCsv(
+            m_dataset1,
+            normalizedPath
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    return true;
+}
+
+bool AppController::exportDataset2ToCsv(const QString &filePath)
+{
+    clearError();
+
+    if (m_dataset2.isEmpty())
+    {
+        setError(QStringLiteral("Dataset 2 is not loaded."));
+        return false;
+    }
+
+    const QString normalizedPath = normalizeFilePath(filePath);
+
+    const ExportResult result =
+        m_exportEngine.exportDataSetToCsv(
+            m_dataset2,
+            normalizedPath
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    return true;
+}
+
+bool AppController::exportDataset1ToJson(const QString &filePath)
+{
+    clearError();
+
+    if (m_dataset1.isEmpty())
+    {
+        setError(QStringLiteral("Dataset 1 is not loaded."));
+        return false;
+    }
+
+    const QString normalizedPath = normalizeFilePath(filePath);
+
+    const ExportResult result =
+        m_exportEngine.exportDataSetToJson(
+            m_dataset1,
+            normalizedPath
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    return true;
+}
+
+bool AppController::exportDataset2ToJson(const QString &filePath)
+{
+    clearError();
+
+    if (m_dataset2.isEmpty())
+    {
+        setError(QStringLiteral("Dataset 2 is not loaded."));
+        return false;
+    }
+
+    const QString normalizedPath = normalizeFilePath(filePath);
+
+    const ExportResult result =
+        m_exportEngine.exportDataSetToJson(
+            m_dataset2,
+            normalizedPath
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    return true;
+}
+
+bool AppController::exportDataset1ToXlsx(const QString &filePath)
+{
+    clearError();
+
+    if (m_dataset1.isEmpty())
+    {
+        setError(QStringLiteral("Dataset 1 is not loaded."));
+        return false;
+    }
+
+    const QString normalizedPath = normalizeFilePath(filePath);
+
+    const ExportResult result =
+        m_exportEngine.exportDataSetToXlsx(
+            m_dataset1,
+            normalizedPath
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    return true;
+}
+
+bool AppController::exportDataset2ToXlsx(const QString &filePath)
+{
+    clearError();
+
+    if (m_dataset2.isEmpty())
+    {
+        setError(QStringLiteral("Dataset 2 is not loaded."));
+        return false;
+    }
+
+    const QString normalizedPath = normalizeFilePath(filePath);
+
+    const ExportResult result =
+        m_exportEngine.exportDataSetToXlsx(
+            m_dataset2,
+            normalizedPath
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+        return false;
+    }
+
+    return true;
+}
+
+// =========================================================
 // QUALITY
 // =========================================================
 
@@ -1369,14 +1534,10 @@ bool AppController::analyzeDataset1Quality()
     clearError();
     clearDataset1Quality();
 
-    if (m_dataset1.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 1 is not loaded."));
-        return false;
-    }
-
-    const DatasetQualityResult result =
-        m_analysisEngine.analyzeDataQuality(m_dataset1);
+    const EdaOperationResult result =
+        m_edaEngine.analyzeQuality(
+            m_dataset1
+            );
 
     if (!result.success)
     {
@@ -1384,7 +1545,7 @@ bool AppController::analyzeDataset1Quality()
         return false;
     }
 
-    m_dataset1QualityResult = qualityToVariantMap(result);
+    m_dataset1QualityResult = result.data;
     m_dataset1QualityAvailable = true;
 
     emit dataset1QualityChanged();
@@ -1397,14 +1558,10 @@ bool AppController::analyzeDataset2Quality()
     clearError();
     clearDataset2Quality();
 
-    if (m_dataset2.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 2 is not loaded."));
-        return false;
-    }
-
-    const DatasetQualityResult result =
-        m_analysisEngine.analyzeDataQuality(m_dataset2);
+    const EdaOperationResult result =
+        m_edaEngine.analyzeQuality(
+            m_dataset2
+            );
 
     if (!result.success)
     {
@@ -1412,7 +1569,7 @@ bool AppController::analyzeDataset2Quality()
         return false;
     }
 
-    m_dataset2QualityResult = qualityToVariantMap(result);
+    m_dataset2QualityResult = result.data;
     m_dataset2QualityAvailable = true;
 
     emit dataset2QualityChanged();
@@ -1458,14 +1615,8 @@ bool AppController::analyzeDataset1Outliers(
     clearError();
     clearDataset1Outliers();
 
-    if (m_dataset1.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 1 is not loaded."));
-        return false;
-    }
-
-    const ColumnOutlierAnalysisResult result =
-        m_analysisEngine.analyzeColumnOutliers(
+    const EdaOperationResult result =
+        m_edaEngine.analyzeOutliers(
             m_dataset1,
             columnName,
             multiplier
@@ -1477,9 +1628,7 @@ bool AppController::analyzeDataset1Outliers(
         return false;
     }
 
-    m_dataset1OutlierResult =
-        outlierToVariantMap(result);
-
+    m_dataset1OutlierResult = result.data;
     m_dataset1OutlierAvailable = true;
 
     emit dataset1OutlierChanged();
@@ -1495,14 +1644,8 @@ bool AppController::analyzeDataset2Outliers(
     clearError();
     clearDataset2Outliers();
 
-    if (m_dataset2.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 2 is not loaded."));
-        return false;
-    }
-
-    const ColumnOutlierAnalysisResult result =
-        m_analysisEngine.analyzeColumnOutliers(
+    const EdaOperationResult result =
+        m_edaEngine.analyzeOutliers(
             m_dataset2,
             columnName,
             multiplier
@@ -1514,9 +1657,7 @@ bool AppController::analyzeDataset2Outliers(
         return false;
     }
 
-    m_dataset2OutlierResult =
-        outlierToVariantMap(result);
-
+    m_dataset2OutlierResult = result.data;
     m_dataset2OutlierAvailable = true;
 
     emit dataset2OutlierChanged();
@@ -1793,6 +1934,180 @@ void AppController::clearRawParse()
 // HELPERS
 // =========================================================
 
+QVariantMap AppController::histogramToVariantMap(
+    const HistogramResult &result
+    ) const
+{
+    QVariantMap map;
+
+    map.insert(QStringLiteral("success"), result.success);
+    map.insert(QStringLiteral("columnName"), result.columnName);
+    map.insert(QStringLiteral("errorMessage"), result.errorMessage);
+    map.insert(QStringLiteral("validValueCount"), result.validValueCount);
+    map.insert(QStringLiteral("binCount"), result.binCount);
+    map.insert(QStringLiteral("minimum"), result.minimum);
+    map.insert(QStringLiteral("maximum"), result.maximum);
+    map.insert(QStringLiteral("binWidth"), result.binWidth);
+
+    QVariantList lowerBounds;
+    QVariantList upperBounds;
+    QVariantList frequencies;
+
+    for (double value : result.binLowerBounds)
+        lowerBounds.append(value);
+
+    for (double value : result.binUpperBounds)
+        upperBounds.append(value);
+
+    for (int value : result.frequencies)
+        frequencies.append(value);
+
+    map.insert(QStringLiteral("binLowerBounds"), lowerBounds);
+    map.insert(QStringLiteral("binUpperBounds"), upperBounds);
+    map.insert(QStringLiteral("frequencies"), frequencies);
+
+    return map;
+}
+
+QVariantMap AppController::boxPlotToVariantMap(
+    const BoxPlotResult &result
+    ) const
+{
+    QVariantMap map;
+
+    map.insert(QStringLiteral("success"), result.success);
+    map.insert(QStringLiteral("columnName"), result.columnName);
+    map.insert(QStringLiteral("errorMessage"), result.errorMessage);
+    map.insert(QStringLiteral("validValueCount"), result.validValueCount);
+    map.insert(QStringLiteral("minimum"), result.minimum);
+    map.insert(QStringLiteral("q1"), result.q1);
+    map.insert(QStringLiteral("median"), result.median);
+    map.insert(QStringLiteral("q3"), result.q3);
+    map.insert(QStringLiteral("maximum"), result.maximum);
+    map.insert(QStringLiteral("iqr"), result.iqr);
+    map.insert(QStringLiteral("lowerBound"), result.lowerBound);
+    map.insert(QStringLiteral("upperBound"), result.upperBound);
+    map.insert(QStringLiteral("lowerWhisker"), result.lowerWhisker);
+    map.insert(QStringLiteral("upperWhisker"), result.upperWhisker);
+    map.insert(QStringLiteral("outlierCount"), result.outlierCount);
+
+    QVariantList outliers;
+
+    for (double value : result.outlierValues)
+        outliers.append(value);
+
+    map.insert(QStringLiteral("outlierValues"), outliers);
+
+    return map;
+}
+
+QVariantMap AppController::timeSeriesToVariantMap(
+    const TimeSeriesResult &result
+    ) const
+{
+    QVariantMap map;
+
+    map.insert(QStringLiteral("success"), result.success);
+    map.insert(QStringLiteral("xColumnName"), result.xColumnName);
+    map.insert(QStringLiteral("yColumnName"), result.yColumnName);
+    map.insert(QStringLiteral("errorMessage"), result.errorMessage);
+    map.insert(QStringLiteral("pointCount"), result.pointCount);
+
+    QVariantList xValues;
+    QVariantList yValues;
+
+    for (double value : result.xValues)
+        xValues.append(value);
+
+    for (double value : result.yValues)
+        yValues.append(value);
+
+    map.insert(QStringLiteral("xValues"), xValues);
+    map.insert(QStringLiteral("yValues"), yValues);
+
+    return map;
+}
+
+QVariantMap AppController::distributionToVariantMap(
+    const DistributionResult &result
+    ) const
+{
+    QVariantMap map;
+
+    map.insert(QStringLiteral("success"), result.success);
+    map.insert(QStringLiteral("columnName"), result.columnName);
+    map.insert(QStringLiteral("errorMessage"), result.errorMessage);
+    map.insert(QStringLiteral("validValueCount"), result.validValueCount);
+    map.insert(QStringLiteral("binCount"), result.binCount);
+
+    QVariantList centers;
+    QVariantList relativeFrequencies;
+
+    for (double value : result.centers)
+        centers.append(value);
+
+    for (double value : result.relativeFrequencies)
+        relativeFrequencies.append(value);
+
+    map.insert(QStringLiteral("centers"), centers);
+    map.insert(QStringLiteral("relativeFrequencies"), relativeFrequencies);
+
+    return map;
+}
+
+QVariantMap AppController::correlationMatrixToVariantMap(
+    const CorrelationMatrixResult &result
+    ) const
+{
+    QVariantMap map;
+
+    map.insert(QStringLiteral("success"), result.success);
+    map.insert(QStringLiteral("errorMessage"), result.errorMessage);
+    map.insert(QStringLiteral("columnCount"), result.columnCount);
+    map.insert(QStringLiteral("columnNames"), result.columnNames);
+
+    QVariantList values;
+
+    for (double value : result.values)
+        values.append(value);
+
+    map.insert(QStringLiteral("values"), values);
+
+    return map;
+}
+
+QVariantMap AppController::comparisonChartToVariantMap(
+    const ComparisonChartResult &result
+    ) const
+{
+    QVariantMap map;
+
+    map.insert(QStringLiteral("success"), result.success);
+    map.insert(QStringLiteral("sourceColumnName"), result.sourceColumnName);
+    map.insert(QStringLiteral("targetColumnName"), result.targetColumnName);
+    map.insert(QStringLiteral("errorMessage"), result.errorMessage);
+    map.insert(QStringLiteral("pointCount"), result.pointCount);
+
+    QVariantList indexes;
+    QVariantList sourceValues;
+    QVariantList targetValues;
+
+    for (double value : result.indexes)
+        indexes.append(value);
+
+    for (double value : result.sourceValues)
+        sourceValues.append(value);
+
+    for (double value : result.targetValues)
+        targetValues.append(value);
+
+    map.insert(QStringLiteral("indexes"), indexes);
+    map.insert(QStringLiteral("sourceValues"), sourceValues);
+    map.insert(QStringLiteral("targetValues"), targetValues);
+
+    return map;
+}
+
 QString AppController::normalizeFilePath(
     const QString &filePath
     ) const
@@ -1863,100 +2178,6 @@ QVariantMap AppController::statisticsToVariantMap(
     map.insert(QStringLiteral("q1"), statistics.q1);
     map.insert(QStringLiteral("q3"), statistics.q3);
     map.insert(QStringLiteral("iqr"), statistics.iqr);
-
-    return map;
-}
-
-QVariantMap AppController::qualityToVariantMap(
-    const DatasetQualityResult &quality
-    ) const
-{
-    QVariantMap map;
-
-    map.insert(QStringLiteral("rowCount"), quality.rowCount);
-    map.insert(QStringLiteral("columnCount"), quality.columnCount);
-    map.insert(QStringLiteral("totalMissingValues"), quality.totalMissingValues);
-    map.insert(QStringLiteral("missingPercentage"), quality.missingPercentage);
-
-    map.insert(
-        QStringLiteral("columnsWithMissingValues"),
-        quality.columnsWithMissingValues
-        );
-
-    map.insert(
-        QStringLiteral("columnsWithMissing"),
-        quality.columnsWithMissing
-        );
-
-    map.insert(QStringLiteral("duplicateRowCount"), quality.duplicateRowCount);
-    map.insert(QStringLiteral("duplicatePercentage"), quality.duplicatePercentage);
-
-    map.insert(
-        QStringLiteral("constantColumnCount"),
-        quality.constantColumnCount
-        );
-
-    map.insert(
-        QStringLiteral("constantColumns"),
-        quality.constantColumns
-        );
-
-    map.insert(
-        QStringLiteral("numericColumnCount"),
-        quality.numericColumnCount
-        );
-
-    map.insert(
-        QStringLiteral("nonNumericColumnCount"),
-        quality.nonNumericColumnCount
-        );
-
-    return map;
-}
-
-QVariantMap AppController::outlierToVariantMap(
-    const ColumnOutlierAnalysisResult &result
-    ) const
-{
-    QVariantMap map;
-
-    map.insert(QStringLiteral("columnName"), result.columnName);
-
-    map.insert(
-        QStringLiteral("validValueCount"),
-        result.outlierResult.validValueCount
-        );
-
-    map.insert(QStringLiteral("q1"), result.outlierResult.q1);
-    map.insert(QStringLiteral("q3"), result.outlierResult.q3);
-    map.insert(QStringLiteral("iqr"), result.outlierResult.iqr);
-
-    map.insert(
-        QStringLiteral("lowerBound"),
-        result.outlierResult.lowerBound
-        );
-
-    map.insert(
-        QStringLiteral("upperBound"),
-        result.outlierResult.upperBound
-        );
-
-    map.insert(
-        QStringLiteral("outlierCount"),
-        result.outlierResult.outlierCount
-        );
-
-    map.insert(
-        QStringLiteral("outlierPercentage"),
-        result.outlierResult.outlierPercentage
-        );
-
-    QVariantList outlierValues;
-
-    for (double value : result.outlierResult.outlierValues)
-        outlierValues.append(value);
-
-    map.insert(QStringLiteral("outlierValues"), outlierValues);
 
     return map;
 }

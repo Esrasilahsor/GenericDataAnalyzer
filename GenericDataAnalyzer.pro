@@ -1,4 +1,4 @@
-QT += core gui qml quick
+QT += core gui qml quick charts
 
 CONFIG += c++11
 
@@ -11,6 +11,8 @@ TARGET = GenericDataAnalyzer
 # =========================================================
 
 SOURCES += \
+    analysis/EdaEngine.cpp \
+    cleaning/CleaningEngine.cpp \
     main.cpp \
     backend/AppController.cpp \
     models/ParameterModel.cpp \
@@ -27,34 +29,37 @@ SOURCES += \
     analysis/AnalysisEngine.cpp \
     analysis/Statistics.cpp \
     analysis/ComparisonEngine.cpp \
+    visualization/VisualizationEngine.cpp \
+    export/ExportEngine.cpp \
     raw/FileRawDataSource.cpp \
+
 
 # =========================================================
 # HEADERS
 # =========================================================
 
 HEADERS += \
+    analysis/EdaEngine.h \
     backend/AppController.h \
+    cleaning/CleaningEngine.h \
     models/ParameterModel.h \
     parser/ColumnInfo.h \
     parser/DataSet.h \
     parser/DataType.h \
     parser/ExcelParser.h \
-    parser/ParameterDefinition.h \
-    parser/ParseStatus.h \
+    parser/ParserTypes.h \
     parser/ValidationResult.h \
     parser/MetadataValidator.h \
-    parser/BitExtractionResult.h \
     parser/RawDataBuffer.h \
     parser/BitExtractor.h \
-    parser/ParseStatus.h \
-    parser/ParsedParameter.h \
     parser/RawDataParser.h \
     models/ColumnModel.h \
     models/MappingModel.h \
     analysis/AnalysisEngine.h \
     analysis/Statistics.h \
     analysis/ComparisonEngine.h \
+    visualization/VisualizationEngine.h \
+    export/ExportEngine.h \
     raw/FileRawDataSource.h \
     raw/IRawDataSource.h \
     raw/RawDataSourceResult.h \

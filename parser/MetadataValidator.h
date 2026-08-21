@@ -1,8 +1,9 @@
 #ifndef METADATAVALIDATOR_H
 #define METADATAVALIDATOR_H
 
-#include "ParameterDefinition.h"
+#include "ParserTypes.h"
 #include "ValidationResult.h"
+
 
 class MetadataValidator
 {
@@ -35,5 +36,6 @@ private:
         const ParameterDefinition &definition,
         ValidationResult &result);
 };
+
 
 #endif // METADATAVALIDATOR_H

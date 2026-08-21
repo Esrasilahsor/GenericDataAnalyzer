@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Dialogs 1.3
+import QtCharts 2.15
 
 ApplicationWindow {
     id: window
@@ -15,6 +16,14 @@ ApplicationWindow {
 
     title: "Generic Data Analyzer"
     color: "#151922"
+
+    // =====================================================
+    // VISUALIZATION STATE
+    // =====================================================
+
+    property var dataset1VisualizationResult: ({})
+    property var dataset2VisualizationResult: ({})
+    property var comparisonVisualizationResult: ({})
 
     // =====================================================
     // HELPERS
@@ -49,6 +58,332 @@ ApplicationWindow {
         return value.join(", ")
     }
 
+    function correlationLabel(value) {
+        if (value === undefined || value === null)
+            return "-"
+
+        var number = Number(value)
+
+        if (number >= 0.70)
+            return "Strong positive correlation"
+
+        if (number >= 0.30)
+            return "Moderate positive correlation"
+
+        if (number > -0.30)
+            return "Weak / no linear correlation"
+
+        if (number > -0.70)
+            return "Moderate negative correlation"
+
+        return "Strong negative correlation"
+    }
+
+    function ensureExportExtension(fileUrl, extension) {
+        var path = String(fileUrl)
+
+        if (path.toLowerCase().endsWith(extension.toLowerCase()))
+            return path
+
+        return path + extension
+    }
+
+    function listMinimum(values, fallbackValue) {
+        if (values === undefined || values === null || values.length === 0)
+            return fallbackValue
+
+        var result = Number(values[0])
+
+        for (var i = 1; i < values.length; ++i)
+            result = Math.min(result, Number(values[i]))
+
+        return result
+    }
+
+    function listMaximum(values, fallbackValue) {
+        if (values === undefined || values === null || values.length === 0)
+            return fallbackValue
+
+        var result = Number(values[0])
+
+        for (var i = 1; i < values.length; ++i)
+            result = Math.max(result, Number(values[i]))
+
+        return result
+    }
+
+    function histogramLabels(result) {
+        if (!result || !result["success"])
+            return []
+
+        var lower = result["binLowerBounds"] || []
+        var upper = result["binUpperBounds"] || []
+        var labels = []
+
+        for (var i = 0; i < Math.min(lower.length, upper.length); ++i)
+            labels.push(Number(lower[i]).toFixed(1) + "–" + Number(upper[i]).toFixed(1))
+
+        return labels
+    }
+
+    function correlationCellColor(value) {
+        var number = Number(value)
+
+        if (number >= 0.70)
+            return "#24543E"
+
+        if (number >= 0.30)
+            return "#3C5A46"
+
+        if (number <= -0.70)
+            return "#64343D"
+
+        if (number <= -0.30)
+            return "#573E46"
+
+        return "#343C49"
+    }
+
+    function drawAxes(ctx, width, height, left, top, right, bottom) {
+        ctx.strokeStyle = "#667085"
+        ctx.lineWidth = 1
+
+        ctx.beginPath()
+        ctx.moveTo(left, top)
+        ctx.lineTo(left, height - bottom)
+        ctx.lineTo(width - right, height - bottom)
+        ctx.stroke()
+    }
+
+    function drawHistogram(canvas, ctx, result) {
+        var width = canvas.width
+        var height = canvas.height
+
+        ctx.clearRect(0, 0, width, height)
+
+        var frequencies = result["frequencies"] || []
+        if (frequencies.length === 0)
+            return
+
+        var left = 45
+        var top = 20
+        var right = 20
+        var bottom = 48
+
+        drawAxes(ctx, width, height, left, top, right, bottom)
+
+        var maxFrequency = Math.max(1, listMaximum(frequencies, 1))
+        var plotWidth = width - left - right
+        var plotHeight = height - top - bottom
+        var barWidth = plotWidth / frequencies.length
+
+        for (var i = 0; i < frequencies.length; ++i) {
+            var value = Number(frequencies[i])
+            var barHeight = (value / maxFrequency) * (plotHeight - 12)
+
+            ctx.fillStyle = "#6EA8E5"
+            ctx.fillRect(
+                        left + i * barWidth + 2,
+                        height - bottom - barHeight,
+                        Math.max(2, barWidth - 4),
+                        barHeight)
+
+            ctx.fillStyle = "#D7DCE5"
+            ctx.font = "11px sans-serif"
+            ctx.textAlign = "center"
+            ctx.fillText(
+                        String(value),
+                        left + (i + 0.5) * barWidth,
+                        height - bottom - barHeight - 4)
+        }
+
+        var labels = histogramLabels(result)
+        ctx.fillStyle = "#9FA8B8"
+        ctx.font = "9px sans-serif"
+        ctx.textAlign = "center"
+
+        for (var j = 0; j < labels.length; ++j) {
+            if (labels.length <= 6 || j % 2 === 0) {
+                ctx.save()
+                ctx.translate(left + (j + 0.5) * barWidth, height - bottom + 12)
+                ctx.rotate(-0.45)
+                ctx.fillText(labels[j], 0, 0)
+                ctx.restore()
+            }
+        }
+    }
+
+    function drawBoxPlot(canvas, ctx, result) {
+        var width = canvas.width
+        var height = canvas.height
+
+        ctx.clearRect(0, 0, width, height)
+
+        var minimum = Number(result["minimum"])
+        var maximum = Number(result["maximum"])
+        var q1 = Number(result["q1"])
+        var median = Number(result["median"])
+        var q3 = Number(result["q3"])
+        var lowerWhisker = Number(result["lowerWhisker"])
+        var upperWhisker = Number(result["upperWhisker"])
+        var outliers = result["outlierValues"] || []
+
+        var left = 55
+        var right = 35
+        var centerY = height / 2
+        var boxHeight = 70
+
+        var range = maximum - minimum
+        if (range === 0)
+            range = 1
+
+        function xFor(value) {
+            return left + ((value - minimum) / range) * (width - left - right)
+        }
+
+        ctx.strokeStyle = "#D7DCE5"
+        ctx.lineWidth = 2
+
+        ctx.beginPath()
+        ctx.moveTo(xFor(lowerWhisker), centerY)
+        ctx.lineTo(xFor(q1), centerY)
+        ctx.moveTo(xFor(q3), centerY)
+        ctx.lineTo(xFor(upperWhisker), centerY)
+        ctx.stroke()
+
+        ctx.beginPath()
+        ctx.moveTo(xFor(lowerWhisker), centerY - 18)
+        ctx.lineTo(xFor(lowerWhisker), centerY + 18)
+        ctx.moveTo(xFor(upperWhisker), centerY - 18)
+        ctx.lineTo(xFor(upperWhisker), centerY + 18)
+        ctx.stroke()
+
+        ctx.fillStyle = "#31506D"
+        ctx.strokeStyle = "#9CCBFF"
+        ctx.fillRect(xFor(q1), centerY - boxHeight / 2,
+                     Math.max(2, xFor(q3) - xFor(q1)), boxHeight)
+        ctx.strokeRect(xFor(q1), centerY - boxHeight / 2,
+                       Math.max(2, xFor(q3) - xFor(q1)), boxHeight)
+
+        ctx.strokeStyle = "#FFE29A"
+        ctx.beginPath()
+        ctx.moveTo(xFor(median), centerY - boxHeight / 2)
+        ctx.lineTo(xFor(median), centerY + boxHeight / 2)
+        ctx.stroke()
+
+        ctx.fillStyle = "#FFB4AB"
+        for (var i = 0; i < outliers.length; ++i) {
+            ctx.beginPath()
+            ctx.arc(xFor(Number(outliers[i])), centerY, 5, 0, Math.PI * 2)
+            ctx.fill()
+        }
+
+        ctx.fillStyle = "#AAB2C0"
+        ctx.font = "11px sans-serif"
+        ctx.textAlign = "center"
+        ctx.fillText(formatNumber(lowerWhisker), xFor(lowerWhisker), centerY + 62)
+        ctx.fillText("Q1 " + formatNumber(q1), xFor(q1), centerY - 52)
+        ctx.fillText("Median " + formatNumber(median), xFor(median), centerY + 62)
+        ctx.fillText("Q3 " + formatNumber(q3), xFor(q3), centerY - 52)
+        ctx.fillText(formatNumber(upperWhisker), xFor(upperWhisker), centerY + 62)
+    }
+
+    function drawLineChart(canvas, ctx, xValues, yValues, secondValues) {
+        var width = canvas.width
+        var height = canvas.height
+
+        ctx.clearRect(0, 0, width, height)
+
+        if (!xValues || !yValues || xValues.length === 0 || yValues.length === 0)
+            return
+
+        var left = 55
+        var top = 20
+        var right = 25
+        var bottom = 40
+
+        drawAxes(ctx, width, height, left, top, right, bottom)
+
+        var xMin = listMinimum(xValues, 0)
+        var xMax = listMaximum(xValues, 1)
+        var yMin = listMinimum(yValues, 0)
+        var yMax = listMaximum(yValues, 1)
+
+        if (secondValues && secondValues.length > 0) {
+            yMin = Math.min(yMin, listMinimum(secondValues, yMin))
+            yMax = Math.max(yMax, listMaximum(secondValues, yMax))
+        }
+
+        if (xMax === xMin)
+            xMax = xMin + 1
+
+        if (yMax === yMin)
+            yMax = yMin + 1
+
+        function px(x) {
+            return left + ((Number(x) - xMin) / (xMax - xMin)) * (width - left - right)
+        }
+
+        function py(y) {
+            return height - bottom -
+                    ((Number(y) - yMin) / (yMax - yMin)) * (height - top - bottom)
+        }
+
+        function drawSeries(values, stroke) {
+            ctx.strokeStyle = stroke
+            ctx.lineWidth = 2
+            ctx.beginPath()
+
+            for (var i = 0; i < Math.min(xValues.length, values.length); ++i) {
+                if (i === 0)
+                    ctx.moveTo(px(xValues[i]), py(values[i]))
+                else
+                    ctx.lineTo(px(xValues[i]), py(values[i]))
+            }
+
+            ctx.stroke()
+        }
+
+        drawSeries(yValues, "#9CCBFF")
+
+        if (secondValues && secondValues.length > 0)
+            drawSeries(secondValues, "#D2B4FF")
+
+        ctx.fillStyle = "#AAB2C0"
+        ctx.font = "11px sans-serif"
+        ctx.textAlign = "left"
+        ctx.fillText(formatNumber(yMax), 4, top + 8)
+        ctx.fillText(formatNumber(yMin), 4, height - bottom)
+    }
+
+    function drawDistribution(canvas, ctx, result) {
+        drawLineChart(
+                    canvas,
+                    ctx,
+                    result["centers"] || [],
+                    result["relativeFrequencies"] || [],
+                    [])
+    }
+
+    function drawVisualization(canvas, ctx, type, result) {
+        if (!result || !result["success"]) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+            return
+        }
+
+        if (type === "Histogram")
+            drawHistogram(canvas, ctx, result)
+        else if (type === "Box Plot")
+            drawBoxPlot(canvas, ctx, result)
+        else if (type === "Time Series")
+            drawLineChart(canvas, ctx,
+                          result["xValues"] || [],
+                          result["yValues"] || [],
+                          [])
+        else if (type === "Distribution")
+            drawDistribution(canvas, ctx, result)
+    }
+
     // =====================================================
     // FILE DIALOGS
     // =====================================================
@@ -59,7 +394,10 @@ ApplicationWindow {
         title: "Select Dataset 1"
 
         nameFilters: [
+            "Supported Data Files (*.xlsx *.csv *.txt)",
             "Excel Files (*.xlsx)",
+            "CSV Files (*.csv)",
+            "Text Files (*.txt)",
             "All Files (*)"
         ]
 
@@ -82,6 +420,12 @@ ApplicationWindow {
             dataset1CleaningOutlierColumn.currentIndex = -1
             dataset1CleaningOutlierMethod.currentIndex = 0
             dataset1CleaningOutlierAction.currentIndex = 0
+            dataset1EdaColumn.currentIndex = -1
+            dataset1CorrelationColumnA.currentIndex = -1
+            dataset1CorrelationColumnB.currentIndex = -1
+            dataset1VisualizationColumn.currentIndex = -1
+            dataset1TimeXColumn.currentIndex = -1
+            dataset1TimeYColumn.currentIndex = -1
         }
     }
 
@@ -91,7 +435,10 @@ ApplicationWindow {
         title: "Select Dataset 2"
 
         nameFilters: [
+            "Supported Data Files (*.xlsx *.csv *.txt)",
             "Excel Files (*.xlsx)",
+            "CSV Files (*.csv)",
+            "Text Files (*.txt)",
             "All Files (*)"
         ]
 
@@ -114,6 +461,12 @@ ApplicationWindow {
             dataset2CleaningOutlierColumn.currentIndex = -1
             dataset2CleaningOutlierMethod.currentIndex = 0
             dataset2CleaningOutlierAction.currentIndex = 0
+            dataset2EdaColumn.currentIndex = -1
+            dataset2CorrelationColumnA.currentIndex = -1
+            dataset2CorrelationColumnB.currentIndex = -1
+            dataset2VisualizationColumn.currentIndex = -1
+            dataset2TimeXColumn.currentIndex = -1
+            dataset2TimeYColumn.currentIndex = -1
         }
     }
 
@@ -174,6 +527,225 @@ ApplicationWindow {
 
         title: "Error"
         icon: StandardIcon.Critical
+    }
+
+    MessageDialog {
+        id: exportSuccessDialog
+
+        title: "Export Complete"
+        icon: StandardIcon.Information
+    }
+
+    FileDialog {
+        id: dataset1CsvExportDialog
+
+        title: "Export Dataset 1 as CSV"
+
+        nameFilters: [
+            "CSV Files (*.csv)",
+            "All Files (*)"
+        ]
+
+        selectExisting: false
+        selectMultiple: false
+
+        onAccepted: {
+            var exportPath =
+                    ensureExportExtension(
+                        fileUrl,
+                        ".csv"
+                    )
+
+            var success =
+                    appController.exportDataset1ToCsv(
+                        exportPath
+                    )
+
+            if (!success) {
+                errorDialog.text =
+                        appController.lastError
+
+                errorDialog.open()
+                return
+            }
+
+            exportSuccessDialog.text =
+                    "Dataset 1 was exported successfully as CSV."
+
+            exportSuccessDialog.open()
+        }
+    }
+
+    FileDialog {
+        id: dataset1JsonExportDialog
+
+        title: "Export Dataset 1 as JSON"
+
+        nameFilters: [
+            "JSON Files (*.json)",
+            "All Files (*)"
+        ]
+
+        selectExisting: false
+        selectMultiple: false
+
+        onAccepted: {
+            var exportPath =
+                    ensureExportExtension(
+                        fileUrl,
+                        ".json"
+                    )
+
+            var success =
+                    appController.exportDataset1ToJson(
+                        exportPath
+                    )
+
+            if (!success) {
+                errorDialog.text =
+                        appController.lastError
+
+                errorDialog.open()
+                return
+            }
+
+            exportSuccessDialog.text =
+                    "Dataset 1 was exported successfully as JSON."
+
+            exportSuccessDialog.open()
+        }
+    }
+
+    FileDialog {
+        id: dataset1XlsxExportDialog
+        title: "Export Dataset 1 as Excel"
+        nameFilters: [
+            "Excel Files (*.xlsx)",
+            "All Files (*)"
+        ]
+        selectExisting: false
+        selectMultiple: false
+
+        onAccepted: {
+            var exportPath = ensureExportExtension(fileUrl, ".xlsx")
+            var success = appController.exportDataset1ToXlsx(exportPath)
+
+            if (!success) {
+                errorDialog.text = appController.lastError
+                errorDialog.open()
+                return
+            }
+
+            exportSuccessDialog.text =
+                    "Dataset 1 was exported successfully as Excel."
+            exportSuccessDialog.open()
+        }
+    }
+
+    FileDialog {
+        id: dataset2CsvExportDialog
+
+        title: "Export Dataset 2 as CSV"
+
+        nameFilters: [
+            "CSV Files (*.csv)",
+            "All Files (*)"
+        ]
+
+        selectExisting: false
+        selectMultiple: false
+
+        onAccepted: {
+            var exportPath =
+                    ensureExportExtension(
+                        fileUrl,
+                        ".csv"
+                    )
+
+            var success =
+                    appController.exportDataset2ToCsv(
+                        exportPath
+                    )
+
+            if (!success) {
+                errorDialog.text =
+                        appController.lastError
+
+                errorDialog.open()
+                return
+            }
+
+            exportSuccessDialog.text =
+                    "Dataset 2 was exported successfully as CSV."
+
+            exportSuccessDialog.open()
+        }
+    }
+
+    FileDialog {
+        id: dataset2JsonExportDialog
+
+        title: "Export Dataset 2 as JSON"
+
+        nameFilters: [
+            "JSON Files (*.json)",
+            "All Files (*)"
+        ]
+
+        selectExisting: false
+        selectMultiple: false
+
+        onAccepted: {
+            var exportPath =
+                    ensureExportExtension(
+                        fileUrl,
+                        ".json"
+                    )
+
+            var success =
+                    appController.exportDataset2ToJson(
+                        exportPath
+                    )
+
+            if (!success) {
+                errorDialog.text =
+                        appController.lastError
+
+                errorDialog.open()
+                return
+            }
+
+            exportSuccessDialog.text =
+                    "Dataset 2 was exported successfully as JSON."
+
+            exportSuccessDialog.open()
+        }
+    }
+
+    FileDialog {
+        id: dataset2XlsxExportDialog
+        title: "Export Dataset 2 as Excel"
+        nameFilters: [
+            "Excel Files (*.xlsx)",
+            "All Files (*)"
+        ]
+        selectExisting: false
+        selectMultiple: false
+
+        onAccepted: {
+            var exportPath = ensureExportExtension(fileUrl, ".xlsx")
+            var success = appController.exportDataset2ToXlsx(exportPath)
+
+            if (!success) {
+                errorDialog.text = appController.lastError
+                errorDialog.open()
+                return
+            }
+
+            exportSuccessDialog.text =
+                    "Dataset 2 was exported successfully as Excel."
+            exportSuccessDialog.open()
+        }
     }
 
     // =====================================================
@@ -2669,6 +3241,747 @@ ApplicationWindow {
 
 
             // =================================================
+            // EXPLORATORY DATA ANALYSIS
+            // =================================================
+
+            Column {
+                width: parent.width - 60
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 6
+
+                Text {
+                    text: "Exploratory Data Analysis"
+                    color: "white"
+                    font.pixelSize: 24
+                    font.bold: true
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Select a numeric column to calculate descriptive statistics for the current working dataset."
+                    color: "#AAB2C0"
+                    font.pixelSize: 14
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Row {
+                width: parent.width - 60
+                height: 620
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 20
+
+                Rectangle {
+                    width: (parent.width - 20) / 2
+                    height: parent.height
+                    radius: 12
+                    color: "#1D2330"
+                    border.color: appController.dataset1EdaAvailable ? "#4E8A68" : "#30394A"
+                    border.width: 1
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 18
+                        spacing: 12
+
+                        Text {
+                            text: "Dataset 1 EDA Summary"
+                            color: "white"
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text { text: "Select Numeric Column"; color: "#AAB2C0" }
+
+                        ComboBox {
+                            id: dataset1EdaColumn
+                            width: parent.width
+                            height: 42
+                            model: appController.dataset1ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+                            enabled: appController.dataset1Name.length > 0
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 10
+
+                            Button {
+                                width: (parent.width - 10) / 2
+                                height: 40
+                                text: appController.dataset1EdaAvailable ? "Reanalyze EDA" : "Analyze EDA"
+                                enabled: dataset1EdaColumn.currentIndex >= 0
+
+                                onClicked: {
+                                    var success = appController.analyzeDataset1Eda(
+                                                dataset1EdaColumn.currentText)
+                                    if (!success) {
+                                        errorDialog.text = appController.lastError
+                                        errorDialog.open()
+                                    }
+                                }
+                            }
+
+                            Button {
+                                width: (parent.width - 10) / 2
+                                height: 40
+                                text: "Clear"
+                                enabled: appController.dataset1EdaAvailable
+                                onClicked: appController.clearDataset1Eda()
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: !appController.dataset1EdaAvailable
+                            text: appController.dataset1Name.length > 0
+                                  ? "Choose a numeric column and run EDA."
+                                  : "Load Dataset 1 first."
+                            color: "#7F899A"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Column {
+                            width: parent.width
+                            spacing: 0
+                            visible: appController.dataset1EdaAvailable
+
+                            Rectangle {
+                                width: parent.width
+                                height: 42
+                                radius: 5
+                                color: "#262E3D"
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Column: " + (appController.dataset1EdaResult["columnName"] || "-")
+                                    color: "#9CCBFF"
+                                    font.bold: true
+                                }
+                            }
+
+                            Repeater {
+                                model: [
+                                    { label: "Count", key: "count", format: false },
+                                    { label: "Mean", key: "mean", format: true },
+                                    { label: "Median", key: "median", format: true },
+                                    { label: "Minimum", key: "minimum", format: true },
+                                    { label: "Maximum", key: "maximum", format: true },
+                                    { label: "Range", key: "range", format: true },
+                                    { label: "Variance", key: "variance", format: true },
+                                    { label: "Std. Deviation", key: "standardDeviation", format: true },
+                                    { label: "Q1", key: "q1", format: true },
+                                    { label: "Q3", key: "q3", format: true },
+                                    { label: "IQR", key: "iqr", format: true }
+                                ]
+
+                                delegate: Rectangle {
+                                    width: parent.width
+                                    height: 36
+                                    color: index % 2 === 0 ? "#1D2330" : "#202735"
+
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 12
+
+                                        Text {
+                                            width: parent.width * 0.50
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: modelData.label
+                                            color: "white"
+                                        }
+
+                                        Text {
+                                            width: parent.width * 0.50
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: {
+                                                var value = appController.dataset1EdaResult[modelData.key]
+                                                return modelData.format ? formatNumber(value) : value
+                                            }
+                                            horizontalAlignment: Text.AlignRight
+                                            color: "#AAB2C0"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: (parent.width - 20) / 2
+                    height: parent.height
+                    radius: 12
+                    color: "#1D2330"
+                    border.color: appController.dataset2EdaAvailable ? "#4E8A68" : "#30394A"
+                    border.width: 1
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 18
+                        spacing: 12
+
+                        Text {
+                            text: "Dataset 2 EDA Summary"
+                            color: "white"
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text { text: "Select Numeric Column"; color: "#AAB2C0" }
+
+                        ComboBox {
+                            id: dataset2EdaColumn
+                            width: parent.width
+                            height: 42
+                            model: appController.dataset2ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+                            enabled: appController.dataset2Name.length > 0
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 10
+
+                            Button {
+                                width: (parent.width - 10) / 2
+                                height: 40
+                                text: appController.dataset2EdaAvailable ? "Reanalyze EDA" : "Analyze EDA"
+                                enabled: dataset2EdaColumn.currentIndex >= 0
+
+                                onClicked: {
+                                    var success = appController.analyzeDataset2Eda(
+                                                dataset2EdaColumn.currentText)
+                                    if (!success) {
+                                        errorDialog.text = appController.lastError
+                                        errorDialog.open()
+                                    }
+                                }
+                            }
+
+                            Button {
+                                width: (parent.width - 10) / 2
+                                height: 40
+                                text: "Clear"
+                                enabled: appController.dataset2EdaAvailable
+                                onClicked: appController.clearDataset2Eda()
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: !appController.dataset2EdaAvailable
+                            text: appController.dataset2Name.length > 0
+                                  ? "Choose a numeric column and run EDA."
+                                  : "Load Dataset 2 first."
+                            color: "#7F899A"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Column {
+                            width: parent.width
+                            spacing: 0
+                            visible: appController.dataset2EdaAvailable
+
+                            Rectangle {
+                                width: parent.width
+                                height: 42
+                                radius: 5
+                                color: "#262E3D"
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Column: " + (appController.dataset2EdaResult["columnName"] || "-")
+                                    color: "#D2B4FF"
+                                    font.bold: true
+                                }
+                            }
+
+                            Repeater {
+                                model: [
+                                    { label: "Count", key: "count", format: false },
+                                    { label: "Mean", key: "mean", format: true },
+                                    { label: "Median", key: "median", format: true },
+                                    { label: "Minimum", key: "minimum", format: true },
+                                    { label: "Maximum", key: "maximum", format: true },
+                                    { label: "Range", key: "range", format: true },
+                                    { label: "Variance", key: "variance", format: true },
+                                    { label: "Std. Deviation", key: "standardDeviation", format: true },
+                                    { label: "Q1", key: "q1", format: true },
+                                    { label: "Q3", key: "q3", format: true },
+                                    { label: "IQR", key: "iqr", format: true }
+                                ]
+
+                                delegate: Rectangle {
+                                    width: parent.width
+                                    height: 36
+                                    color: index % 2 === 0 ? "#1D2330" : "#202735"
+
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 12
+
+                                        Text {
+                                            width: parent.width * 0.50
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: modelData.label
+                                            color: "white"
+                                        }
+
+                                        Text {
+                                            width: parent.width * 0.50
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: {
+                                                var value = appController.dataset2EdaResult[modelData.key]
+                                                return modelData.format ? formatNumber(value) : value
+                                            }
+                                            horizontalAlignment: Text.AlignRight
+                                            color: "#AAB2C0"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            }
+
+            // =================================================
+            // CORRELATION ANALYSIS
+            // =================================================
+
+            Column {
+                width: parent.width - 60
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 6
+
+                Text {
+                    text: "Correlation Analysis"
+                    color: "white"
+                    font.pixelSize: 24
+                    font.bold: true
+                }
+
+                Text {
+                    width: parent.width
+
+                    text:
+                        "Calculate Pearson correlation between two numeric columns "
+                        + "within the same working dataset."
+
+                    color: "#AAB2C0"
+                    font.pixelSize: 14
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Row {
+                width: parent.width - 60
+                height: 470
+
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 20
+
+                Rectangle {
+                    width: (parent.width - 20) / 2
+                    height: parent.height
+
+                    radius: 12
+                    color: "#1D2330"
+
+                    border.color:
+                        appController.dataset1CorrelationAvailable
+                        ? "#4E8A68"
+                        : "#30394A"
+
+                    border.width: 1
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 18
+                        spacing: 12
+
+                        Text {
+                            text: "Dataset 1 Correlation"
+                            color: "white"
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text {
+                            text: "First Numeric Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset1CorrelationColumnA
+
+                            width: parent.width
+                            height: 42
+
+                            model: appController.dataset1ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+
+                            enabled:
+                                appController.dataset1Name.length > 0
+                        }
+
+                        Text {
+                            text: "Second Numeric Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset1CorrelationColumnB
+
+                            width: parent.width
+                            height: 42
+
+                            model: appController.dataset1ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+
+                            enabled:
+                                appController.dataset1Name.length > 0
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 10
+
+                            Button {
+                                width: (parent.width - 10) / 2
+                                height: 40
+
+                                text:
+                                    appController.dataset1CorrelationAvailable
+                                    ? "Recalculate"
+                                    : "Calculate"
+
+                                enabled:
+                                    dataset1CorrelationColumnA.currentIndex >= 0
+                                    &&
+                                    dataset1CorrelationColumnB.currentIndex >= 0
+
+                                onClicked: {
+                                    var success =
+                                            appController.analyzeDataset1Correlation(
+                                                dataset1CorrelationColumnA.currentText,
+                                                dataset1CorrelationColumnB.currentText
+                                            )
+
+                                    if (!success) {
+                                        errorDialog.text =
+                                                appController.lastError
+                                        errorDialog.open()
+                                    }
+                                }
+                            }
+
+                            Button {
+                                width: (parent.width - 10) / 2
+                                height: 40
+
+                                text: "Clear"
+
+                                enabled:
+                                    appController.dataset1CorrelationAvailable
+
+                                onClicked:
+                                    appController.clearDataset1Correlation()
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+
+                            visible:
+                                !appController.dataset1CorrelationAvailable
+
+                            text:
+                                appController.dataset1Name.length > 0
+                                ? "Choose two numeric columns and calculate Pearson correlation."
+                                : "Load Dataset 1 first."
+
+                            color: "#7F899A"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Column {
+                            width: parent.width
+                            spacing: 10
+
+                            visible:
+                                appController.dataset1CorrelationAvailable
+
+                            Rectangle {
+                                width: parent.width
+                                height: 52
+                                radius: 6
+                                color: "#262E3D"
+
+                                Text {
+                                    anchors.centerIn: parent
+
+                                    text:
+                                        (
+                                            appController.dataset1CorrelationResult["firstColumnName"]
+                                            || "-"
+                                        )
+                                        + "  ↔  "
+                                        + (
+                                            appController.dataset1CorrelationResult["secondColumnName"]
+                                            || "-"
+                                        )
+
+                                    color: "#9CCBFF"
+                                    font.bold: true
+                                }
+                            }
+
+                            Text {
+                                text:
+                                    "Paired Values: "
+                                    + (
+                                        appController.dataset1CorrelationResult["pairedValueCount"]
+                                        || 0
+                                    )
+
+                                color: "#D7DCE5"
+                            }
+
+                            Text {
+                                text:
+                                    "Pearson Correlation: "
+                                    + formatNumber(
+                                        appController.dataset1CorrelationResult["correlation"]
+                                    )
+
+                                color: "#9CCBFF"
+                                font.pixelSize: 17
+                                font.bold: true
+                            }
+
+                            Text {
+                                width: parent.width
+
+                                text:
+                                    correlationLabel(
+                                        appController.dataset1CorrelationResult["correlation"]
+                                    )
+
+                                color: "#FFE29A"
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: (parent.width - 20) / 2
+                    height: parent.height
+
+                    radius: 12
+                    color: "#1D2330"
+
+                    border.color:
+                        appController.dataset2CorrelationAvailable
+                        ? "#4E8A68"
+                        : "#30394A"
+
+                    border.width: 1
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 18
+                        spacing: 12
+
+                        Text {
+                            text: "Dataset 2 Correlation"
+                            color: "white"
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text {
+                            text: "First Numeric Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset2CorrelationColumnA
+
+                            width: parent.width
+                            height: 42
+
+                            model: appController.dataset2ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+
+                            enabled:
+                                appController.dataset2Name.length > 0
+                        }
+
+                        Text {
+                            text: "Second Numeric Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset2CorrelationColumnB
+
+                            width: parent.width
+                            height: 42
+
+                            model: appController.dataset2ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+
+                            enabled:
+                                appController.dataset2Name.length > 0
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 10
+
+                            Button {
+                                width: (parent.width - 10) / 2
+                                height: 40
+
+                                text:
+                                    appController.dataset2CorrelationAvailable
+                                    ? "Recalculate"
+                                    : "Calculate"
+
+                                enabled:
+                                    dataset2CorrelationColumnA.currentIndex >= 0
+                                    &&
+                                    dataset2CorrelationColumnB.currentIndex >= 0
+
+                                onClicked: {
+                                    var success =
+                                            appController.analyzeDataset2Correlation(
+                                                dataset2CorrelationColumnA.currentText,
+                                                dataset2CorrelationColumnB.currentText
+                                            )
+
+                                    if (!success) {
+                                        errorDialog.text =
+                                                appController.lastError
+                                        errorDialog.open()
+                                    }
+                                }
+                            }
+
+                            Button {
+                                width: (parent.width - 10) / 2
+                                height: 40
+
+                                text: "Clear"
+
+                                enabled:
+                                    appController.dataset2CorrelationAvailable
+
+                                onClicked:
+                                    appController.clearDataset2Correlation()
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+
+                            visible:
+                                !appController.dataset2CorrelationAvailable
+
+                            text:
+                                appController.dataset2Name.length > 0
+                                ? "Choose two numeric columns and calculate Pearson correlation."
+                                : "Load Dataset 2 first."
+
+                            color: "#7F899A"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Column {
+                            width: parent.width
+                            spacing: 10
+
+                            visible:
+                                appController.dataset2CorrelationAvailable
+
+                            Rectangle {
+                                width: parent.width
+                                height: 52
+                                radius: 6
+                                color: "#262E3D"
+
+                                Text {
+                                    anchors.centerIn: parent
+
+                                    text:
+                                        (
+                                            appController.dataset2CorrelationResult["firstColumnName"]
+                                            || "-"
+                                        )
+                                        + "  ↔  "
+                                        + (
+                                            appController.dataset2CorrelationResult["secondColumnName"]
+                                            || "-"
+                                        )
+
+                                    color: "#D2B4FF"
+                                    font.bold: true
+                                }
+                            }
+
+                            Text {
+                                text:
+                                    "Paired Values: "
+                                    + (
+                                        appController.dataset2CorrelationResult["pairedValueCount"]
+                                        || 0
+                                    )
+
+                                color: "#D7DCE5"
+                            }
+
+                            Text {
+                                text:
+                                    "Pearson Correlation: "
+                                    + formatNumber(
+                                        appController.dataset2CorrelationResult["correlation"]
+                                    )
+
+                                color: "#D2B4FF"
+                                font.pixelSize: 17
+                                font.bold: true
+                            }
+
+                            Text {
+                                width: parent.width
+
+                                text:
+                                    correlationLabel(
+                                        appController.dataset2CorrelationResult["correlation"]
+                                    )
+
+                                color: "#FFE29A"
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+                }
+
+            }
+
+            // =================================================
             // OUTLIER ANALYSIS
             // =================================================
 
@@ -4017,6 +5330,972 @@ ApplicationWindow {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // =================================================
+            // VISUALIZATION
+            // =================================================
+
+            Column {
+                width: parent.width - 60
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 6
+
+                Text {
+                    text: "Visualization"
+                    color: "white"
+                    font.pixelSize: 24
+                    font.bold: true
+                }
+
+                Text {
+                    width: parent.width
+                    text:
+                        "Create visualizations from the current working datasets. "
+                        + "Histogram, Box Plot, Time Series, Distribution, "
+                        + "Correlation Matrix and Dataset Comparison are available."
+                    color: "#AAB2C0"
+                    font.pixelSize: 14
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Row {
+                width: parent.width - 60
+                height: 790
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 20
+
+                // =============================================
+                // DATASET 1 VISUALIZATION
+                // =============================================
+
+                Rectangle {
+                    width: (parent.width - 20) / 2
+                    height: parent.height
+                    radius: 12
+                    color: "#1D2330"
+                    border.color: "#30394A"
+                    border.width: 1
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 9
+
+                        Text {
+                            text: "Dataset 1 Visualization"
+                            color: "white"
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text { text: "Chart Type"; color: "#AAB2C0" }
+
+                        ComboBox {
+                            id: dataset1VisualizationType
+                            width: parent.width
+                            height: 40
+                            model: [
+                                "Histogram",
+                                "Box Plot",
+                                "Time Series",
+                                "Distribution",
+                                "Correlation Matrix"
+                            ]
+                            currentIndex: 0
+                        }
+
+                        Text {
+                            visible:
+                                dataset1VisualizationType.currentText !== "Time Series"
+                                && dataset1VisualizationType.currentText !== "Correlation Matrix"
+                            text: "Numeric Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset1VisualizationColumn
+                            width: parent.width
+                            height: 40
+                            visible:
+                                dataset1VisualizationType.currentText !== "Time Series"
+                                && dataset1VisualizationType.currentText !== "Correlation Matrix"
+                            model: appController.dataset1ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+                        }
+
+                        Text {
+                            visible: dataset1VisualizationType.currentText === "Time Series"
+                            text: "X / Time Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset1TimeXColumn
+                            width: parent.width
+                            height: 40
+                            visible: dataset1VisualizationType.currentText === "Time Series"
+                            model: appController.dataset1ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+                        }
+
+                        Text {
+                            visible: dataset1VisualizationType.currentText === "Time Series"
+                            text: "Y / Numeric Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset1TimeYColumn
+                            width: parent.width
+                            height: 40
+                            visible: dataset1VisualizationType.currentText === "Time Series"
+                            model: appController.dataset1ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+                        }
+
+                        Button {
+                            width: parent.width
+                            height: 42
+                            text: "Generate Visualization"
+
+                            enabled: {
+                                if (appController.dataset1Name.length === 0)
+                                    return false
+
+                                if (dataset1VisualizationType.currentText === "Correlation Matrix")
+                                    return true
+
+                                if (dataset1VisualizationType.currentText === "Time Series")
+                                    return dataset1TimeXColumn.currentIndex >= 0
+                                            && dataset1TimeYColumn.currentIndex >= 0
+
+                                return dataset1VisualizationColumn.currentIndex >= 0
+                            }
+
+                            onClicked: {
+                                var type = dataset1VisualizationType.currentText
+                                var result = ({})
+
+                                if (type === "Histogram")
+                                    result = appController.createDataset1Histogram(
+                                                dataset1VisualizationColumn.currentText, 10)
+                                else if (type === "Box Plot")
+                                    result = appController.createDataset1BoxPlot(
+                                                dataset1VisualizationColumn.currentText, 1.5)
+                                else if (type === "Time Series")
+                                    result = appController.createDataset1TimeSeries(
+                                                dataset1TimeXColumn.currentText,
+                                                dataset1TimeYColumn.currentText)
+                                else if (type === "Distribution")
+                                    result = appController.createDataset1Distribution(
+                                                dataset1VisualizationColumn.currentText, 10)
+                                else if (type === "Correlation Matrix")
+                                    result = appController.createDataset1CorrelationMatrix()
+
+                                if (!result["success"]) {
+                                    errorDialog.text =
+                                            result["errorMessage"] || appController.lastError
+                                    errorDialog.open()
+                                    return
+                                }
+
+                                dataset1VisualizationResult = result
+
+                                if (type !== "Correlation Matrix")
+                                    dataset1VisualizationCanvas.requestPaint()
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 430
+                            radius: 8
+                            color: "#171B24"
+                            border.color: "#30394A"
+                            border.width: 1
+
+                            Canvas {
+                                id: dataset1VisualizationCanvas
+                                anchors.fill: parent
+                                anchors.margins: 10
+
+                                visible:
+                                    dataset1VisualizationResult["success"]
+                                    && dataset1VisualizationType.currentText !== "Correlation Matrix"
+
+                                onPaint: {
+                                    drawVisualization(
+                                                dataset1VisualizationCanvas,
+                                                getContext("2d"),
+                                                dataset1VisualizationType.currentText,
+                                                dataset1VisualizationResult)
+                                }
+                            }
+
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+
+                                visible:
+                                    dataset1VisualizationResult["success"]
+                                    && dataset1VisualizationType.currentText === "Correlation Matrix"
+
+                                Text {
+                                    text: "Correlation Matrix"
+                                    color: "#9CCBFF"
+                                    font.bold: true
+                                }
+
+                                Row {
+                                    spacing: 4
+
+                                    Repeater {
+                                        model:
+                                            dataset1VisualizationResult["columnNames"] || []
+
+                                        delegate: Rectangle {
+                                            width: 76
+                                            height: 34
+                                            color: "#262E3D"
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                width: parent.width - 6
+                                                text: modelData
+                                                color: "#D7DCE5"
+                                                font.pixelSize: 10
+                                                elide: Text.ElideRight
+                                                horizontalAlignment: Text.AlignHCenter
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Grid {
+                                    columns:
+                                        Number(dataset1VisualizationResult["columnCount"] || 1)
+
+                                    spacing: 4
+
+                                    Repeater {
+                                        model:
+                                            (dataset1VisualizationResult["values"] || []).length
+
+                                        delegate: Rectangle {
+                                            width: 76
+                                            height: 54
+
+                                            color:
+                                                correlationCellColor(
+                                                    dataset1VisualizationResult["values"][index]
+                                                )
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text:
+                                                    formatNumber(
+                                                        dataset1VisualizationResult["values"][index]
+                                                    )
+                                                color: "white"
+                                                font.bold: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                visible: !dataset1VisualizationResult["success"]
+                                text: "Generate a chart to preview it here."
+                                color: "#7F899A"
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: dataset1VisualizationResult["success"]
+
+                            text: {
+                                var type = dataset1VisualizationType.currentText
+
+                                if (type === "Histogram")
+                                    return "Valid values: "
+                                            + dataset1VisualizationResult["validValueCount"]
+                                            + " | Bins: "
+                                            + dataset1VisualizationResult["binCount"]
+
+                                if (type === "Box Plot")
+                                    return "Median: "
+                                            + formatNumber(dataset1VisualizationResult["median"])
+                                            + " | Outliers: "
+                                            + dataset1VisualizationResult["outlierCount"]
+
+                                if (type === "Time Series")
+                                    return "Points: "
+                                            + dataset1VisualizationResult["pointCount"]
+
+                                if (type === "Distribution")
+                                    return "Valid values: "
+                                            + dataset1VisualizationResult["validValueCount"]
+
+                                return "Numeric columns: "
+                                        + dataset1VisualizationResult["columnCount"]
+                            }
+
+                            color: "#AAB2C0"
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+
+                // =============================================
+                // DATASET 2 VISUALIZATION
+                // =============================================
+
+                Rectangle {
+                    width: (parent.width - 20) / 2
+                    height: parent.height
+                    radius: 12
+                    color: "#1D2330"
+                    border.color: "#30394A"
+                    border.width: 1
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 9
+
+                        Text {
+                            text: "Dataset 2 Visualization"
+                            color: "white"
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text { text: "Chart Type"; color: "#AAB2C0" }
+
+                        ComboBox {
+                            id: dataset2VisualizationType
+                            width: parent.width
+                            height: 40
+                            model: [
+                                "Histogram",
+                                "Box Plot",
+                                "Time Series",
+                                "Distribution",
+                                "Correlation Matrix"
+                            ]
+                            currentIndex: 0
+                        }
+
+                        Text {
+                            visible:
+                                dataset2VisualizationType.currentText !== "Time Series"
+                                && dataset2VisualizationType.currentText !== "Correlation Matrix"
+                            text: "Numeric Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset2VisualizationColumn
+                            width: parent.width
+                            height: 40
+                            visible:
+                                dataset2VisualizationType.currentText !== "Time Series"
+                                && dataset2VisualizationType.currentText !== "Correlation Matrix"
+                            model: appController.dataset2ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+                        }
+
+                        Text {
+                            visible: dataset2VisualizationType.currentText === "Time Series"
+                            text: "X / Time Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset2TimeXColumn
+                            width: parent.width
+                            height: 40
+                            visible: dataset2VisualizationType.currentText === "Time Series"
+                            model: appController.dataset2ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+                        }
+
+                        Text {
+                            visible: dataset2VisualizationType.currentText === "Time Series"
+                            text: "Y / Numeric Column"
+                            color: "#AAB2C0"
+                        }
+
+                        ComboBox {
+                            id: dataset2TimeYColumn
+                            width: parent.width
+                            height: 40
+                            visible: dataset2VisualizationType.currentText === "Time Series"
+                            model: appController.dataset2ColumnModel
+                            textRole: "name"
+                            currentIndex: -1
+                        }
+
+                        Button {
+                            width: parent.width
+                            height: 42
+                            text: "Generate Visualization"
+
+                            enabled: {
+                                if (appController.dataset2Name.length === 0)
+                                    return false
+
+                                if (dataset2VisualizationType.currentText === "Correlation Matrix")
+                                    return true
+
+                                if (dataset2VisualizationType.currentText === "Time Series")
+                                    return dataset2TimeXColumn.currentIndex >= 0
+                                            && dataset2TimeYColumn.currentIndex >= 0
+
+                                return dataset2VisualizationColumn.currentIndex >= 0
+                            }
+
+                            onClicked: {
+                                var type = dataset2VisualizationType.currentText
+                                var result = ({})
+
+                                if (type === "Histogram")
+                                    result = appController.createDataset2Histogram(
+                                                dataset2VisualizationColumn.currentText, 10)
+                                else if (type === "Box Plot")
+                                    result = appController.createDataset2BoxPlot(
+                                                dataset2VisualizationColumn.currentText, 1.5)
+                                else if (type === "Time Series")
+                                    result = appController.createDataset2TimeSeries(
+                                                dataset2TimeXColumn.currentText,
+                                                dataset2TimeYColumn.currentText)
+                                else if (type === "Distribution")
+                                    result = appController.createDataset2Distribution(
+                                                dataset2VisualizationColumn.currentText, 10)
+                                else if (type === "Correlation Matrix")
+                                    result = appController.createDataset2CorrelationMatrix()
+
+                                if (!result["success"]) {
+                                    errorDialog.text =
+                                            result["errorMessage"] || appController.lastError
+                                    errorDialog.open()
+                                    return
+                                }
+
+                                dataset2VisualizationResult = result
+
+                                if (type !== "Correlation Matrix")
+                                    dataset2VisualizationCanvas.requestPaint()
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 430
+                            radius: 8
+                            color: "#171B24"
+                            border.color: "#30394A"
+                            border.width: 1
+
+                            Canvas {
+                                id: dataset2VisualizationCanvas
+                                anchors.fill: parent
+                                anchors.margins: 10
+
+                                visible:
+                                    dataset2VisualizationResult["success"]
+                                    && dataset2VisualizationType.currentText !== "Correlation Matrix"
+
+                                onPaint: {
+                                    drawVisualization(
+                                                dataset2VisualizationCanvas,
+                                                getContext("2d"),
+                                                dataset2VisualizationType.currentText,
+                                                dataset2VisualizationResult)
+                                }
+                            }
+
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+
+                                visible:
+                                    dataset2VisualizationResult["success"]
+                                    && dataset2VisualizationType.currentText === "Correlation Matrix"
+
+                                Text {
+                                    text: "Correlation Matrix"
+                                    color: "#D2B4FF"
+                                    font.bold: true
+                                }
+
+                                Row {
+                                    spacing: 4
+
+                                    Repeater {
+                                        model:
+                                            dataset2VisualizationResult["columnNames"] || []
+
+                                        delegate: Rectangle {
+                                            width: 76
+                                            height: 34
+                                            color: "#262E3D"
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                width: parent.width - 6
+                                                text: modelData
+                                                color: "#D7DCE5"
+                                                font.pixelSize: 10
+                                                elide: Text.ElideRight
+                                                horizontalAlignment: Text.AlignHCenter
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Grid {
+                                    columns:
+                                        Number(dataset2VisualizationResult["columnCount"] || 1)
+
+                                    spacing: 4
+
+                                    Repeater {
+                                        model:
+                                            (dataset2VisualizationResult["values"] || []).length
+
+                                        delegate: Rectangle {
+                                            width: 76
+                                            height: 54
+
+                                            color:
+                                                correlationCellColor(
+                                                    dataset2VisualizationResult["values"][index]
+                                                )
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text:
+                                                    formatNumber(
+                                                        dataset2VisualizationResult["values"][index]
+                                                    )
+                                                color: "white"
+                                                font.bold: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                visible: !dataset2VisualizationResult["success"]
+                                text: "Generate a chart to preview it here."
+                                color: "#7F899A"
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: dataset2VisualizationResult["success"]
+
+                            text: {
+                                var type = dataset2VisualizationType.currentText
+
+                                if (type === "Histogram")
+                                    return "Valid values: "
+                                            + dataset2VisualizationResult["validValueCount"]
+                                            + " | Bins: "
+                                            + dataset2VisualizationResult["binCount"]
+
+                                if (type === "Box Plot")
+                                    return "Median: "
+                                            + formatNumber(dataset2VisualizationResult["median"])
+                                            + " | Outliers: "
+                                            + dataset2VisualizationResult["outlierCount"]
+
+                                if (type === "Time Series")
+                                    return "Points: "
+                                            + dataset2VisualizationResult["pointCount"]
+
+                                if (type === "Distribution")
+                                    return "Valid values: "
+                                            + dataset2VisualizationResult["validValueCount"]
+
+                                return "Numeric columns: "
+                                        + dataset2VisualizationResult["columnCount"]
+                            }
+
+                            color: "#AAB2C0"
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+            }
+
+            // =================================================
+            // DATASET COMPARISON CHART
+            // =================================================
+
+            Rectangle {
+                width: parent.width - 60
+                height: 590
+                anchors.horizontalCenter: parent.horizontalCenter
+                radius: 12
+                color: "#1D2330"
+                border.color: "#30394A"
+                border.width: 1
+
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    spacing: 12
+
+                    Text {
+                        text: "Dataset Comparison Chart"
+                        color: "white"
+                        font.pixelSize: 18
+                        font.bold: true
+                    }
+
+                    Row {
+                        width: parent.width
+                        spacing: 12
+
+                        Column {
+                            width: (parent.width - 12) / 2
+                            spacing: 6
+
+                            Text {
+                                text: "Dataset 1 Numeric Column"
+                                color: "#9CCBFF"
+                            }
+
+                            ComboBox {
+                                id: comparisonVisualizationSourceColumn
+                                width: parent.width
+                                height: 40
+                                model: appController.dataset1ColumnModel
+                                textRole: "name"
+                                currentIndex: -1
+                            }
+                        }
+
+                        Column {
+                            width: (parent.width - 12) / 2
+                            spacing: 6
+
+                            Text {
+                                text: "Dataset 2 Numeric Column"
+                                color: "#D2B4FF"
+                            }
+
+                            ComboBox {
+                                id: comparisonVisualizationTargetColumn
+                                width: parent.width
+                                height: 40
+                                model: appController.dataset2ColumnModel
+                                textRole: "name"
+                                currentIndex: -1
+                            }
+                        }
+                    }
+
+                    Button {
+                        width: 220
+                        height: 42
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "Generate Comparison Chart"
+
+                        enabled:
+                            comparisonVisualizationSourceColumn.currentIndex >= 0
+                            && comparisonVisualizationTargetColumn.currentIndex >= 0
+
+                        onClicked: {
+                            var result =
+                                    appController.createDatasetComparisonChart(
+                                        comparisonVisualizationSourceColumn.currentText,
+                                        comparisonVisualizationTargetColumn.currentText
+                                    )
+
+                            if (!result["success"]) {
+                                errorDialog.text =
+                                    result["errorMessage"] || appController.lastError
+                                errorDialog.open()
+                                return
+                            }
+
+                            comparisonVisualizationResult = result
+                            comparisonVisualizationCanvas.requestPaint()
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 390
+                        radius: 8
+                        color: "#171B24"
+                        border.color: "#30394A"
+                        border.width: 1
+
+                        Canvas {
+                            id: comparisonVisualizationCanvas
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            visible: comparisonVisualizationResult["success"]
+
+                            onPaint: {
+                                drawLineChart(
+                                            comparisonVisualizationCanvas,
+                                            getContext("2d"),
+                                            comparisonVisualizationResult["indexes"] || [],
+                                            comparisonVisualizationResult["sourceValues"] || [],
+                                            comparisonVisualizationResult["targetValues"] || [])
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            visible: !comparisonVisualizationResult["success"]
+                            text: "Select two numeric columns and generate the comparison chart."
+                            color: "#7F899A"
+                        }
+                    }
+
+                    Row {
+                        spacing: 25
+                        visible: comparisonVisualizationResult["success"]
+
+                        Text {
+                            text:
+                                "Dataset 1: "
+                                + (comparisonVisualizationResult["sourceColumnName"] || "-")
+                            color: "#9CCBFF"
+                            font.bold: true
+                        }
+
+                        Text {
+                            text:
+                                "Dataset 2: "
+                                + (comparisonVisualizationResult["targetColumnName"] || "-")
+                            color: "#D2B4FF"
+                            font.bold: true
+                        }
+
+                        Text {
+                            text:
+                                "Paired Points: "
+                                + (comparisonVisualizationResult["pointCount"] || 0)
+                            color: "#AAB2C0"
+                        }
+                    }
+                }
+            }
+
+            // =================================================
+            // EXPORT
+            // =================================================
+
+            Column {
+                width: parent.width - 60
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 7
+
+                Text {
+                    text: "Export"
+                    color: "white"
+                    font.pixelSize: 24
+                    font.bold: true
+                }
+
+                Text {
+                    width: parent.width
+                    text:
+                        "Export the current working dataset. "
+                        + "Cleaning changes are included, while the original dataset remains unchanged."
+                    color: "#AAB2C0"
+                    font.pixelSize: 14
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Row {
+                width: parent.width - 60
+                height: 250
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 20
+
+                Rectangle {
+                    width: (parent.width - 20) / 2
+                    height: parent.height
+                    radius: 12
+                    color: "#1D2330"
+                    border.color: appController.dataset1Modified ? "#C792EA" : "#30394A"
+                    border.width: 1
+
+                    Column {
+                        anchors.centerIn: parent
+                        width: parent.width - 36
+                        spacing: 12
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "Dataset 1 Export"
+                            color: "white"
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text:
+                                appController.dataset1Name.length > 0
+                                ? (
+                                      appController.dataset1Modified
+                                      ? "Working / cleaned dataset will be exported."
+                                      : "Current working dataset will be exported."
+                                  )
+                                : "Load Dataset 1 first."
+                            color:
+                                appController.dataset1Modified
+                                ? "#D2B4FF"
+                                : "#AAB2C0"
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 10
+
+                            Button {
+                                width: 130
+                                height: 42
+                                text: "Export CSV"
+                                enabled: appController.dataset1Name.length > 0
+                                onClicked: dataset1CsvExportDialog.open()
+                            }
+
+                            Button {
+                                width: 130
+                                height: 42
+                                text: "Export JSON"
+                                enabled: appController.dataset1Name.length > 0
+                                onClicked: dataset1JsonExportDialog.open()
+                            }
+
+                            Button {
+                                width: 130
+                                height: 42
+                                text: "Export Excel"
+                                enabled: appController.dataset1Name.length > 0
+                                onClicked: dataset1XlsxExportDialog.open()
+                            }
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: appController.dataset1Name.length > 0
+                            text:
+                                "Rows: "
+                                + appController.dataset1RowCount
+                                + " | Columns: "
+                                + appController.dataset1ColumnCount
+                            color: "#7F899A"
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: (parent.width - 20) / 2
+                    height: parent.height
+                    radius: 12
+                    color: "#1D2330"
+                    border.color: appController.dataset2Modified ? "#C792EA" : "#30394A"
+                    border.width: 1
+
+                    Column {
+                        anchors.centerIn: parent
+                        width: parent.width - 36
+                        spacing: 12
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "Dataset 2 Export"
+                            color: "white"
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text:
+                                appController.dataset2Name.length > 0
+                                ? (
+                                      appController.dataset2Modified
+                                      ? "Working / cleaned dataset will be exported."
+                                      : "Current working dataset will be exported."
+                                  )
+                                : "Load Dataset 2 first."
+                            color:
+                                appController.dataset2Modified
+                                ? "#D2B4FF"
+                                : "#AAB2C0"
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 10
+
+                            Button {
+                                width: 130
+                                height: 42
+                                text: "Export CSV"
+                                enabled: appController.dataset2Name.length > 0
+                                onClicked: dataset2CsvExportDialog.open()
+                            }
+
+                            Button {
+                                width: 130
+                                height: 42
+                                text: "Export JSON"
+                                enabled: appController.dataset2Name.length > 0
+                                onClicked: dataset2JsonExportDialog.open()
+                            }
+
+                            Button {
+                                width: 130
+                                height: 42
+                                text: "Export Excel"
+                                enabled: appController.dataset2Name.length > 0
+                                onClicked: dataset2XlsxExportDialog.open()
+                            }
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: appController.dataset2Name.length > 0
+                            text:
+                                "Rows: "
+                                + appController.dataset2RowCount
+                                + " | Columns: "
+                                + appController.dataset2ColumnCount
+                            color: "#7F899A"
                         }
                     }
                 }

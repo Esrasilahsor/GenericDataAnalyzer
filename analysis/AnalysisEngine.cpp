@@ -306,6 +306,172 @@ QVector<int> AnalysisEngine::findZScoreOutlierRowIndexes(
     return result.outlierRowIndexes;
 }
 
+CorrelationResult AnalysisEngine::calculateCorrelation(
+    const DataSet &dataSet,
+    const QString &firstColumnName,
+    const QString &secondColumnName
+    ) const
+{
+    CorrelationResult result;
+    result.firstColumnName = firstColumnName;
+    result.secondColumnName = secondColumnName;
+
+    if (dataSet.isEmpty())
+    {
+        result.errorMessage = QStringLiteral("Dataset is empty.");
+        return result;
+    }
+
+    if (firstColumnName.trimmed().isEmpty() ||
+        secondColumnName.trimmed().isEmpty())
+    {
+        result.errorMessage =
+            QStringLiteral("Correlation column name is empty.");
+        return result;
+    }
+
+    const ColumnInfo *firstColumn =
+        findColumn(dataSet, firstColumnName);
+
+    const ColumnInfo *secondColumn =
+        findColumn(dataSet, secondColumnName);
+
+    if (!firstColumn || !secondColumn)
+    {
+        result.errorMessage =
+            QStringLiteral("Correlation column not found.");
+        return result;
+    }
+
+    if (!isColumnNumeric(*firstColumn) ||
+        !isColumnNumeric(*secondColumn))
+    {
+        result.errorMessage =
+            QStringLiteral("Correlation can only be calculated between numeric columns.");
+        return result;
+    }
+
+    const QVector<QVariant> firstValues =
+        firstColumn->values();
+
+    const QVector<QVariant> secondValues =
+        secondColumn->values();
+
+    const int rowCount =
+        std::min(firstValues.size(), secondValues.size());
+
+    QVector<double> xValues;
+    QVector<double> yValues;
+
+    xValues.reserve(rowCount);
+    yValues.reserve(rowCount);
+
+    for (int row = 0; row < rowCount; ++row)
+    {
+        const QVariant &firstValue = firstValues.at(row);
+        const QVariant &secondValue = secondValues.at(row);
+
+        if (isMissingValue(firstValue) ||
+            isMissingValue(secondValue))
+        {
+            continue;
+        }
+
+        bool firstOk = false;
+        bool secondOk = false;
+
+        const double x =
+            firstValue.toDouble(&firstOk);
+
+        const double y =
+            secondValue.toDouble(&secondOk);
+
+        if (!firstOk || !secondOk ||
+            !std::isfinite(x) || !std::isfinite(y))
+        {
+            continue;
+        }
+
+        xValues.append(x);
+        yValues.append(y);
+    }
+
+    result.pairedValueCount = xValues.size();
+
+    if (result.pairedValueCount < 2)
+    {
+        result.errorMessage =
+            QStringLiteral("At least two valid paired numeric values are required for correlation.");
+        return result;
+    }
+
+    double xTotal = 0.0;
+    double yTotal = 0.0;
+
+    for (int i = 0; i < result.pairedValueCount; ++i)
+    {
+        xTotal += xValues.at(i);
+        yTotal += yValues.at(i);
+    }
+
+    const double xMean =
+        xTotal / static_cast<double>(result.pairedValueCount);
+
+    const double yMean =
+        yTotal / static_cast<double>(result.pairedValueCount);
+
+    double covarianceTotal = 0.0;
+    double xSquaredTotal = 0.0;
+    double ySquaredTotal = 0.0;
+
+    for (int i = 0; i < result.pairedValueCount; ++i)
+    {
+        const double xDifference =
+            xValues.at(i) - xMean;
+
+        const double yDifference =
+            yValues.at(i) - yMean;
+
+        covarianceTotal +=
+            xDifference * yDifference;
+
+        xSquaredTotal +=
+            xDifference * xDifference;
+
+        ySquaredTotal +=
+            yDifference * yDifference;
+    }
+
+    const double denominator =
+        std::sqrt(xSquaredTotal * ySquaredTotal);
+
+    if (!std::isfinite(denominator) ||
+        denominator <= 0.0)
+    {
+        result.errorMessage =
+            QStringLiteral("Correlation cannot be calculated because at least one column is constant.");
+        return result;
+    }
+
+    result.correlation =
+        covarianceTotal / denominator;
+
+    if (!std::isfinite(result.correlation))
+    {
+        result.errorMessage =
+            QStringLiteral("Correlation calculation produced an invalid result.");
+        return result;
+    }
+
+    if (result.correlation > 1.0)
+        result.correlation = 1.0;
+    else if (result.correlation < -1.0)
+        result.correlation = -1.0;
+
+    result.success = true;
+    return result;
+}
+
 ColumnComparisonResult AnalysisEngine::compareColumns(
     const DataSet &sourceDataSet,
     const QString &sourceColumnName,

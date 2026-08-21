@@ -4,7 +4,7 @@
 #include <QAbstractListModel>
 #include <QVector>
 
-#include "../parser/ParsedParameter.h"
+#include "../parser/ParserTypes.h"
 
 class ParameterModel : public QAbstractListModel
 {
