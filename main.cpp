@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
         &appController
         );
 
-    const QUrl url(QStringLiteral("qrc:/Main.qml"));
+    const QUrl url(QStringLiteral("qrc:/qml/Main.qml"));
 
     QObject::connect(
         &engine,

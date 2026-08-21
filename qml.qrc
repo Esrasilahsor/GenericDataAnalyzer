@@ -1,5 +1,17 @@
 <RCC>
     <qresource prefix="/">
-        <file alias="Main.qml">qml/Main.qml</file>
+        <file>qml/components/Sidebar.qml</file>
+        <file>qml/components/TopBar.qml</file>
+        <file>qml/components/StatCard.qml</file>
+        <file>qml/components/DatasetCard.qml</file>
+        <file>qml/components/PrimaryButton.qml</file>
+        <file>qml/pages/DashboardPage.qml</file>
+        <file>qml/pages/DatasetsPage.qml</file>
+        <file>qml/pages/DataQualityPage.qml</file>
+        <file>qml/pages/MappingPage.qml</file>
+        <file>qml/pages/AnalysisPage.qml</file>
+        <file>qml/pages/OutlierPage.qml</file>
+        <file>qml/pages/ComparisonPage.qml</file>
+        <file>qml/Main.qml</file>
     </qresource>
 </RCC>
