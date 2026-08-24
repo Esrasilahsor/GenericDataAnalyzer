@@ -2,6 +2,8 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
+import "../" as AppTheme
+
 Rectangle {
     id: card
 
@@ -14,14 +16,17 @@ Rectangle {
     Layout.preferredHeight: 110
 
     radius: 16
-    color: "#FFFFFF"
+
+    color: AppTheme.Theme.surface
 
     border.width: 1
-    border.color: "#E5DFF0"
+    border.color: AppTheme.Theme.border
 
     ColumnLayout {
         anchors.fill: parent
+
         anchors.margins: 18
+
         spacing: 5
 
         RowLayout {
@@ -29,28 +34,37 @@ Rectangle {
 
             Label {
                 text: card.title
-                color: "#777184"
+
+                color: AppTheme.Theme.textSecondary
+
                 font.pixelSize: 13
+
                 Layout.fillWidth: true
             }
 
             Label {
                 text: card.icon
-                color: "#A78BCE"
+
+                color: AppTheme.Theme.primary
+
                 font.pixelSize: 18
             }
         }
 
         Label {
             text: card.value
-            color: "#302B3D"
+
+            color: AppTheme.Theme.text
+
             font.pixelSize: 25
             font.bold: true
         }
 
         Label {
             text: card.description
-            color: "#777184"
+
+            color: AppTheme.Theme.textSecondary
+
             font.pixelSize: 11
         }
     }

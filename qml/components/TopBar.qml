@@ -2,14 +2,21 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
+import "../" as AppTheme
+
 Rectangle {
     id: topBar
 
     height: 76
-    color: "#F7F5FB"
 
     property string title: "Dashboard"
-    property string subtitle: "Veri setlerinizi yönetin ve analiz edin."
+
+    property string subtitle:
+        "Veri setlerinizi yönetin ve analiz edin."
+
+    signal themeToggleRequested()
+
+    color: AppTheme.Theme.background
 
     RowLayout {
         anchors.fill: parent
@@ -21,12 +28,13 @@ Rectangle {
 
         ColumnLayout {
             Layout.fillWidth: true
+
             spacing: 2
 
             Label {
                 text: topBar.title
 
-                color: "#302B3D"
+                color: AppTheme.Theme.text
 
                 font.pixelSize: 25
                 font.bold: true
@@ -35,7 +43,7 @@ Rectangle {
             Label {
                 text: topBar.subtitle
 
-                color: "#777184"
+                color: AppTheme.Theme.textSecondary
 
                 font.pixelSize: 13
             }
@@ -47,19 +55,34 @@ Rectangle {
 
             radius: 21
 
-            color: "#FFFFFF"
+            color: AppTheme.Theme.surface
 
             border.width: 1
-            border.color: "#E5DFF0"
+
+            border.color: AppTheme.Theme.border
 
             Label {
                 anchors.centerIn: parent
 
-                text: "✦"
+                text:
+                    AppTheme.Theme.darkMode
+                    ? "☀"
+                    : "☾"
 
-                color: "#A78BCE"
+                color: AppTheme.Theme.primary
 
                 font.pixelSize: 19
+            }
+
+            MouseArea {
+                anchors.fill: parent
+
+                cursorShape:
+                    Qt.PointingHandCursor
+
+                onClicked: {
+                    topBar.themeToggleRequested()
+                }
             }
         }
     }

@@ -82,3 +82,7 @@ CMakeLists.txt.user*
 .uic/
 /build*/
 /.qtcreator/
+release/
+debug/
+object_script*
+.qmake.stash

@@ -6,7 +6,8 @@
 #include <QList>
 
 #include "DataSet.h"
-#include "ParameterDefinition.h"
+#include "ParserTypes.h"
+
 
 class ExcelParser
 {
@@ -15,9 +16,11 @@ public:
 
     // =====================================================
     // NORMAL DATASET PARSING
+    // Supports: .xlsx, .csv, .txt
     // =====================================================
 
-    bool loadFile(const QString &filePath);
+    bool loadFile(
+        const QString &filePath);
 
     const DataSet &dataSet() const;
 
@@ -34,9 +37,16 @@ public:
         QStringList *warnings = nullptr);
 
 private:
+    bool loadExcelDataSet(
+        const QString &filePath);
+
+    bool loadDelimitedDataSet(
+        const QString &filePath);
+
     DataSet m_dataSet;
 
     QString m_lastError;
 };
+
 
 #endif // EXCELPARSER_H

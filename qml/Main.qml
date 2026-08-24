@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
+import "." as AppTheme
 import "components" as Components
 
 ApplicationWindow {
@@ -17,22 +18,42 @@ ApplicationWindow {
 
     title: "Generic Data Analyzer"
 
-    color: "#F7F5FB"
+    color: AppTheme.Theme.background
 
     property int currentPage: 0
 
+    // =========================================================
+    // SAYFA BAŞLIKLARI
+    // =========================================================
+
     function pageTitle(index) {
         switch (index) {
-        case 0: return "Dashboard"
-        case 1: return "Veri Setleri"
-        case 2: return "Veri Kalitesi"
-        case 3: return "Sütun Eşleştirme"
-        case 4: return "Veri Analizi"
-        case 5: return "Outlier Analysis"
-        case 6: return "Karşılaştırma"
-        default: return "Dashboard"
+        case 0:
+            return "Dashboard"
+
+        case 1:
+            return "Veri Setleri"
+
+        case 2:
+            return "Veri Analizi"
+
+        case 3:
+            return "Veri Temizleme"
+
+        case 4:
+            return "Karşılaştırma"
+
+        case 5:
+            return "Görselleştirme & Export"
+
+        default:
+            return "Dashboard"
         }
     }
+
+    // =========================================================
+    // SAYFA ALT BAŞLIKLARI
+    // =========================================================
 
     function pageSubtitle(index) {
         switch (index) {
@@ -40,73 +61,107 @@ ApplicationWindow {
             return "Veri setlerinizi yönetin ve analiz sürecini başlatın."
 
         case 1:
-            return "Yüklenen veri setlerinin yapısını inceleyin."
+            return "Veri setlerinizi yükleyin, yapısını inceleyin ve önizleyin."
 
         case 2:
-            return "Veri kalitesi ve bütünlük sonuçlarını inceleyin."
+            return "İstatistikleri, veri kalitesini, dağılımları ve aykırı değerleri inceleyin."
 
         case 3:
-            return "Karşılaştırılacak sütunları eşleştirin."
+            return "Analiz sonucunda belirlenen sorunları seçerek tek seferde temizleyin."
 
         case 4:
-            return "Veri setleri üzerinde analiz gerçekleştirin."
+            return "Sütunları eşleştirin ve iki veri setini karşılaştırın."
 
         case 5:
-            return "Aykırı değerleri IQR yöntemiyle analiz edin."
-
-        case 6:
-            return "Eşleştirilmiş veri setlerini karşılaştırın."
+            return "Temizlenmiş veya orijinal verilerin grafiklerini inceleyin ve Excel/CSV/JSON olarak dışa aktarın."
 
         default:
             return ""
         }
     }
 
+    // =========================================================
+    // ANA LAYOUT
+    // =========================================================
+
     RowLayout {
         anchors.fill: parent
+
         spacing: 0
 
-        // SOL MENÜ
+        // =====================================================
+        // SIDEBAR
+        // =====================================================
+
         Components.Sidebar {
             id: sidebar
 
             Layout.fillHeight: true
+
+            currentPage: window.currentPage
 
             onPageSelected: {
                 window.currentPage = index
             }
         }
 
-        // ANA ALAN
+        // =====================================================
+        // SAĞ ANA ALAN
+        // =====================================================
+
         ColumnLayout {
             Layout.fillWidth: true
+
             Layout.fillHeight: true
 
             spacing: 0
 
-            // ÜST BAR
+            // =================================================
+            // TOP BAR
+            // =================================================
+
             Components.TopBar {
+                id: topBar
+
                 Layout.fillWidth: true
 
-                title: window.pageTitle(window.currentPage)
+                title:
+                    window.pageTitle(
+                        window.currentPage
+                    )
 
-                subtitle: window.pageSubtitle(window.currentPage)
+                subtitle:
+                    window.pageSubtitle(
+                        window.currentPage
+                    )
+
+                onThemeToggleRequested: {
+                    AppTheme.Theme.darkMode =
+                            !AppTheme.Theme.darkMode
+                }
             }
 
-            // AYIRICI ÇİZGİ
+            // =================================================
+            // AYIRICI
+            // =================================================
+
             Rectangle {
                 Layout.fillWidth: true
 
                 height: 1
 
-                color: "#E5DFF0"
+                color: AppTheme.Theme.border
             }
 
-            // SAYFALAR
+            // =================================================
+            // SAYFA LOADER
+            // =================================================
+
             Loader {
                 id: pageLoader
 
                 Layout.fillWidth: true
+
                 Layout.fillHeight: true
 
                 source: {
@@ -119,22 +174,39 @@ ApplicationWindow {
                         return "qrc:/qml/pages/DatasetsPage.qml"
 
                     case 2:
-                        return "qrc:/qml/pages/DataQualityPage.qml"
-
-                    case 3:
-                        return "qrc:/qml/pages/MappingPage.qml"
-
-                    case 4:
                         return "qrc:/qml/pages/AnalysisPage.qml"
 
-                    case 5:
-                        return "qrc:/qml/pages/OutlierPage.qml"
+                    case 3:
+                        return "qrc:/qml/pages/DataCleaningPage.qml"
 
-                    case 6:
+                    case 4:
                         return "qrc:/qml/pages/ComparisonPage.qml"
+
+                    case 5:
+                        return "qrc:/qml/pages/VisualizationPage.qml"
 
                     default:
                         return "qrc:/qml/pages/DashboardPage.qml"
+                    }
+                }
+
+                // =================================================
+                // SAYFAYA ORTAK REFERANSLAR
+                // =================================================
+
+                onLoaded: {
+
+                    if (item &&
+                            item.hasOwnProperty("mainWindow")) {
+
+                        item.mainWindow = window
+                    }
+
+                    if (item &&
+                            item.hasOwnProperty("appController")) {
+
+                        item.appController =
+                                appController
                     }
                 }
             }

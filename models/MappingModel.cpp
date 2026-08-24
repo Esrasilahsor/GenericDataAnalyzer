@@ -194,3 +194,19 @@ void MappingModel::setAccepted(
         AcceptedRole
         );
 }
+
+QVariantMap MappingModel::get(int index) const
+{
+    if (index < 0 || index >= m_mappings.size())
+    {
+        return QVariantMap();
+    }
+
+    const ColumnMapping &m = m_mappings.at(index);
+    QVariantMap map;
+    map[QStringLiteral("sourceColumn")] = m.sourceColumn;
+    map[QStringLiteral("targetColumn")] = m.targetColumn;
+    map[QStringLiteral("similarityScore")] = m.similarityScore;
+    map[QStringLiteral("accepted")] = m.accepted;
+    return map;
+}

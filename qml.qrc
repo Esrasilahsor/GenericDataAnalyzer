@@ -7,11 +7,15 @@
         <file>qml/components/PrimaryButton.qml</file>
         <file>qml/pages/DashboardPage.qml</file>
         <file>qml/pages/DatasetsPage.qml</file>
-        <file>qml/pages/DataQualityPage.qml</file>
-        <file>qml/pages/MappingPage.qml</file>
         <file>qml/pages/AnalysisPage.qml</file>
-        <file>qml/pages/OutlierPage.qml</file>
         <file>qml/pages/ComparisonPage.qml</file>
         <file>qml/Main.qml</file>
+        <file>qml/Theme.qml</file>
+        <file>qml/assets/logo_dark.png</file>
+        <file>qml/assets/logo_light.png</file>
+        <file>qml/components/DatasetDetails.qml</file>
+        <file>qml/qmldir</file>
+        <file>qml/pages/DataCleaningPage.qml</file>
+        <file>qml/pages/VisualizationPage.qml</file>
     </qresource>
 </RCC>

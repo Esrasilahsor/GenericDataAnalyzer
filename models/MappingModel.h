@@ -77,6 +77,8 @@ public:
         bool accepted
         );
 
+    Q_INVOKABLE QVariantMap get(int index) const;
+
 signals:
     void countChanged();
 

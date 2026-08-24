@@ -4,9 +4,9 @@
 #include <QByteArray>
 #include <QList>
 
-#include "ParameterDefinition.h"
-#include "ParsedParameter.h"
+#include "ParserTypes.h"
 #include "RawDataBuffer.h"
+
 
 class RawDataParser
 {
@@ -46,5 +46,6 @@ private:
     QString formatFloatingPoint(
         double value) const;
 };
+
 
 #endif // RAWDATAPARSER_H

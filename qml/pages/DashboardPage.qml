@@ -1,611 +1,619 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import QtQuick.Dialogs 1.3
 
-import "../components" as Components
+import "../" as AppTheme
 
 Item {
     id: page
 
-    /*
-     * AppController, Main.qml tarafından Loader üzerinden verilir.
-     *
-     * Eğer henüz verilmemişse null olabilir.
-     * Bu nedenle aşağıdaki kullanımlarda güvenli kontroller
-     * yapılmaktadır.
-     */
+    property var theme: AppTheme.Theme
     property var appController
+    property var mainWindow
 
-    property string firstFileName: appController
-                               ? appController.dataset1Name
-                               : ""
+    function go(index) {
+        if (page.mainWindow)
+            page.mainWindow.currentPage = index
+    }
 
-    property string secondFileName: appController
-                                ? appController.dataset2Name
-                                : ""
+    function loaded(dataset) {
+        if (!page.appController)
+            return false
 
-    property string firstRows: appController
-                           ? String(appController.dataset1RowCount)
-                           : "—"
+        return dataset === 1
+                ? page.appController.dataset1Name !== ""
+                : page.appController.dataset2Name !== ""
+    }
 
-    property string secondRows: appController
-                            ? String(appController.dataset2RowCount)
-                            : "—"
+    function name(dataset) {
+        if (!page.appController)
+            return "Yüklenmedi"
 
-    property string firstColumns: appController
-                              ? String(appController.dataset1ColumnCount)
-                              : "—"
+        var value = dataset === 1
+                ? page.appController.dataset1Name
+                : page.appController.dataset2Name
 
-    property string secondColumns: appController
-                               ? String(appController.dataset2ColumnCount)
-                               : "—"
+        return value !== "" ? value : "Yüklenmedi"
+    }
 
+    function rows(dataset) {
+        if (!page.appController)
+            return 0
 
-    // ============================================================
-    // DOSYA SEÇİCİLER
-    // ============================================================
+        return dataset === 1
+                ? page.appController.dataset1RowCount
+                : page.appController.dataset2RowCount
+    }
 
-    FileDialog {
-        id: firstFileDialog
+    function columns(dataset) {
+        if (!page.appController)
+            return 0
 
-        title: "Birinci veri setini seçin"
+        return dataset === 1
+                ? page.appController.dataset1ColumnCount
+                : page.appController.dataset2ColumnCount
+    }
 
-        selectExisting: true
+    function qualityAvailable(dataset) {
+        if (!page.appController)
+            return false
 
-        nameFilters: [
-            "Data files (*.xlsx *.csv *.txt)",
-            "Excel files (*.xlsx)",
-            "CSV files (*.csv)",
-            "Text files (*.txt)"
-        ]
+        return dataset === 1
+                ? page.appController.dataset1QualityAvailable
+                : page.appController.dataset2QualityAvailable
+    }
 
-        onAccepted: {
+    function problemCount(dataset) {
+        if (!qualityAvailable(dataset))
+            return 0
 
-            if (page.appController) {
-                page.appController.loadDataset1(
-                    fileUrl.toString()
-                )
-            }
+        var result = dataset === 1
+                ? page.appController.dataset1QualityResult
+                : page.appController.dataset2QualityResult
+
+        return Number(result.columnsWithMissingValues || 0)
+                + (Number(result.duplicateRowCount || 0) > 0 ? 1 : 0)
+                + Number(result.constantColumnCount || 0)
+    }
+
+    function datasetStatus(dataset) {
+        if (!loaded(dataset))
+            return "Dosya yüklenmedi"
+
+        if (!qualityAvailable(dataset))
+            return "Analiz bekliyor"
+
+        return problemCount(dataset) > 0
+                ? "⚠ İnceleme gerekli"
+                : "✓ Analize hazır"
+    }
+
+    function datasetStatusColor(dataset) {
+        if (!loaded(dataset) || !qualityAvailable(dataset))
+            return theme.textSecondary
+
+        return problemCount(dataset) > 0
+                ? theme.warning
+                : theme.success
+    }
+
+    function isStepCompleted(stepIndex) {
+        if (!page.appController)
+            return false
+
+        switch (stepIndex) {
+        case 1:
+            return page.loaded(1) && page.loaded(2)
+        case 2:
+            return page.qualityAvailable(1) && page.qualityAvailable(2)
+        case 3:
+            return (page.loaded(1) || page.loaded(2)) &&
+                   page.qualityAvailable(1) &&
+                   page.problemCount(1) === 0 &&
+                   (!page.loaded(2) || page.problemCount(2) === 0)
+        case 4:
+            return page.appController.datasetComparisonAvailable
+        case 5:
+            return page.loaded(1) || page.loaded(2)
+        default:
+            return false
         }
     }
 
-
-    FileDialog {
-        id: secondFileDialog
-
-        title: "İkinci veri setini seçin"
-
-        selectExisting: true
-
-        nameFilters: [
-            "Data files (*.xlsx *.csv *.txt)",
-            "Excel files (*.xlsx)",
-            "CSV files (*.csv)",
-            "Text files (*.txt)"
-        ]
-
-        onAccepted: {
-
-            if (page.appController) {
-                page.appController.loadDataset2(
-                    fileUrl.toString()
-                )
-            }
-        }
-    }
-
-
-    // ============================================================
-    // ANA LAYOUT
-    // ============================================================
-
-    ColumnLayout {
-
+    ScrollView {
         anchors.fill: parent
-
-        anchors.margins: 24
-
-        spacing: 18
-
-
-        // ========================================================
-        // BAŞLIK
-        // ========================================================
+        clip: true
 
         ColumnLayout {
-
-            Layout.fillWidth: true
-
-            spacing: 4
-
-            Label {
-                text: "Dashboard"
-
-                color: "#302B3D"
-
-                font.pixelSize: 26
-
-                font.bold: true
-            }
-
-            Label {
-                text: "Veri setlerinizi yükleyin ve analiz sürecini başlatın."
-
-                color: "#777184"
-
-                font.pixelSize: 13
-            }
-        }
-
-
-        // ========================================================
-        // DATASET KARTLARI
-        // ========================================================
-
-        RowLayout {
-
-            Layout.fillWidth: true
-
-            spacing: 16
-
-
-            // ----------------------------------------------------
-            // DATASET 1
-            // ----------------------------------------------------
-
-            Components.DatasetCard {
-
-                Layout.fillWidth: true
-
-                datasetTitle: "Dataset 1"
-
-                fileName: page.firstFileName === ""
-                           ? "Henüz dosya seçilmedi"
-                           : page.firstFileName
-
-                rows: page.firstRows
-
-                columns: page.firstColumns
-
-                loaded: page.firstFileName !== ""
-
-                onBrowseRequested: {
-
-                    firstFileDialog.open()
-                }
-            }
-
-
-            // ----------------------------------------------------
-            // DATASET 2
-            // ----------------------------------------------------
-
-            Components.DatasetCard {
-
-                Layout.fillWidth: true
-
-                datasetTitle: "Dataset 2"
-
-                fileName: page.secondFileName === ""
-                           ? "Henüz dosya seçilmedi"
-                           : page.secondFileName
-
-                rows: page.secondRows
-
-                columns: page.secondColumns
-
-                loaded: page.secondFileName !== ""
-
-                onBrowseRequested: {
-
-                    secondFileDialog.open()
-                }
-            }
-        }
-
-
-        // ========================================================
-        // İSTATİSTİK KARTLARI
-        // ========================================================
-
-        RowLayout {
-
-            Layout.fillWidth: true
-
-            spacing: 12
-
-
-            Components.StatCard {
-
-                title: "Dataset 1"
-
-                value: page.firstFileName === ""
-                       ? "Bekleniyor"
-                       : "Hazır"
-
-                description: page.firstFileName === ""
-                            ? "Henüz veri yüklenmedi"
-                            : page.firstFileName
-
-                icon: "▣"
-            }
-
-
-            Components.StatCard {
-
-                title: "Dataset 2"
-
-                value: page.secondFileName === ""
-                       ? "Bekleniyor"
-                       : "Hazır"
-
-                description: page.secondFileName === ""
-                            ? "Henüz veri yüklenmedi"
-                            : page.secondFileName
-
-                icon: "▣"
-            }
-
-
-            Components.StatCard {
-
-                title: "Toplam Sütun"
-
-                value: {
-                    if (!page.appController)
-                        return "—"
-
-                    return String(
-                        Number(page.appController.dataset1ColumnCount)
-                        +
-                        Number(page.appController.dataset2ColumnCount)
-                    )
-                }
-
-                description: "İki veri setindeki toplam sütun"
-
-                icon: "▥"
-            }
-
-
-            Components.StatCard {
-
-                title: "Toplam Kayıt"
-
-                value: {
-                    if (!page.appController)
-                        return "—"
-
-                    return String(
-                        Number(page.appController.dataset1RowCount)
-                        +
-                        Number(page.appController.dataset2RowCount)
-                    )
-                }
-
-                description: "İki veri setindeki toplam kayıt"
-
-                icon: "▤"
-            }
-        }
-
-
-        // ========================================================
-        // HIZLI BAŞLANGIÇ / DURUM
-        // ========================================================
-
-        Rectangle {
-
-            Layout.fillWidth: true
-
-            Layout.fillHeight: true
-
-            radius: 18
-
-            color: "#FFFFFF"
-
-            border.width: 1
-
-            border.color: "#E5DFF0"
-
+            width: page.width
+            spacing: 18
+
+            // =================================================
+            // HEADER
+            // =================================================
 
             ColumnLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.topMargin: 24
+                spacing: 5
+            }
 
-                anchors.fill: parent
+            // =================================================
+            // QUICK START
+            // =================================================
 
-                anchors.margins: 22
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 118
 
-                spacing: 12
-
-
-                Label {
-
-                    text: "Analiz Süreci"
-
-                    color: "#302B3D"
-
-                    font.pixelSize: 17
-
-                    font.bold: true
-                }
-
-
-                Label {
-
-                    text: "Veri setlerini yükledikten sonra aşağıdaki adımlardan devam edebilirsiniz."
-
-                    color: "#777184"
-
-                    font.pixelSize: 12
-
-                    Layout.fillWidth: true
-                }
-
+                radius: 18
+                color: theme.surfaceAlt
+                border.width: 1
+                border.color: theme.border
 
                 RowLayout {
-
-                    Layout.fillWidth: true
-
-                    spacing: 12
-
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    spacing: 16
 
                     Rectangle {
+                        Layout.preferredWidth: 48
+                        Layout.preferredHeight: 48
+                        radius: 14
+                        color: theme.primary
 
-                        Layout.fillWidth: true
-
-                        Layout.preferredHeight: 70
-
-                        radius: 12
-
-                        color: "#F7F5FB"
-
-                        border.width: 1
-
-                        border.color: "#E5DFF0"
-
-
-                        ColumnLayout {
-
-                            anchors.fill: parent
-
-                            anchors.margins: 12
-
-                            spacing: 3
-
-
-                            Label {
-
-                                text: "01"
-
-                                color: "#A78BCE"
-
-                                font.pixelSize: 12
-
-                                font.bold: true
-                            }
-
-                            Label {
-
-                                text: "Veri Setlerini Yükle"
-
-                                color: "#302B3D"
-
-                                font.pixelSize: 13
-
-                                font.bold: true
-                            }
+                        Label {
+                            anchors.centerIn: parent
+                            text: "▶"
+                            color: "#FFFFFF"
+                            font.pixelSize: 18
+                            font.bold: true
                         }
                     }
 
-
-                    Rectangle {
-
+                    ColumnLayout {
                         Layout.fillWidth: true
+                        spacing: 4
 
-                        Layout.preferredHeight: 70
+                        Label {
+                            text: "Analiz sürecine başlayın"
+                            color: theme.text
+                            font.pixelSize: 16
+                            font.bold: true
+                        }
 
-                        radius: 12
-
-                        color: "#F7F5FB"
-
-                        border.width: 1
-
-                        border.color: "#E5DFF0"
-
-
-                        ColumnLayout {
-
-                            anchors.fill: parent
-
-                            anchors.margins: 12
-
-                            spacing: 3
-
-
-                            Label {
-
-                                text: "02"
-
-                                color: "#A78BCE"
-
-                                font.pixelSize: 12
-
-                                font.bold: true
-                            }
-
-                            Label {
-
-                                text: "Veri Kalitesini İncele"
-
-                                color: "#302B3D"
-
-                                font.pixelSize: 13
-
-                                font.bold: true
-                            }
+                        Label {
+                            text: "İki veri setini yükleyerek kalite, istatistik, aykırı değer ve karşılaştırma adımlarını tek akışta tamamlayabilirsiniz."
+                            color: theme.textSecondary
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
                     }
 
+                    Button {
+                        Layout.preferredWidth: 175
+                        Layout.preferredHeight: 42
+                        text: "Veri Setlerine Git →"
+                        onClicked: page.go(1)
 
-                    Rectangle {
+                        contentItem: Text {
+                            text: parent.text
+                            color: "#FFFFFF"
+                            font.pixelSize: 12
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
 
-                        Layout.fillWidth: true
-
-                        Layout.preferredHeight: 70
-
-                        radius: 12
-
-                        color: "#F7F5FB"
-
-                        border.width: 1
-
-                        border.color: "#E5DFF0"
-
-
-                        ColumnLayout {
-
-                            anchors.fill: parent
-
-                            anchors.margins: 12
-
-                            spacing: 3
-
-
-                            Label {
-
-                                text: "03"
-
-                                color: "#A78BCE"
-
-                                font.pixelSize: 12
-
-                                font.bold: true
-                            }
-
-                            Label {
-
-                                text: "Sütunları Eşleştir"
-
-                                color: "#302B3D"
-
-                                font.pixelSize: 13
-
-                                font.bold: true
-                            }
+                        background: Rectangle {
+                            radius: 9
+                            color: theme.primary
                         }
                     }
+                }
+            }
 
+            // =================================================
+            // DATASET CARDS
+            // =================================================
 
-                    Rectangle {
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                spacing: 14
+
+                Repeater {
+                    model: 2
+
+                    delegate: Rectangle {
+                        id: datasetCard
 
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 180
 
-                        Layout.preferredHeight: 70
-
-                        radius: 12
-
-                        color: "#F7F5FB"
-
+                        radius: 16
+                        color: theme.surface
                         border.width: 1
+                        border.color: theme.border
 
-                        border.color: "#E5DFF0"
-
+                        property int dataset: index + 1
+                        property bool isLoaded: page.loaded(dataset)
+                        property bool hasProblems: page.problemCount(dataset) > 0
 
                         ColumnLayout {
-
                             anchors.fill: parent
+                            anchors.margins: 18
+                            spacing: 8
 
-                            anchors.margins: 12
+                            RowLayout {
+                                Layout.fillWidth: true
 
-                            spacing: 3
+                                Label {
+                                    text: "DATASET " + datasetCard.dataset
+                                    color: theme.primary
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                }
 
-
-                            Label {
-
-                                text: "04"
-
-                                color: "#A78BCE"
-
-                                font.pixelSize: 12
-
-                                font.bold: true
+                                Label {
+                                    text: page.datasetStatus(datasetCard.dataset)
+                                    color: page.datasetStatusColor(datasetCard.dataset)
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
                             }
 
                             Label {
-
-                                text: "Karşılaştır"
-
-                                color: "#302B3D"
-
-                                font.pixelSize: 13
-
+                                text: page.name(datasetCard.dataset)
+                                color: theme.text
+                                font.pixelSize: 15
                                 font.bold: true
+                                elide: Text.ElideMiddle
+                                Layout.fillWidth: true
+                            }
+
+                            Label {
+                                text:
+                                    datasetCard.isLoaded
+                                    ? page.rows(datasetCard.dataset)
+                                      + " satır  •  "
+                                      + page.columns(datasetCard.dataset)
+                                      + " sütun"
+                                    : "Dosya yüklenmedi"
+                                color: theme.textSecondary
+                                font.pixelSize: 12
+                            }
+
+                            Label {
+                                text:
+                                    datasetCard.isLoaded && page.qualityAvailable(datasetCard.dataset)
+                                    ? (datasetCard.hasProblems
+                                       ? page.problemCount(datasetCard.dataset)
+                                         + " kalite problemi tespit edildi."
+                                       : "Kalite problemi tespit edilmedi.")
+                                    : "Analiz sonucu henüz oluşturulmadı."
+                                color:
+                                    datasetCard.hasProblems
+                                    ? theme.warning
+                                    : theme.textSecondary
+                                font.pixelSize: 12
+                            }
+
+                            Item {
+                                Layout.fillHeight: true
+                            }
+
+                            Button {
+                                Layout.preferredWidth: 160
+                                Layout.preferredHeight: 36
+
+                                text:
+                                    !datasetCard.isLoaded
+                                    ? "Veri Setlerine Git"
+                                    : "Veri Analizine Git →"
+
+                                onClicked:
+                                    page.go(
+                                        datasetCard.isLoaded ? 2 : 1
+                                    )
+
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+
+                                background: Rectangle {
+                                    radius: 8
+                                    color: theme.primary
+                                }
                             }
                         }
                     }
                 }
+            }
 
+            // =================================================
+            // WORKFLOW
+            // =================================================
 
-                Item {
-                    Layout.fillHeight: true
-                }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 185
 
+                radius: 16
+                color: theme.surface
+                border.width: 1
+                border.color: theme.border
 
-                // =================================================
-                // DURUM MESAJI
-                // =================================================
-
-                Rectangle {
-
-                    Layout.fillWidth: true
-
-                    height: 48
-
-                    radius: 10
-
-                    color: page.firstFileName !== ""
-                           && page.secondFileName !== ""
-                           ? "#F0F8F2"
-                           : "#F7F5FB"
-
-                    border.width: 1
-
-                    border.color: page.firstFileName !== ""
-                                   && page.secondFileName !== ""
-                                   ? "#CBE5D3"
-                                   : "#E5DFF0"
-
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    spacing: 10
 
                     Label {
+                        text: "Analiz İş Akışı"
+                        color: theme.text
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
 
-                        anchors.centerIn: parent
-
-                        text: {
-                            if (page.firstFileName !== ""
-                                    && page.secondFileName !== "") {
-                                return "✓ İki veri seti de yüklendi. Analize başlayabilirsiniz."
-                            }
-
-                            if (page.firstFileName !== "") {
-                                return "Dataset 1 yüklendi. Dataset 2'yi yükleyin."
-                            }
-
-                            if (page.secondFileName !== "") {
-                                return "Dataset 2 yüklendi. Dataset 1'i yükleyin."
-                            }
-
-                            return "Analize başlamak için iki veri setini yükleyin."
-                        }
-
-                        color: page.firstFileName !== ""
-                               && page.secondFileName !== ""
-                               ? "#5A9B6C"
-                               : "#777184"
-
+                    Label {
+                        text: "Her adım bir sonraki aşamaya yönlendirir."
+                        color: theme.textSecondary
                         font.pixelSize: 12
                     }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        spacing: 10
+
+                        Repeater {
+                            model: [
+                                {
+                                    number: "01",
+                                    title: "Veri Setleri",
+                                    description: "Excel / CSV yükle ve önizle",
+                                    pageIndex: 1
+                                },
+                                {
+                                    number: "02",
+                                    title: "Veri Analizi",
+                                    description: "Kalite, istatistik ve outlier",
+                                    pageIndex: 2
+                                },
+                                {
+                                    number: "03",
+                                    title: "Veri Temizleme",
+                                    description: "Sorunları seç ve uygula",
+                                    pageIndex: 3
+                                },
+                                {
+                                    number: "04",
+                                    title: "Karşılaştırma",
+                                    description: "Eşleştir ve karşılaştır",
+                                    pageIndex: 4
+                                },
+                                {
+                                    number: "05",
+                                    title: "Görselleştirme",
+                                    description: "Grafik çiz ve dışa aktar",
+                                    pageIndex: 5
+                                }
+                            ]
+
+                            delegate: Rectangle {
+                                id: workflowCard
+
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+
+                                radius: 11
+                                color: workflowMouse.containsMouse
+                                       ? theme.surfaceAlt
+                                       : theme.background
+                                border.width: workflowMouse.containsMouse ? 1 : 0
+                                border.color: theme.primary
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 4
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+
+                                        Label {
+                                            text: modelData.number
+                                            color: page.isStepCompleted(modelData.pageIndex)
+                                                   ? theme.success
+                                                   : theme.primary
+                                            font.pixelSize: 14
+                                            font.bold: true
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        Rectangle {
+                                            visible: page.isStepCompleted(modelData.pageIndex)
+                                            Layout.preferredHeight: 20
+                                            Layout.preferredWidth: 80
+                                            radius: 10
+                                            color: "#E6F6EE"
+                                            border.width: 1
+                                            border.color: theme.success
+
+                                            Label {
+                                                anchors.centerIn: parent
+                                                text: "✓ Tamamlandı"
+                                                color: theme.success
+                                                font.pixelSize: 9
+                                                font.bold: true
+                                            }
+                                        }
+                                    }
+
+                                    Label {
+                                        text: modelData.title
+                                        color: theme.text
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                    }
+
+                                    Label {
+                                        text: modelData.description
+                                        color: theme.textSecondary
+                                        font.pixelSize: 11
+                                        wrapMode: Text.WordWrap
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                    }
+
+                                    Label {
+                                        text: page.isStepCompleted(modelData.pageIndex) ? "Görüntüle →" : "Aç →"
+                                        color: page.isStepCompleted(modelData.pageIndex) ? theme.success : theme.primary
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: workflowMouse
+
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    hoverEnabled: true
+
+                                    onClicked: page.go(modelData.pageIndex)
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+
+            // =================================================
+            // NEXT ACTION
+            // =================================================
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 92
+
+                radius: 14
+                color: theme.surfaceAlt
+                border.width: 1
+                border.color: theme.border
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 16
+                    spacing: 12
+
+                    Rectangle {
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        radius: 10
+                        color: theme.primary
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: "i"
+                            color: "#FFFFFF"
+                            font.pixelSize: 14
+                            font.bold: true
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Label {
+                            text: "Önerilen sonraki adım"
+                            color: theme.text
+                            font.pixelSize: 13
+                            font.bold: true
+                        }
+
+                        Label {
+                            text:
+                                !page.loaded(1) && !page.loaded(2)
+                                ? "Önce veri setlerinizi yükleyin."
+                                : (!page.qualityAvailable(1) &&
+                                   (!page.loaded(2) || !page.qualityAvailable(2)))
+                                  ? "Veri Analizi ekranından veri kalitesini ve istatistikleri inceleyin."
+                                  : (page.problemCount(1) > 0 ||
+                                     page.problemCount(2) > 0)
+                                    ? "Tespit edilen problemleri Veri Temizleme ekranından yönetin."
+                                    : "Veri setlerinizi Karşılaştırma & Görselleştirme ekranında inceleyebilirsiniz."
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Button {
+                        Layout.preferredWidth: 170
+                        Layout.preferredHeight: 38
+
+                        text:
+                            !page.loaded(1) && !page.loaded(2)
+                            ? "Veri Setlerine Git →"
+                            : (!page.qualityAvailable(1) &&
+                               (!page.loaded(2) || !page.qualityAvailable(2)))
+                              ? "Veri Analizi →"
+                              : (page.problemCount(1) > 0 ||
+                                 page.problemCount(2) > 0)
+                                ? "Veri Temizleme →"
+                                : "Karşılaştırma →"
+
+                        onClicked:
+                            !page.loaded(1) && !page.loaded(2)
+                            ? page.go(1)
+                            : (!page.qualityAvailable(1) &&
+                               (!page.loaded(2) || !page.qualityAvailable(2)))
+                              ? page.go(2)
+                              : (page.problemCount(1) > 0 ||
+                                 page.problemCount(2) > 0)
+                                ? page.go(3)
+                                : page.go(4)
+
+                        contentItem: Text {
+                            text: parent.text
+                            color: "#FFFFFF"
+                            font.pixelSize: 12
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        background: Rectangle {
+                            radius: 8
+                            color: theme.primary
+                        }
+                    }
+                }
+            }
+
+            Item {
+                Layout.preferredHeight: 24
             }
         }
     }

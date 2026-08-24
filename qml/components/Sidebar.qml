@@ -2,94 +2,159 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
+import "../" as AppTheme
+
 Rectangle {
     id: sidebar
 
     width: 240
-    color: "#FFFFFF"
 
-    property int selectedIndex: 0
+    // =====================================================
+    // AKTİF SAYFA
+    // =====================================================
+
+    property int currentPage: 0
+
+    color: AppTheme.Theme.surface
 
     signal pageSelected(int index)
 
+    // =====================================================
+    // ANA LAYOUT
+    // =====================================================
+
     ColumnLayout {
         anchors.fill: parent
+
         anchors.margins: 16
+
         spacing: 8
 
-        ColumnLayout {
-            Layout.fillWidth: true
-            Layout.topMargin: 8
-            Layout.bottomMargin: 20
-            spacing: 2
+        // =================================================
+        // LOGO
+        // =================================================
 
-            Label {
-                text: "Generic"
-                color: "#A78BCE"
-                font.pixelSize: 22
-                font.bold: true
+        RowLayout {
+            Layout.fillWidth: true
+
+            Layout.topMargin: 6
+            Layout.bottomMargin: 20
+
+            spacing: 10
+
+            Image {
+                id: appLogo
+
+                Layout.preferredWidth: 48
+                Layout.preferredHeight: 48
+
+                source:
+                    AppTheme.Theme.darkMode
+                    ? "qrc:/qml/assets/logo_dark.png"
+                    : "qrc:/qml/assets/logo_light.png"
+
+                fillMode: Image.PreserveAspectFit
+
+                smooth: true
+                mipmap: true
             }
 
-            Label {
-                text: "Data Analyzer"
-                color: "#302B3D"
-                font.pixelSize: 17
-                font.bold: true
+            ColumnLayout {
+                Layout.fillWidth: true
+
+                spacing: 0
+
+                Label {
+                    text: "Generic"
+
+                    color: AppTheme.Theme.primary
+
+                    font.pixelSize: 17
+                    font.bold: true
+                }
+
+                Label {
+                    text: "Data Analyzer"
+
+                    color: AppTheme.Theme.text
+
+                    font.pixelSize: 14
+                    font.bold: true
+                }
             }
         }
+
+        // =================================================
+        // NAVIGATION
+        // =================================================
 
         Repeater {
             model: [
                 { title: "Dashboard", icon: "⌂" },
                 { title: "Veri Setleri", icon: "▣" },
-                { title: "Veri Kalitesi", icon: "◈" },
-                { title: "Sütun Eşleştirme", icon: "⇄" },
                 { title: "Veri Analizi", icon: "▥" },
-                { title: "Outlier Analysis", icon: "△" },
-                { title: "Karşılaştırma", icon: "⇆" }
+                { title: "Veri Temizleme", icon: "✦" },
+                { title: "Karşılaştırma", icon: "⇆" },
+                { title: "Görselleştirme & Export", icon: "📈" }
             ]
 
             delegate: Rectangle {
                 Layout.fillWidth: true
+
                 height: 46
 
                 radius: 12
 
-                color: index === sidebar.selectedIndex
-                       ? "#F1EDF8"
-                       : "transparent"
+                // AKTİF MENÜ
+                color:
+                    index === sidebar.currentPage
+                    ? AppTheme.Theme.surfaceAlt
+                    : "transparent"
 
-                border.width: index === sidebar.selectedIndex ? 1 : 0
-                border.color: "#A78BCE"
+                border.width:
+                    index === sidebar.currentPage
+                    ? 1
+                    : 0
+
+                border.color:
+                    AppTheme.Theme.primary
 
                 RowLayout {
                     anchors.fill: parent
+
                     anchors.leftMargin: 14
                     anchors.rightMargin: 12
+
                     spacing: 12
 
                     Label {
                         text: modelData.icon
 
-                        color: index === sidebar.selectedIndex
-                               ? "#A78BCE"
-                               : "#777184"
+                        color:
+                            index === sidebar.currentPage
+                            ? AppTheme.Theme.primary
+                            : AppTheme.Theme.textSecondary
 
                         font.pixelSize: 18
 
                         Layout.preferredWidth: 24
-                        horizontalAlignment: Text.AlignHCenter
+
+                        horizontalAlignment:
+                            Text.AlignHCenter
                     }
 
                     Label {
                         text: modelData.title
 
-                        color: index === sidebar.selectedIndex
-                               ? "#302B3D"
-                               : "#777184"
+                        color:
+                            index === sidebar.currentPage
+                            ? AppTheme.Theme.text
+                            : AppTheme.Theme.textSecondary
 
                         font.pixelSize: 14
-                        font.bold: index === sidebar.selectedIndex
+
+                        font.bold:
+                            index === sidebar.currentPage
 
                         Layout.fillWidth: true
                     }
@@ -97,34 +162,53 @@ Rectangle {
 
                 MouseArea {
                     anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
+
+                    cursorShape:
+                        Qt.PointingHandCursor
 
                     onClicked: {
-                        sidebar.selectedIndex = index
                         sidebar.pageSelected(index)
                     }
                 }
             }
         }
 
+        // =================================================
+        // ALT BOŞLUK
+        // =================================================
+
         Item {
             Layout.fillHeight: true
         }
 
+        // =================================================
+        // AYIRICI
+        // =================================================
+
         Rectangle {
             Layout.fillWidth: true
+
             height: 1
-            color: "#E5DFF0"
+
+            color: AppTheme.Theme.border
         }
+
+        // =================================================
+        // ALT YAZI
+        // =================================================
 
         Label {
             text: "Generic Data Analyzer"
 
-            color: "#777184"
+            color: AppTheme.Theme.textSecondary
+
             font.pixelSize: 11
 
             Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
+
+            horizontalAlignment:
+                Text.AlignHCenter
+
             Layout.bottomMargin: 4
         }
     }

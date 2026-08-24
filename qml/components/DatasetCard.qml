@@ -2,6 +2,8 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
+import "../" as AppTheme
+
 Rectangle {
     id: card
 
@@ -17,13 +19,17 @@ Rectangle {
     Layout.preferredHeight: 190
 
     radius: 18
-    color: "#FFFFFF"
+
+    color: AppTheme.Theme.surface
+
     border.width: 1
-    border.color: "#E5DFF0"
+    border.color: AppTheme.Theme.border
 
     ColumnLayout {
         anchors.fill: parent
+
         anchors.margins: 20
+
         spacing: 10
 
         RowLayout {
@@ -31,15 +37,26 @@ Rectangle {
 
             Label {
                 text: card.datasetTitle
-                color: "#302B3D"
+
+                color: AppTheme.Theme.text
+
                 font.pixelSize: 16
                 font.bold: true
+
                 Layout.fillWidth: true
             }
 
             Label {
-                text: card.loaded ? "Loaded" : "Empty"
-                color: card.loaded ? "#8BC9A3" : "#777184"
+                text:
+                    card.loaded
+                    ? "Loaded"
+                    : "Empty"
+
+                color:
+                    card.loaded
+                    ? AppTheme.Theme.success
+                    : AppTheme.Theme.textSecondary
+
                 font.pixelSize: 11
                 font.bold: true
             }
@@ -47,14 +64,19 @@ Rectangle {
 
         Label {
             text: card.fileName
-            color: "#777184"
+
+            color: AppTheme.Theme.textSecondary
+
             font.pixelSize: 12
+
             elide: Text.ElideMiddle
+
             Layout.fillWidth: true
         }
 
         RowLayout {
             Layout.fillWidth: true
+
             spacing: 24
 
             ColumnLayout {
@@ -62,13 +84,17 @@ Rectangle {
 
                 Label {
                     text: "Records"
-                    color: "#777184"
+
+                    color: AppTheme.Theme.textSecondary
+
                     font.pixelSize: 11
                 }
 
                 Label {
                     text: card.rows
-                    color: "#302B3D"
+
+                    color: AppTheme.Theme.text
+
                     font.bold: true
                 }
             }
@@ -78,13 +104,17 @@ Rectangle {
 
                 Label {
                     text: "Columns"
-                    color: "#777184"
+
+                    color: AppTheme.Theme.textSecondary
+
                     font.pixelSize: 11
                 }
 
                 Label {
                     text: card.columns
-                    color: "#302B3D"
+
+                    color: AppTheme.Theme.text
+
                     font.bold: true
                 }
             }
@@ -102,16 +132,23 @@ Rectangle {
 
                 contentItem: Text {
                     text: "Dosya Seç"
-                    color: "#FFFFFF"
+
+                    color: "white"
+
                     font.pixelSize: 12
                     font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+
+                    horizontalAlignment:
+                        Text.AlignHCenter
+
+                    verticalAlignment:
+                        Text.AlignVCenter
                 }
 
                 background: Rectangle {
                     radius: 10
-                    color: "#A78BCE"
+
+                    color: AppTheme.Theme.primary
                 }
             }
         }

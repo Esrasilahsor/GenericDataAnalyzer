@@ -1,3 +1,5 @@
+pragma Singleton
+
 import QtQuick 2.15
 
 QtObject {
@@ -29,46 +31,37 @@ QtObject {
     property color darkPrimaryDark: "#9B7BC1"
     property color darkAccent: "#D8A6C5"
 
-    // Semantic colors
+    // Semantic
     property color success: "#8BC9A3"
     property color warning: "#E8C889"
     property color error: "#DF929C"
     property color info: "#91B7D8"
 
     // Active colors
-    property color background: darkMode
-                                 ? darkBackground
-                                 : lightBackground
+    property color background:
+        darkMode ? darkBackground : lightBackground
 
-    property color surface: darkMode
-                              ? darkSurface
-                              : lightSurface
+    property color surface:
+        darkMode ? darkSurface : lightSurface
 
-    property color surfaceAlt: darkMode
-                                 ? darkSurfaceAlt
-                                 : lightSurfaceAlt
+    property color surfaceAlt:
+        darkMode ? darkSurfaceAlt : lightSurfaceAlt
 
-    property color border: darkMode
-                             ? darkBorder
-                             : lightBorder
+    property color border:
+        darkMode ? darkBorder : lightBorder
 
-    property color text: darkMode
-                           ? darkText
-                           : lightText
+    property color text:
+        darkMode ? darkText : lightText
 
-    property color textSecondary: darkMode
-                                    ? darkTextSecondary
-                                    : lightTextSecondary
+    property color textSecondary:
+        darkMode ? darkTextSecondary : lightTextSecondary
 
-    property color primary: darkMode
-                              ? darkPrimary
-                              : lightPrimary
+    property color primary:
+        darkMode ? darkPrimary : lightPrimary
 
-    property color primaryDark: darkMode
-                                  ? darkPrimaryDark
-                                  : lightPrimaryDark
+    property color primaryDark:
+        darkMode ? darkPrimaryDark : lightPrimaryDark
 
-    property color accent: darkMode
-                             ? darkAccent
-                             : lightAccent
+    property color accent:
+        darkMode ? darkAccent : lightAccent
 }
