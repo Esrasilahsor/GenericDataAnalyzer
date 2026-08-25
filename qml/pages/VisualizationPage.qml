@@ -45,6 +45,13 @@ Item {
 
     function generateChart() {
         if (!appController) return
+        if (page.chartType !== "correlation" && (page.selectedCol1 === "" || page.selectedCol1 === "-- Sütun Seçiniz --")) {
+            page.saveSuccess = false
+            page.saveStatusMessage = "Lütfen çizmek istediğiniz sütunu seçin."
+            statusTimer.restart()
+            return
+        }
+
         page.isRendering = true
         renderTimer.restart()
     }
@@ -286,6 +293,7 @@ Item {
                                 highlighted: page.activeDataset === 1
                                 onClicked: {
                                     page.activeDataset = 1
+                                    page.selectedCol1 = ""
                                     page.chartData1 = ({})
                                     chartCanvas1.requestPaint()
                                 }
@@ -299,6 +307,7 @@ Item {
                                 highlighted: page.activeDataset === 2
                                 onClicked: {
                                     page.activeDataset = 2
+                                    page.selectedCol1 = ""
                                     page.chartData1 = ({})
                                     chartCanvas1.requestPaint()
                                 }
@@ -388,14 +397,12 @@ Item {
                             }
                             ComboBox {
                                 id: col1Combo
-                                Layout.preferredWidth: 180
+                                Layout.preferredWidth: 190
                                 Layout.preferredHeight: 36
                                 model: (page.isDualMode || page.chartType === "comparison") ? page.columnModel(1) : page.columnModel(page.activeDataset)
                                 textRole: "name"
+                                displayText: page.selectedCol1 !== "" ? page.selectedCol1 : "-- Sütun Seçiniz --"
                                 onActivated: page.selectedCol1 = currentText
-                                Component.onCompleted: {
-                                    if (count > 0) page.selectedCol1 = textAt(0)
-                                }
                             }
                         }
 
@@ -411,14 +418,12 @@ Item {
                             }
                             ComboBox {
                                 id: col2Combo
-                                Layout.preferredWidth: 180
+                                Layout.preferredWidth: 190
                                 Layout.preferredHeight: 36
                                 model: page.columnModel(2)
                                 textRole: "name"
+                                displayText: page.selectedCol2 !== "" ? page.selectedCol2 : "-- Sütun Seçiniz --"
                                 onActivated: page.selectedCol2 = currentText
-                                Component.onCompleted: {
-                                    if (count > 0) page.selectedCol2 = textAt(0)
-                                }
                             }
                         }
 
@@ -488,7 +493,7 @@ Item {
                             Label {
                                 text: page.chartType === "comparison" && !page.isDualMode
                                       ? "İki Veri Seti Karşılaştırma Grafiği (D1: " + page.name(1) + " vs D2: " + page.name(2) + ")"
-                                      : (page.isDualMode ? "Dataset 1: " + page.name(1) + " (" + page.selectedCol1 + ")" : page.name(page.activeDataset) + " (" + page.selectedCol1 + ") Grafiği")
+                                      : (page.isDualMode ? "Dataset 1: " + page.name(1) + (page.selectedCol1 !== "" ? " (" + page.selectedCol1 + ")" : "") : page.name(page.activeDataset) + (page.selectedCol1 !== "" ? " (" + page.selectedCol1 + ")" : "") + " Grafiği")
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
@@ -510,12 +515,12 @@ Item {
                             RowLayout {
                                 spacing: 6
                                 Rectangle { width: 12; height: 12; radius: 6; color: "#FF4081" }
-                                Label { text: "D1: " + page.selectedCol1; color: theme.text; font.pixelSize: 11; font.bold: true }
+                                Label { text: "D1: " + (page.selectedCol1 || "-"); color: theme.text; font.pixelSize: 11; font.bold: true }
                             }
                             RowLayout {
                                 spacing: 6
                                 Rectangle { width: 12; height: 12; radius: 6; color: "#7C4DFF" }
-                                Label { text: "D2: " + page.selectedCol2; color: theme.text; font.pixelSize: 11; font.bold: true }
+                                Label { text: "D2: " + (page.selectedCol2 || "-"); color: theme.text; font.pixelSize: 11; font.bold: true }
                             }
                         }
 
@@ -527,6 +532,14 @@ Item {
                             onPaint: {
                                 var ctx = getContext("2d")
                                 ctx.clearRect(0, 0, width, height)
+
+                                if (page.chartType !== "correlation" && (page.selectedCol1 === "" || page.selectedCol1 === "-- Sütun Seçiniz --")) {
+                                    ctx.fillStyle = theme.textSecondary
+                                    ctx.font = "13px sans-serif"
+                                    ctx.textAlign = "center"
+                                    ctx.fillText("Lütfen yukarıdan bir sütun seçip 'Grafiği Çiz' butonuna tıklayın.", width / 2, height / 2)
+                                    return
+                                }
 
                                 if (!page.chartData1 || !page.chartData1.success) {
                                     ctx.fillStyle = theme.textSecondary
@@ -774,7 +787,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             Label {
-                                text: "Dataset 2: " + page.name(2) + " (" + page.selectedCol2 + ")"
+                                text: "Dataset 2: " + page.name(2) + (page.selectedCol2 !== "" ? " (" + page.selectedCol2 + ")" : "")
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
@@ -797,6 +810,14 @@ Item {
                             onPaint: {
                                 var ctx = getContext("2d")
                                 ctx.clearRect(0, 0, width, height)
+
+                                if (page.chartType !== "correlation" && (page.selectedCol2 === "" || page.selectedCol2 === "-- Sütun Seçiniz --")) {
+                                    ctx.fillStyle = theme.textSecondary
+                                    ctx.font = "12px sans-serif"
+                                    ctx.textAlign = "center"
+                                    ctx.fillText("Lütfen Dataset 2 için bir sütun seçip 'Grafiği Çiz' butonuna tıklayın.", width / 2, height / 2)
+                                    return
+                                }
 
                                 if (!page.chartData2 || !page.chartData2.success) {
                                     ctx.fillStyle = theme.textSecondary

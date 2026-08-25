@@ -12,7 +12,7 @@ Item {
     property int activeDs: 1 // 1 for Dataset 1, 2 for Dataset 2
     property string outlierMethod: "IQR"
     property double outlierParam: 1.5
-    property string bulkMissingAction: "Satırları kaldır"
+    property string bulkMissingAction: "Mean (Ortalama)"
     property string bulkOutlierAction: "Aykırıları kaldır"
 
     ListModel { id: missingModel }
@@ -45,13 +45,7 @@ Item {
         if (!appController) return false
         var colModel = ds === 1 ? appController.dataset1ColumnModel : appController.dataset2ColumnModel
         if (!colModel) return false
-        for (var i = 0; i < colModel.count; ++i) {
-            var c = colModel.get(i)
-            if (c && c.name === colName) {
-                return c.type === "int" || c.type === "double" || c.type === "float" || c.type === "number" || c.isNumeric === true
-            }
-        }
-        return false
+        return colModel.isColumnNumeric(colName)
     }
 
     function log(msg, ok) {
@@ -91,7 +85,7 @@ Item {
             missingModel.append({
                 columnName: col,
                 isNumeric: isNum,
-                action: isNum ? "Mean" : "Mode"
+                action: isNum ? "Mean (Ortalama)" : "Mode (Mod)"
             })
         }
 
@@ -146,19 +140,22 @@ Item {
         if (!item) return
         var ds = page.activeDs
         var ok = false
+        var act = String(item.action || "")
 
-        if (item.columnName === "Tüm Eksik Değerli Satırlar" || item.action === "Satırları kaldır") {
+        if (item.columnName === "Tüm Eksik Değerli Satırlar" || act.indexOf("Satır") !== -1 || act === "Sil") {
             ok = ds === 1 ? appController.removeDataset1MissingRows() : appController.removeDataset2MissingRows()
             log("Dataset " + ds + " • Eksik Değerli Satırlar kaldırıldı.", ok)
-        } else if (item.action === "Mean") {
+        } else if (act.indexOf("Mean") !== -1 || act.indexOf("Ortalama") !== -1) {
             ok = ds === 1 ? appController.fillDataset1MissingWithMean(item.columnName) : appController.fillDataset2MissingWithMean(item.columnName)
-            log("Dataset " + ds + " • " + item.columnName + " eksik değerleri ortalama (Mean) ile dolduruldu.", ok)
-        } else if (item.action === "Median") {
+            log("Dataset " + ds + " • " + item.columnName + " ortalama (Mean) ile dolduruldu.", ok)
+        } else if (act.indexOf("Median") !== -1 || act.indexOf("Medyan") !== -1) {
             ok = ds === 1 ? appController.fillDataset1MissingWithMedian(item.columnName) : appController.fillDataset2MissingWithMedian(item.columnName)
-            log("Dataset " + ds + " • " + item.columnName + " eksik değerleri medyan ile dolduruldu.", ok)
-        } else if (item.action === "Mode") {
+            log("Dataset " + ds + " • " + item.columnName + " medyan ile dolduruldu.", ok)
+        } else if (act.indexOf("Mode") !== -1 || act.indexOf("Mod") !== -1) {
             ok = ds === 1 ? appController.fillDataset1MissingWithMode(item.columnName) : appController.fillDataset2MissingWithMode(item.columnName)
-            log("Dataset " + ds + " • " + item.columnName + " eksik değerleri mod ile dolduruldu.", ok)
+            log("Dataset " + ds + " • " + item.columnName + " mod ile dolduruldu.", ok)
+        } else if (act === "Atla") {
+            log("Dataset " + ds + " • " + item.columnName + " atlandı.", true)
         }
 
         refreshAnalysis()
@@ -167,7 +164,7 @@ Item {
     function applyBulkMissing() {
         var ds = page.activeDs
         var act = page.bulkMissingAction
-        if (act === "Satırları kaldır") {
+        if (act.indexOf("Satır") !== -1 || act === "Sil") {
             var ok = ds === 1 ? appController.removeDataset1MissingRows() : appController.removeDataset2MissingRows()
             log("Dataset " + ds + " • Tüm eksik değerli satırlar kaldırıldı.", ok)
         } else {
@@ -176,11 +173,11 @@ Item {
             for (var i = 0; i < missingCols.length; ++i) {
                 var col = String(missingCols[i])
                 var isNum = isColumnNumeric(ds, col)
-                if (act === "Mean" && isNum) {
+                if ((act.indexOf("Mean") !== -1 || act.indexOf("Ortalama") !== -1) && isNum) {
                     if (ds === 1) appController.fillDataset1MissingWithMean(col); else appController.fillDataset2MissingWithMean(col)
-                } else if (act === "Median" && isNum) {
+                } else if ((act.indexOf("Median") !== -1 || act.indexOf("Medyan") !== -1) && isNum) {
                     if (ds === 1) appController.fillDataset1MissingWithMedian(col); else appController.fillDataset2MissingWithMedian(col)
-                } else if (act === "Mode") {
+                } else if (act.indexOf("Mode") !== -1 || act.indexOf("Mod") !== -1) {
                     if (ds === 1) appController.fillDataset1MissingWithMode(col); else appController.fillDataset2MissingWithMode(col)
                 }
             }
@@ -197,10 +194,10 @@ Item {
     }
 
     function mapOutlierAction(actionName) {
-        if (actionName === "Mean (Ortalama)" || actionName === "Mean") return "Mean"
-        if (actionName === "Median (Medyan)" || actionName === "Median") return "Median"
-        if (actionName === "Mode (Mod)" || actionName === "Mode") return "Mode"
-        if (actionName === "Sınırla (Cap)" || actionName === "Cap") return "Cap"
+        if (actionName.indexOf("Mean") !== -1 || actionName.indexOf("Ortalama") !== -1) return "Mean"
+        if (actionName.indexOf("Median") !== -1 || actionName.indexOf("Medyan") !== -1) return "Median"
+        if (actionName.indexOf("Mode") !== -1 || actionName.indexOf("Mod") !== -1) return "Mode"
+        if (actionName.indexOf("Cap") !== -1 || actionName.indexOf("Sınırla") !== -1) return "Cap"
         return "Remove"
     }
 
@@ -356,9 +353,9 @@ Item {
 
                         ComboBox {
                             visible: missingModel.count > 0
-                            Layout.preferredWidth: 175
+                            Layout.preferredWidth: 190
                             Layout.preferredHeight: 34
-                            model: ["Satırları kaldır", "Mean", "Median", "Mode"]
+                            model: ["Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Satırları kaldır (Sil)"]
                             onActivated: page.bulkMissingAction = currentText
                         }
 
@@ -411,7 +408,7 @@ Item {
                             property int rowIndex: index
                             property string colName: (model && model.columnName !== undefined) ? model.columnName : ""
                             property bool isNum: (model && model.isNumeric !== undefined) ? model.isNumeric : false
-                            property string actName: (model && model.action !== undefined) ? model.action : "Mean"
+                            property string actName: (model && model.action !== undefined) ? model.action : "Mean (Ortalama)"
                             visible: colName !== ""
                             Layout.fillWidth: true
                             Layout.preferredHeight: 48
@@ -435,9 +432,11 @@ Item {
                                 ComboBox {
                                     id: missingCombo
                                     visible: colName !== "Tüm Eksik Değerli Satırlar"
-                                    Layout.preferredWidth: 160
+                                    Layout.preferredWidth: 175
                                     Layout.preferredHeight: 34
-                                    model: isNum ? ["Mean", "Median", "Mode", "Satırları kaldır"] : ["Mode", "Satırları kaldır"]
+                                    model: isNum
+                                           ? ["Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Satırları kaldır", "Atla"]
+                                           : ["Mode (Mod)", "Satırları kaldır", "Atla"]
                                     currentIndex: Math.max(0, model.indexOf(actName))
                                     onActivated: {
                                         if (rowIndex >= 0 && rowIndex < missingModel.count) {
@@ -508,9 +507,9 @@ Item {
 
                         ComboBox {
                             visible: outlierModel.count > 0
-                            Layout.preferredWidth: 175
+                            Layout.preferredWidth: 180
                             Layout.preferredHeight: 32
-                            model: ["Aykırıları kaldır", "Mean", "Median", "Mode", "Sınırla (Cap)"]
+                            model: ["Aykırıları kaldır", "Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Sınırla (Cap)"]
                             onActivated: page.bulkOutlierAction = currentText
                         }
 
@@ -560,7 +559,7 @@ Item {
 
                                 ComboBox {
                                     id: outlierActionCombo
-                                    Layout.preferredWidth: 170
+                                    Layout.preferredWidth: 175
                                     Layout.preferredHeight: 34
                                     model: ["Aykırıları kaldır", "Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Sınırla (Cap)"]
                                     currentIndex: Math.max(0, model.indexOf(outActionStr))

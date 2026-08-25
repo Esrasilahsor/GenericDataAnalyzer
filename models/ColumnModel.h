@@ -45,6 +45,10 @@ public:
 
     Q_INVOKABLE int count() const;
 
+    Q_INVOKABLE QVariantMap get(int index) const;
+    Q_INVOKABLE bool isNumeric(int index) const;
+    Q_INVOKABLE bool isColumnNumeric(const QString &name) const;
+
 private:
     QVector<ColumnInfo> m_columns;
 
