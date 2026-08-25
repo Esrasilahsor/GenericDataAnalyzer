@@ -170,6 +170,27 @@ ApplicationWindow {
                     Item {
                         Layout.fillWidth: true
                     }
+
+                    Rectangle {
+                        Layout.preferredWidth: 40
+                        Layout.preferredHeight: 40
+                        radius: 20
+                        color: AppTheme.Theme.surfaceAlt
+                        border.color: AppTheme.Theme.border
+                        border.width: 1
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: AppTheme.Theme.darkMode ? "🌙" : "☀️"
+                            font.pixelSize: 18
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: AppTheme.Theme.darkMode = !AppTheme.Theme.darkMode
+                        }
+                    }
                 }
             }
 

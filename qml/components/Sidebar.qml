@@ -183,6 +183,54 @@ Rectangle {
         }
 
         // =================================================
+        // TEMA DEĞİŞTİRİCİ (DARK / LIGHT MODE)
+        // =================================================
+
+        Rectangle {
+            Layout.fillWidth: true
+            height: 44
+            radius: 12
+            color: AppTheme.Theme.surfaceAlt
+            border.color: AppTheme.Theme.border
+            border.width: 1
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 8
+
+                Label {
+                    text: AppTheme.Theme.darkMode ? "🌙" : "☀️"
+                    font.pixelSize: 15
+                }
+
+                Label {
+                    text: AppTheme.Theme.darkMode ? "Koyu Tema" : "Açık Tema"
+                    color: AppTheme.Theme.text
+                    font.pixelSize: 12
+                    font.bold: true
+                    Layout.fillWidth: true
+                }
+
+                Switch {
+                    checked: AppTheme.Theme.darkMode
+                    onToggled: {
+                        AppTheme.Theme.darkMode = checked
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    AppTheme.Theme.darkMode = !AppTheme.Theme.darkMode
+                }
+            }
+        }
+
+        // =================================================
         // AYIRICI
         // =================================================
 
