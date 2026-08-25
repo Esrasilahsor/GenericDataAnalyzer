@@ -1,6 +1,7 @@
 #include "CleaningEngine.h"
 
 #include <QMap>
+#include <QSet>
 
 #include <algorithm>
 #include <cmath>
@@ -948,6 +949,200 @@ CleaningResult CleaningEngine::applyOutlierAction(
         result.details =
             resultMap;
 
+        return result;
+    }
+
+    if (action.compare(QStringLiteral("Mean"), Qt::CaseInsensitive) == 0 ||
+        action.compare(QStringLiteral("FillWithMean"), Qt::CaseInsensitive) == 0 ||
+        action.compare(QStringLiteral("Ortalama"), Qt::CaseInsensitive) == 0)
+    {
+        if (outlierRows.isEmpty())
+        {
+            result.success = true;
+            result.modified = false;
+            result.message = QStringLiteral("Aykırı değer bulunmuyor.");
+            result.details = resultMap;
+            return result;
+        }
+
+        const ColumnInfo *col = dataSet.findColumn(columnName);
+        if (!col) { result.errorMessage = QStringLiteral("Sütun bulunamadı."); return result; }
+
+        QVector<QVariant> vals = col->values();
+        double total = 0.0;
+        int validCount = 0;
+        QSet<int> outSet(outlierRows.begin(), outlierRows.end());
+
+        for (int r = 0; r < vals.size(); ++r)
+        {
+            if (outSet.contains(r) || isMissingValue(vals[r])) continue;
+            bool ok = false;
+            double v = vals[r].toDouble(&ok);
+            if (ok && std::isfinite(v)) { total += v; validCount++; }
+        }
+
+        double replacement = validCount > 0 ? (total / validCount) : 0.0;
+        for (int r : outlierRows) { vals[r] = replacement; }
+
+        if (!dataSet.setColumnValues(columnName, vals))
+        {
+            result.errorMessage = QStringLiteral("Sütun güncellenemedi.");
+            return result;
+        }
+
+        result.success = true;
+        result.modified = true;
+        result.message = QStringLiteral("%1 aykırı değer ortalama (%2) ile dolduruldu.").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
+        resultMap.insert(QStringLiteral("message"), result.message);
+        result.details = resultMap;
+        return result;
+    }
+
+    if (action.compare(QStringLiteral("Median"), Qt::CaseInsensitive) == 0 ||
+        action.compare(QStringLiteral("FillWithMedian"), Qt::CaseInsensitive) == 0 ||
+        action.compare(QStringLiteral("Medyan"), Qt::CaseInsensitive) == 0)
+    {
+        if (outlierRows.isEmpty())
+        {
+            result.success = true;
+            result.modified = false;
+            result.message = QStringLiteral("Aykırı değer bulunmuyor.");
+            result.details = resultMap;
+            return result;
+        }
+
+        const ColumnInfo *col = dataSet.findColumn(columnName);
+        if (!col) { result.errorMessage = QStringLiteral("Sütun bulunamadı."); return result; }
+
+        QVector<QVariant> vals = col->values();
+        QVector<double> validNums;
+        QSet<int> outSet(outlierRows.begin(), outlierRows.end());
+
+        for (int r = 0; r < vals.size(); ++r)
+        {
+            if (outSet.contains(r) || isMissingValue(vals[r])) continue;
+            bool ok = false;
+            double v = vals[r].toDouble(&ok);
+            if (ok && std::isfinite(v)) validNums.append(v);
+        }
+
+        std::sort(validNums.begin(), validNums.end());
+        double replacement = 0.0;
+        if (!validNums.isEmpty())
+        {
+            int mid = validNums.size() / 2;
+            replacement = (validNums.size() % 2 == 0) ? ((validNums[mid - 1] + validNums[mid]) / 2.0) : validNums[mid];
+        }
+
+        for (int r : outlierRows) { vals[r] = replacement; }
+
+        if (!dataSet.setColumnValues(columnName, vals))
+        {
+            result.errorMessage = QStringLiteral("Sütun güncellenemedi.");
+            return result;
+        }
+
+        result.success = true;
+        result.modified = true;
+        result.message = QStringLiteral("%1 aykırı değer medyan (%2) ile dolduruldu.").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
+        resultMap.insert(QStringLiteral("message"), result.message);
+        result.details = resultMap;
+        return result;
+    }
+
+    if (action.compare(QStringLiteral("Mode"), Qt::CaseInsensitive) == 0 ||
+        action.compare(QStringLiteral("FillWithMode"), Qt::CaseInsensitive) == 0 ||
+        action.compare(QStringLiteral("Mod"), Qt::CaseInsensitive) == 0)
+    {
+        if (outlierRows.isEmpty())
+        {
+            result.success = true;
+            result.modified = false;
+            result.message = QStringLiteral("Aykırı değer bulunmuyor.");
+            result.details = resultMap;
+            return result;
+        }
+
+        const ColumnInfo *col = dataSet.findColumn(columnName);
+        if (!col) { result.errorMessage = QStringLiteral("Sütun bulunamadı."); return result; }
+
+        QVector<QVariant> vals = col->values();
+        QHash<double, int> counts;
+        QSet<int> outSet(outlierRows.begin(), outlierRows.end());
+
+        for (int r = 0; r < vals.size(); ++r)
+        {
+            if (outSet.contains(r) || isMissingValue(vals[r])) continue;
+            bool ok = false;
+            double v = vals[r].toDouble(&ok);
+            if (ok && std::isfinite(v)) counts[v]++;
+        }
+
+        double replacement = 0.0;
+        int maxCount = 0;
+        for (auto it = counts.begin(); it != counts.end(); ++it)
+        {
+            if (it.value() > maxCount) { maxCount = it.value(); replacement = it.key(); }
+        }
+
+        for (int r : outlierRows) { vals[r] = replacement; }
+
+        if (!dataSet.setColumnValues(columnName, vals))
+        {
+            result.errorMessage = QStringLiteral("Sütun güncellenemedi.");
+            return result;
+        }
+
+        result.success = true;
+        result.modified = true;
+        result.message = QStringLiteral("%1 aykırı değer mod (%2) ile dolduruldu.").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
+        resultMap.insert(QStringLiteral("message"), result.message);
+        result.details = resultMap;
+        return result;
+    }
+
+    if (action.compare(QStringLiteral("Cap"), Qt::CaseInsensitive) == 0 ||
+        action.compare(QStringLiteral("Winsorize"), Qt::CaseInsensitive) == 0 ||
+        action.compare(QStringLiteral("Sınırla"), Qt::CaseInsensitive) == 0)
+    {
+        if (outlierRows.isEmpty())
+        {
+            result.success = true;
+            result.modified = false;
+            result.message = QStringLiteral("Aykırı değer bulunmuyor.");
+            result.details = resultMap;
+            return result;
+        }
+
+        const ColumnInfo *col = dataSet.findColumn(columnName);
+        if (!col) { result.errorMessage = QStringLiteral("Sütun bulunamadı."); return result; }
+
+        double lowerB = resultMap.value(QStringLiteral("lowerBound")).toDouble();
+        double upperB = resultMap.value(QStringLiteral("upperBound")).toDouble();
+
+        QVector<QVariant> vals = col->values();
+        for (int r : outlierRows)
+        {
+            bool ok = false;
+            double v = vals[r].toDouble(&ok);
+            if (ok)
+            {
+                if (v < lowerB) vals[r] = lowerB;
+                else if (v > upperB) vals[r] = upperB;
+            }
+        }
+
+        if (!dataSet.setColumnValues(columnName, vals))
+        {
+            result.errorMessage = QStringLiteral("Sütun güncellenemedi.");
+            return result;
+        }
+
+        result.success = true;
+        result.modified = true;
+        result.message = QStringLiteral("%1 aykırı değer alt/üst sınırlara baskılandı.").arg(outlierRows.size());
+        resultMap.insert(QStringLiteral("message"), result.message);
+        result.details = resultMap;
         return result;
     }
 

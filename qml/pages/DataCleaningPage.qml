@@ -12,6 +12,8 @@ Item {
     property int activeDs: 1 // 1 for Dataset 1, 2 for Dataset 2
     property string outlierMethod: "IQR"
     property double outlierParam: 1.5
+    property string bulkMissingAction: "Satırları kaldır"
+    property string bulkOutlierAction: "Aykırıları kaldır"
 
     ListModel { id: missingModel }
     ListModel { id: duplicateModel }
@@ -161,10 +163,28 @@ Item {
         refreshAnalysis()
     }
 
-    function applyAllMissing() {
+    function applyBulkMissing() {
         var ds = page.activeDs
-        var ok = ds === 1 ? appController.removeDataset1MissingRows() : appController.removeDataset2MissingRows()
-        log("Dataset " + ds + " • Tüm eksik değerli satırlar topluca kaldırıldı.", ok)
+        var act = page.bulkMissingAction
+        if (act === "Satırları kaldır") {
+            var ok = ds === 1 ? appController.removeDataset1MissingRows() : appController.removeDataset2MissingRows()
+            log("Dataset " + ds + " • Tüm eksik değerli satırlar kaldırıldı.", ok)
+        } else {
+            var q = quality(ds)
+            var missingCols = q.columnsWithMissing || []
+            for (var i = 0; i < missingCols.length; ++i) {
+                var col = String(missingCols[i])
+                var isNum = isColumnNumeric(ds, col)
+                if (act === "Mean" && isNum) {
+                    if (ds === 1) appController.fillDataset1MissingWithMean(col); else appController.fillDataset2MissingWithMean(col)
+                } else if (act === "Median" && isNum) {
+                    if (ds === 1) appController.fillDataset1MissingWithMedian(col); else appController.fillDataset2MissingWithMedian(col)
+                } else if (act === "Mode") {
+                    if (ds === 1) appController.fillDataset1MissingWithMode(col); else appController.fillDataset2MissingWithMode(col)
+                }
+            }
+            log("Dataset " + ds + " • Tüm eksik sütunlar '" + act + "' ile dolduruldu.", true)
+        }
         refreshAnalysis()
     }
 
@@ -175,32 +195,43 @@ Item {
         refreshAnalysis()
     }
 
+    function mapOutlierAction(actionName) {
+        if (actionName === "Mean (Ortalama)" || actionName === "Mean") return "Mean"
+        if (actionName === "Median (Medyan)" || actionName === "Median") return "Median"
+        if (actionName === "Mode (Mod)" || actionName === "Mode") return "Mode"
+        if (actionName === "Sınırla (Cap)" || actionName === "Cap") return "Cap"
+        return "Remove"
+    }
+
     function applySingleOutlier(index) {
         if (index < 0 || index >= outlierModel.count) return
         var item = outlierModel.get(index)
         var ds = page.activeDs
-        var ok = ds === 1
-            ? appController.applyDataset1OutlierAction(item.columnName, page.outlierMethod, "Remove", page.outlierParam)
-            : appController.applyDataset2OutlierAction(item.columnName, page.outlierMethod, "Remove", page.outlierParam)
+        var backendAction = mapOutlierAction(item.action)
 
-        log("Dataset " + ds + " • " + item.columnName + " aykırı değerleri kaldırıldı (" + page.outlierMethod + ").", ok)
+        var ok = ds === 1
+            ? appController.applyDataset1OutlierAction(item.columnName, page.outlierMethod, backendAction, page.outlierParam)
+            : appController.applyDataset2OutlierAction(item.columnName, page.outlierMethod, backendAction, page.outlierParam)
+
+        log("Dataset " + ds + " • " + item.columnName + " (" + item.action + " - " + page.outlierMethod + ").", ok)
         refreshAnalysis()
     }
 
-    function applyAllOutliers() {
+    function applyBulkOutliers() {
         var ds = page.activeDs
         var total = outlierModel.count
         var successCount = 0
+        var backendAction = mapOutlierAction(page.bulkOutlierAction)
 
         for (var i = 0; i < outlierModel.count; ++i) {
             var col = outlierModel.get(i).columnName
             var ok = ds === 1
-                ? appController.applyDataset1OutlierAction(col, page.outlierMethod, "Remove", page.outlierParam)
-                : appController.applyDataset2OutlierAction(col, page.outlierMethod, "Remove", page.outlierParam)
+                ? appController.applyDataset1OutlierAction(col, page.outlierMethod, backendAction, page.outlierParam)
+                : appController.applyDataset2OutlierAction(col, page.outlierMethod, backendAction, page.outlierParam)
             if (ok) successCount++
         }
 
-        log("Dataset " + ds + " • " + successCount + "/" + total + " sütunun aykırı değerleri topluca temizlendi.", successCount > 0)
+        log("Dataset " + ds + " • " + successCount + "/" + total + " sütunun aykırı değerleri '" + page.bulkOutlierAction + "' ile temizlendi.", successCount > 0)
         refreshAnalysis()
     }
 
@@ -297,7 +328,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: Math.max(140, 90 + (missingModel.count + duplicateModel.count) * 56)
+                Layout.preferredHeight: Math.max(140, 95 + (missingModel.count + duplicateModel.count) * 58)
                 radius: 16
                 color: theme.surface
                 border.color: theme.border
@@ -310,6 +341,7 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        spacing: 10
                         Label {
                             text: "🧩 Eksik Değerler & Tekrarlanan Kayıtlar"
                             color: theme.text
@@ -317,12 +349,21 @@ Item {
                             font.bold: true
                         }
                         Item { Layout.fillWidth: true }
+
+                        ComboBox {
+                            visible: missingModel.count > 0
+                            Layout.preferredWidth: 175
+                            Layout.preferredHeight: 34
+                            model: ["Satırları kaldır", "Mean", "Median", "Mode"]
+                            onActivated: page.bulkMissingAction = currentText
+                        }
+
                         Button {
                             visible: missingModel.count > 0
-                            Layout.preferredWidth: 200
+                            Layout.preferredWidth: 190
                             Layout.preferredHeight: 34
-                            text: "⚡ Tüm Eksik Satırları Sil"
-                            onClicked: page.applyAllMissing()
+                            text: "⚡ Tüm Eksikleri Uygula"
+                            onClicked: page.applyBulkMissing()
                         }
                     }
 
@@ -384,7 +425,7 @@ Item {
                                 ComboBox {
                                     id: missingCombo
                                     visible: model.columnName !== "Tüm Eksik Değerli Satırlar"
-                                    Layout.preferredWidth: 150
+                                    Layout.preferredWidth: 160
                                     Layout.preferredHeight: 34
                                     model: model.isNumeric ? ["Mean", "Median", "Mode", "Satırları kaldır"] : ["Mode", "Satırları kaldır"]
                                     currentIndex: Math.max(0, model.indexOf(model.action))
@@ -415,7 +456,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: Math.max(160, 110 + outlierModel.count * 56)
+                Layout.preferredHeight: Math.max(160, 110 + outlierModel.count * 58)
                 radius: 16
                 color: theme.surface
                 border.color: theme.border
@@ -451,12 +492,20 @@ Item {
                             }
                         }
 
+                        ComboBox {
+                            visible: outlierModel.count > 0
+                            Layout.preferredWidth: 175
+                            Layout.preferredHeight: 32
+                            model: ["Aykırıları kaldır", "Mean", "Median", "Mode", "Sınırla (Cap)"]
+                            onActivated: page.bulkOutlierAction = currentText
+                        }
+
                         Button {
                             visible: outlierModel.count > 0
                             Layout.preferredWidth: 190
                             Layout.preferredHeight: 34
-                            text: "⚡ Tüm Aykırıları Temizle"
-                            onClicked: page.applyAllOutliers()
+                            text: "⚡ Tüm Aykırıları Uygula"
+                            onClicked: page.applyBulkOutliers()
                         }
                     }
 
@@ -465,7 +514,7 @@ Item {
                         delegate: Rectangle {
                             property int outIndex: index
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 48
+                            Layout.preferredHeight: 50
                             radius: 8
                             color: theme.surfaceAlt
 
@@ -479,7 +528,7 @@ Item {
                                     color: theme.text
                                     font.pixelSize: 13
                                     font.bold: true
-                                    Layout.preferredWidth: 200
+                                    Layout.preferredWidth: 190
                                     elide: Text.ElideMiddle
                                 }
 
@@ -490,10 +539,19 @@ Item {
                                     Layout.fillWidth: true
                                 }
 
-                                Button {
-                                    Layout.preferredWidth: 140
+                                ComboBox {
+                                    id: outlierActionCombo
+                                    Layout.preferredWidth: 170
                                     Layout.preferredHeight: 34
-                                    text: "▶ Aykırıları Kaldır"
+                                    model: ["Aykırıları kaldır", "Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Sınırla (Cap)"]
+                                    currentIndex: Math.max(0, model.indexOf(model.action))
+                                    onActivated: outlierModel.setProperty(outIndex, "action", currentText)
+                                }
+
+                                Button {
+                                    Layout.preferredWidth: 110
+                                    Layout.preferredHeight: 34
+                                    text: "▶ Uygula"
                                     onClicked: page.applySingleOutlier(outIndex)
                                 }
                             }
