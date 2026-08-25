@@ -322,17 +322,13 @@ Item {
                     }
 
                     // Table Rows
-                    ListView {
-                        id: paramList
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        spacing: 4
+                    Repeater {
                         model: appController ? appController.parameterModel : null
 
                         delegate: Rectangle {
-                            width: paramList.width
-                            height: 40
+                            property var itemData: model
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 42
                             radius: 6
                             color: index % 2 === 0 ? "transparent" : theme.surfaceAlt
 
@@ -343,7 +339,7 @@ Item {
 
                                 Label {
                                     Layout.preferredWidth: 200
-                                    text: model.dataName || ""
+                                    text: (itemData && itemData.dataName !== undefined) ? itemData.dataName : ""
                                     color: theme.text
                                     font.pixelSize: 13
                                     font.bold: true
@@ -351,7 +347,7 @@ Item {
                                 }
                                 Label {
                                     Layout.preferredWidth: 180
-                                    text: model.displayValue !== undefined && model.displayValue !== "" ? String(model.displayValue) : String(model.value || "-")
+                                    text: (itemData && itemData.displayValue !== undefined && itemData.displayValue !== "") ? String(itemData.displayValue) : String((itemData && itemData.value !== undefined) ? itemData.value : "-")
                                     color: theme.primary
                                     font.pixelSize: 13
                                     font.bold: true
@@ -359,13 +355,13 @@ Item {
                                 }
                                 Label {
                                     Layout.preferredWidth: 140
-                                    text: model.dataType || "-"
+                                    text: (itemData && itemData.dataType !== undefined && itemData.dataType !== "") ? itemData.dataType : "-"
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
                                 Label {
                                     Layout.preferredWidth: 100
-                                    text: model.unit && model.unit !== "" ? model.unit : "-"
+                                    text: (itemData && itemData.unit !== undefined && itemData.unit !== "") ? itemData.unit : "-"
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
@@ -373,10 +369,10 @@ Item {
                                     Layout.preferredWidth: 50
                                     Layout.preferredHeight: 22
                                     radius: 4
-                                    color: model.status === "OK" || model.valid ? "#1B5E20" : "#B71C1C"
+                                    color: (itemData && (itemData.status === "OK" || itemData.valid)) ? "#1B5E20" : "#B71C1C"
                                     Label {
                                         anchors.centerIn: parent
-                                        text: model.status === "OK" || model.valid ? "OK" : "ERROR"
+                                        text: (itemData && (itemData.status === "OK" || itemData.valid)) ? "OK" : "ERROR"
                                         color: "#FFFFFF"
                                         font.pixelSize: 10
                                         font.bold: true
@@ -390,7 +386,7 @@ Item {
                     Label {
                         visible: !appController || !appController.parameterModel || appController.parameterModel.count === 0
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
+                        Layout.preferredHeight: 80
                         text: "Henüz ham veri ayrıştırılmadı. Metadata ve Ham Veri dosyalarını yükleyip 'Parse Raw Data' butonuna tıklayın."
                         color: theme.textSecondary
                         font.pixelSize: 13
