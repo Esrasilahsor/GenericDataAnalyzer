@@ -4,6 +4,7 @@ import QtQuick.Layouts 1.15
 
 import "." as AppTheme
 import "components" as Components
+import "pages" as Pages
 
 ApplicationWindow {
     id: window
@@ -44,7 +45,7 @@ ApplicationWindow {
             return "Karşılaştırma"
 
         case 5:
-            return "Görselleştirme & Export"
+            return "Görselleştirme"
 
         case 6:
             return "Raw Data Parsing"
@@ -61,25 +62,25 @@ ApplicationWindow {
     function pageSubtitle(index) {
         switch (index) {
         case 0:
-            return "Veri setlerinizi yönetin ve analiz sürecini başlatın."
+            return "Sistem genel durumu, yüklü veri setleri ve hızlı analiz özeti."
 
         case 1:
-            return "Veri setlerinizi yükleyin, yapısını inceleyin ve önizleyin."
+            return "Excel, CSV veya JSON formatındaki veri setlerinizi yükleyin ve yönetin."
 
         case 2:
-            return "İstatistikleri, veri kalitesini, dağılımları ve aykırı değerleri inceleyin."
+            return "Sütun bazlı istatistikler, dağılımlar ve korelasyon analizi gerçekleştirin."
 
         case 3:
-            return "Analiz sonucunda belirlenen sorunları seçerek tek seferde temizleyin."
+            return "Eksik verileri doldurun, aykırı değerleri temizleyin ve tekrarları kaldırın."
 
         case 4:
-            return "Sütunları eşleştirin ve iki veri setini karşılaştırın."
+            return "İki farklı veri seti arasındaki benzerlik ve istatistiksel farkları inceleyin."
 
         case 5:
             return "Temizlenmiş veya orijinal verilerin grafiklerini inceleyin ve Excel/CSV/JSON olarak dışa aktarın."
 
         case 6:
-            return "Ham ikili veri paketlerini ve parametre metadatasını ayrıştırın, tablosunu inceleyin."
+            return "Protokol parametre tablosu (Excel) ile binary/metin paket verilerini ayrıştırın."
 
         default:
             return ""
@@ -87,22 +88,25 @@ ApplicationWindow {
     }
 
     // =========================================================
-    // ANA LAYOUT
+    // ANA DÜZEN
     // =========================================================
 
     RowLayout {
         anchors.fill: parent
-
         spacing: 0
 
         // =====================================================
-        // SIDEBAR
+        // SOL MENÜ
         // =====================================================
 
         Components.Sidebar {
             id: sidebar
 
             Layout.fillHeight: true
+
+            Layout.preferredWidth: 260
+            Layout.minimumWidth: 260
+            Layout.maximumWidth: 260
 
             currentPage: window.currentPage
 
@@ -112,111 +116,115 @@ ApplicationWindow {
         }
 
         // =====================================================
-        // SAĞ ANA ALAN
+        // AYIRICI ÇİZGİ
+        // =====================================================
+
+        Rectangle {
+            Layout.fillHeight: true
+            Layout.preferredWidth: 1
+            color: AppTheme.Theme.border
+        }
+
+        // =====================================================
+        // SAĞ İÇERİK ALANI
         // =====================================================
 
         ColumnLayout {
             Layout.fillWidth: true
-
             Layout.fillHeight: true
-
             spacing: 0
 
             // =================================================
-            // TOP BAR
-            // =================================================
-
-            Components.TopBar {
-                id: topBar
-
-                Layout.fillWidth: true
-
-                title:
-                    window.pageTitle(
-                        window.currentPage
-                    )
-
-                subtitle:
-                    window.pageSubtitle(
-                        window.currentPage
-                    )
-
-                onThemeToggleRequested: {
-                    AppTheme.Theme.darkMode =
-                            !AppTheme.Theme.darkMode
-                }
-            }
-
-            // =================================================
-            // AYIRICI
+            // ÜST BAŞLIK ALANI
             // =================================================
 
             Rectangle {
                 Layout.fillWidth: true
+                Layout.preferredHeight: 74
 
-                height: 1
+                color: AppTheme.Theme.surface
 
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 28
+                    anchors.rightMargin: 28
+
+                    ColumnLayout {
+                        spacing: 2
+
+                        Label {
+                            text: window.pageTitle(window.currentPage)
+                            color: AppTheme.Theme.text
+                            font.pixelSize: 22
+                            font.bold: true
+                        }
+
+                        Label {
+                            text: window.pageSubtitle(window.currentPage)
+                            color: AppTheme.Theme.textSecondary
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+
+            // =================================================
+            // BAŞLIK ALTI AYIRICI
+            // =================================================
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
                 color: AppTheme.Theme.border
             }
 
             // =================================================
-            // SAYFA LOADER
+            // SAYFALAR (STACK LAYOUT - TÜM DURUM KORUNUR)
             // =================================================
 
-            Loader {
-                id: pageLoader
-
+            StackLayout {
+                id: mainStack
                 Layout.fillWidth: true
-
                 Layout.fillHeight: true
+                currentIndex: window.currentPage
 
-                source: {
-                    switch (window.currentPage) {
-
-                    case 0:
-                        return "qrc:/qml/pages/DashboardPage.qml"
-
-                    case 1:
-                        return "qrc:/qml/pages/DatasetsPage.qml"
-
-                    case 2:
-                        return "qrc:/qml/pages/AnalysisPage.qml"
-
-                    case 3:
-                        return "qrc:/qml/pages/DataCleaningPage.qml"
-
-                    case 4:
-                        return "qrc:/qml/pages/ComparisonPage.qml"
-
-                    case 5:
-                        return "qrc:/qml/pages/VisualizationPage.qml"
-
-                    case 6:
-                        return "qrc:/qml/pages/RawDataPage.qml"
-
-                    default:
-                        return "qrc:/qml/pages/DashboardPage.qml"
-                    }
+                Pages.DashboardPage {
+                    mainWindow: window
+                    appController: window.appController
                 }
 
-                // =================================================
-                // SAYFAYA ORTAK REFERANSLAR
-                // =================================================
+                Pages.DatasetsPage {
+                    mainWindow: window
+                    appController: window.appController
+                }
 
-                onLoaded: {
+                Pages.AnalysisPage {
+                    mainWindow: window
+                    appController: window.appController
+                }
 
-                    if (item &&
-                            item.hasOwnProperty("mainWindow")) {
+                Pages.DataCleaningPage {
+                    mainWindow: window
+                    appController: window.appController
+                }
 
-                        item.mainWindow = window
-                    }
+                Pages.ComparisonPage {
+                    mainWindow: window
+                    appController: window.appController
+                }
 
-                    if (item &&
-                            item.hasOwnProperty("appController")) {
+                Pages.VisualizationPage {
+                    mainWindow: window
+                    appController: window.appController
+                }
 
-                        item.appController =
-                                appController
-                    }
+                Pages.RawDataPage {
+                    mainWindow: window
+                    appController: window.appController
                 }
             }
         }

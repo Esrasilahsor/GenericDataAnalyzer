@@ -1,7 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import QtQuick.Dialogs 1.3
 import "../" as AppTheme
 
 Item {
@@ -22,7 +21,6 @@ Item {
     property var chartData1: ({})
     property var chartData2: ({})
 
-    property string exportFormat: "xlsx"
     property string saveStatusMessage: ""
     property bool saveSuccess: true
     property bool isRendering: false
@@ -142,40 +140,23 @@ Item {
         statusTimer.restart()
     }
 
-    Timer {
-        id: statusTimer
-        interval: 5000
-        onTriggered: page.saveStatusMessage = ""
+    function exportData(format) {
+        if (!appController) return
+        var path = appController.autoExportDataset(page.activeDataset, format)
+        if (path && path !== "") {
+            page.saveSuccess = true
+            page.saveStatusMessage = "✓ Dataset " + page.activeDataset + " başarıyla dışa aktarıldı: " + path
+        } else {
+            page.saveSuccess = false
+            page.saveStatusMessage = "✕ Dışa aktarma hatası: " + (appController.lastError || "Hata")
+        }
+        statusTimer.restart()
     }
 
-    // Export Dialog
-    FileDialog {
-        id: exportDialog
-        title: "Temizlenmiş Veri Setini Dışa Aktar"
-        selectExisting: false
-        folder: appController && appController.dataDirectory !== "" ? ("file:///" + String(appController.dataDirectory).replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
-        nameFilters: page.exportFormat === "xlsx" ? ["Excel Dosyası (*.xlsx)"] :
-                     page.exportFormat === "csv" ? ["CSV Dosyası (*.csv)"] : ["JSON Dosyası (*.json)"]
-        onAccepted: {
-            var path = String(fileUrl).replace("file:///", "")
-            var ok = false
-            if (page.exportFormat === "xlsx") {
-                ok = page.activeDataset === 1 ? appController.exportDataset1ToXlsx(path) : appController.exportDataset2ToXlsx(path)
-            } else if (page.exportFormat === "csv") {
-                ok = page.activeDataset === 1 ? appController.exportDataset1ToCsv(path) : appController.exportDataset2ToCsv(path)
-            } else if (page.exportFormat === "json") {
-                ok = page.activeDataset === 1 ? appController.exportDataset1ToJson(path) : appController.exportDataset2ToJson(path)
-            }
-
-            if (ok) {
-                page.saveSuccess = true
-                page.saveStatusMessage = "✓ Dataset " + page.activeDataset + " başarıyla dışa aktarıldı: " + path
-            } else {
-                page.saveSuccess = false
-                page.saveStatusMessage = "✕ Dışa aktarma hatası: " + (appController.lastError || "Hata")
-            }
-            statusTimer.restart()
-        }
+    Timer {
+        id: statusTimer
+        interval: 6000
+        onTriggered: page.saveStatusMessage = ""
     }
 
     ScrollView {
@@ -318,17 +299,14 @@ Item {
 
                         RowLayout {
                             spacing: 8
-                            Label { text: "Temizlenmiş Veriyi Aktar:"; color: theme.textSecondary; font.pixelSize: 12 }
+                            Label { text: "Otomatik Dışa Aktar:"; color: theme.textSecondary; font.pixelSize: 12 }
 
                             Button {
                                 Layout.preferredHeight: 34
                                 Layout.preferredWidth: 115
                                 text: "📥 Excel (.xlsx)"
                                 enabled: page.isLoaded(page.activeDataset)
-                                onClicked: {
-                                    page.exportFormat = "xlsx"
-                                    exportDialog.open()
-                                }
+                                onClicked: page.exportData("xlsx")
                             }
 
                             Button {
@@ -336,10 +314,7 @@ Item {
                                 Layout.preferredWidth: 105
                                 text: "📥 CSV (.csv)"
                                 enabled: page.isLoaded(page.activeDataset)
-                                onClicked: {
-                                    page.exportFormat = "csv"
-                                    exportDialog.open()
-                                }
+                                onClicked: page.exportData("csv")
                             }
 
                             Button {
@@ -347,10 +322,7 @@ Item {
                                 Layout.preferredWidth: 105
                                 text: "📥 JSON (.json)"
                                 enabled: page.isLoaded(page.activeDataset)
-                                onClicked: {
-                                    page.exportFormat = "json"
-                                    exportDialog.open()
-                                }
+                                onClicked: page.exportData("json")
                             }
                         }
                     }

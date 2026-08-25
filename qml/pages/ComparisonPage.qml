@@ -75,7 +75,6 @@ Item {
 
         var suggestions = appController.getSuggestedMappings()
         if (suggestions && suggestions.length > 0) {
-            // Sort by similarity descending (highest similarity on top)
             suggestions.sort(function(a, b) {
                 var sa = Number(a.similarityScore || 0)
                 var sb = Number(b.similarityScore || 0)
@@ -688,25 +687,98 @@ Item {
                                     ctx.stroke()
                                 }
                                 else if (page.compChartType === "boxplot") {
+                                    var bp1 = appController.createDataset1BoxPlot(dataItem.sourceColumn, 1.5)
+                                    var bp2 = appController.createDataset2BoxPlot(dataItem.targetColumn, 1.5)
+
+                                    var min1 = (bp1 && bp1.minimum !== undefined) ? bp1.minimum : 0
+                                    var max1 = (bp1 && bp1.maximum !== undefined) ? bp1.maximum : 100
+                                    var min2 = (bp2 && bp2.minimum !== undefined) ? bp2.minimum : 0
+                                    var max2 = (bp2 && bp2.maximum !== undefined) ? bp2.maximum : 100
+
+                                    var globalMin = Math.min(min1, min2)
+                                    var globalMax = Math.max(max1, max2)
+                                    var rng = (globalMax - globalMin) === 0 ? 1 : (globalMax - globalMin)
+
+                                    function valToY(v) {
+                                        return (height - padB) - ((v - globalMin) / rng) * (plotH - 40) - 20
+                                    }
+
                                     var c1X = padL + plotW * 0.35
                                     var c2X = padL + plotW * 0.65
-                                    var bW = 60
+                                    var bW = 70
 
                                     // Box 1 (Dataset 1)
-                                    ctx.strokeStyle = "#FF4081"; ctx.lineWidth = 2
-                                    ctx.strokeRect(c1X - bW/2, padT + 60, bW, 140)
-                                    ctx.beginPath(); ctx.moveTo(c1X, padT + 20); ctx.lineTo(c1X, padT + 60); ctx.stroke()
-                                    ctx.beginPath(); ctx.moveTo(c1X, padT + 200); ctx.lineTo(c1X, padT + 240); ctx.stroke()
+                                    if (bp1 && bp1.success) {
+                                        var q1_1 = bp1.q1, med1 = bp1.median, q3_1 = bp1.q3
+                                        var lW1 = bp1.lowerWhisker !== undefined ? bp1.lowerWhisker : min1
+                                        var uW1 = bp1.upperWhisker !== undefined ? bp1.upperWhisker : max1
+
+                                        ctx.strokeStyle = "#FF4081"; ctx.lineWidth = 2
+                                        ctx.beginPath()
+                                        ctx.moveTo(c1X, valToY(lW1)); ctx.lineTo(c1X, valToY(uW1))
+                                        ctx.moveTo(c1X - 15, valToY(lW1)); ctx.lineTo(c1X + 15, valToY(lW1))
+                                        ctx.moveTo(c1X - 15, valToY(uW1)); ctx.lineTo(c1X + 15, valToY(uW1))
+                                        ctx.stroke()
+
+                                        var yQ3_1 = valToY(q3_1), yQ1_1 = valToY(q1_1)
+                                        var grad1 = ctx.createLinearGradient(c1X - bW/2, yQ3_1, c1X + bW/2, yQ1_1)
+                                        grad1.addColorStop(0, "#FF4081")
+                                        grad1.addColorStop(1, "#FF80AB")
+                                        ctx.fillStyle = grad1
+                                        ctx.fillRect(c1X - bW/2, yQ3_1, bW, yQ1_1 - yQ3_1)
+                                        ctx.strokeStyle = "#C2185B"
+                                        ctx.strokeRect(c1X - bW/2, yQ3_1, bW, yQ1_1 - yQ3_1)
+
+                                        ctx.strokeStyle = "#FFD600"; ctx.lineWidth = 3
+                                        ctx.beginPath()
+                                        ctx.moveTo(c1X - bW/2, valToY(med1)); ctx.lineTo(c1X + bW/2, valToY(med1))
+                                        ctx.stroke()
+
+                                        ctx.fillStyle = theme.text; ctx.font = "bold 9px sans-serif"; ctx.textAlign = "right"
+                                        ctx.fillText("Med: " + Number(med1).toFixed(1), c1X - bW/2 - 6, valToY(med1) + 3)
+                                    }
 
                                     // Box 2 (Dataset 2)
-                                    ctx.strokeStyle = "#7C4DFF"; ctx.lineWidth = 2
-                                    ctx.strokeRect(c2X - bW/2, padT + 80, bW, 130)
-                                    ctx.beginPath(); ctx.moveTo(c2X, padT + 40); ctx.lineTo(c2X, padT + 80); ctx.stroke()
-                                    ctx.beginPath(); ctx.moveTo(c2X, padT + 210); ctx.lineTo(c2X, padT + 250); ctx.stroke()
+                                    if (bp2 && bp2.success) {
+                                        var q1_2 = bp2.q1, med2 = bp2.median, q3_2 = bp2.q3
+                                        var lW2 = bp2.lowerWhisker !== undefined ? bp2.lowerWhisker : min2
+                                        var uW2 = bp2.upperWhisker !== undefined ? bp2.upperWhisker : max2
+
+                                        ctx.strokeStyle = "#7C4DFF"; ctx.lineWidth = 2
+                                        ctx.beginPath()
+                                        ctx.moveTo(c2X, valToY(lW2)); ctx.lineTo(c2X, valToY(uW2))
+                                        ctx.moveTo(c2X - 15, valToY(lW2)); ctx.lineTo(c2X + 15, valToY(lW2))
+                                        ctx.moveTo(c2X - 15, valToY(uW2)); ctx.lineTo(c2X + 15, valToY(uW2))
+                                        ctx.stroke()
+
+                                        var yQ3_2 = valToY(q3_2), yQ1_2 = valToY(q1_2)
+                                        var grad2 = ctx.createLinearGradient(c2X - bW/2, yQ3_2, c2X + bW/2, yQ1_2)
+                                        grad2.addColorStop(0, "#7C4DFF")
+                                        grad2.addColorStop(1, "#00E5FF")
+                                        ctx.fillStyle = grad2
+                                        ctx.fillRect(c2X - bW/2, yQ3_2, bW, yQ1_2 - yQ3_2)
+                                        ctx.strokeStyle = "#512DA8"
+                                        ctx.strokeRect(c2X - bW/2, yQ3_2, bW, yQ1_2 - yQ3_2)
+
+                                        ctx.strokeStyle = "#FFD600"; ctx.lineWidth = 3
+                                        ctx.beginPath()
+                                        ctx.moveTo(c2X - bW/2, valToY(med2)); ctx.lineTo(c2X + bW/2, valToY(med2))
+                                        ctx.stroke()
+
+                                        ctx.fillStyle = theme.text; ctx.font = "bold 9px sans-serif"; ctx.textAlign = "left"
+                                        ctx.fillText("Med: " + Number(med2).toFixed(1), c2X + bW/2 + 6, valToY(med2) + 3)
+                                    }
 
                                     ctx.fillStyle = theme.text; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"
                                     ctx.fillText((dataItem.sourceColumn || "") + " (D1)", c1X, height - padB + 20)
                                     ctx.fillText((dataItem.targetColumn || "") + " (D2)", c2X, height - padB + 20)
+
+                                    // Y min/max labels
+                                    ctx.fillStyle = theme.textSecondary
+                                    ctx.font = "10px sans-serif"
+                                    ctx.textAlign = "right"
+                                    ctx.fillText(Number(globalMax).toFixed(1), padL - 8, padT + 10)
+                                    ctx.fillText(Number(globalMin).toFixed(1), padL - 8, height - padB)
                                 }
                             }
                         }

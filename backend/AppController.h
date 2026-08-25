@@ -320,6 +320,8 @@ public:
     Q_INVOKABLE bool exportDataset1ToXlsx(const QString &filePath);
     Q_INVOKABLE bool exportDataset2ToXlsx(const QString &filePath);
 
+    Q_INVOKABLE QString autoExportDataset(int datasetIndex, const QString &format);
+
     Q_INVOKABLE bool removeDataset1Column(const QString &columnName);
     Q_INVOKABLE bool removeDataset2Column(const QString &columnName);
 

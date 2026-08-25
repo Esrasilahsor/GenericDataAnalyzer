@@ -1872,6 +1872,58 @@ QString AppController::saveChartImage(const QString &base64Data, const QString &
     return fullPath;
 }
 
+QString AppController::autoExportDataset(int datasetIndex, const QString &format)
+{
+    clearError();
+    const DataSet &ds = (datasetIndex == 1) ? m_dataset1 : m_dataset2;
+    if (ds.isEmpty())
+    {
+        setError(QStringLiteral("Veri seti bulunamadı veya boş."));
+        return QString();
+    }
+
+    QString baseDir = QDir::currentPath();
+    const QString knownProjectPath = QStringLiteral("C:/Users/aybuk/Desktop/GenericDataAnalyzer");
+    if (QDir(knownProjectPath).exists())
+    {
+        baseDir = knownProjectPath;
+    }
+
+    QDir outputDir(baseDir + QStringLiteral("/output"));
+    if (!outputDir.exists())
+    {
+        outputDir.mkpath(QStringLiteral("."));
+    }
+
+    const QString timeStr = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss"));
+    QString safeName = ds.name().isEmpty() ? QStringLiteral("dataset") : ds.name();
+    safeName.replace(QLatin1Char('/'), QLatin1Char('_')).replace(QLatin1Char('\\'), QLatin1Char('_'));
+    const QString cleanName = safeName.split(QLatin1Char('.')).first();
+    const QString ext = format.toLower().trimmed();
+    const QString filename = QStringLiteral("%1_Export_%2.%3").arg(cleanName, timeStr, ext);
+    const QString fullPath = outputDir.filePath(filename);
+
+    bool ok = false;
+    if (ext == QStringLiteral("xlsx"))
+    {
+        ok = (datasetIndex == 1) ? exportDataset1ToXlsx(fullPath) : exportDataset2ToXlsx(fullPath);
+    }
+    else if (ext == QStringLiteral("csv"))
+    {
+        ok = (datasetIndex == 1) ? exportDataset1ToCsv(fullPath) : exportDataset2ToCsv(fullPath);
+    }
+    else if (ext == QStringLiteral("json"))
+    {
+        ok = (datasetIndex == 1) ? exportDataset1ToJson(fullPath) : exportDataset2ToJson(fullPath);
+    }
+
+    if (ok)
+    {
+        return fullPath;
+    }
+    return QString();
+}
+
 // =========================================================
 // QUALITY
 // =========================================================
