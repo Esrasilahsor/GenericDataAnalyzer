@@ -22,6 +22,7 @@ ApplicationWindow {
     color: AppTheme.Theme.background
 
     property int currentPage: 0
+    property var controller: appController
 
     // =========================================================
     // SAYFA BAŞLIKLARI
@@ -194,37 +195,37 @@ ApplicationWindow {
 
                 Pages.DashboardPage {
                     mainWindow: window
-                    appController: appController
+                    appController: window.controller
                 }
 
                 Pages.DatasetsPage {
                     mainWindow: window
-                    appController: appController
+                    appController: window.controller
                 }
 
                 Pages.AnalysisPage {
                     mainWindow: window
-                    appController: appController
+                    appController: window.controller
                 }
 
                 Pages.DataCleaningPage {
                     mainWindow: window
-                    appController: appController
+                    appController: window.controller
                 }
 
                 Pages.ComparisonPage {
                     mainWindow: window
-                    appController: appController
+                    appController: window.controller
                 }
 
                 Pages.VisualizationPage {
                     mainWindow: window
-                    appController: appController
+                    appController: window.controller
                 }
 
                 Pages.RawDataPage {
                     mainWindow: window
-                    appController: appController
+                    appController: window.controller
                 }
             }
         }
