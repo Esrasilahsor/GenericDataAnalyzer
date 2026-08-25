@@ -2625,6 +2625,78 @@ bool AppController::parseRawData()
     return true;
 }
 
+bool AppController::importParsedRawDataAsDataset(int datasetIndex, const QString &customName)
+{
+    clearError();
+
+    if (!m_rawParseAvailable || m_parameterModel.isEmpty())
+    {
+        setError(QStringLiteral("Ayrıştırılmış ham veri bulunmuyor. Önce 'Parse Raw Data' çalıştırın."));
+        return false;
+    }
+
+    DataSet dataSet;
+    const QString name = customName.isEmpty() ? QStringLiteral("Parsed_Raw_Packet") : customName;
+    dataSet.setName(name);
+    dataSet.setFilePath(m_rawDataFilePath);
+    dataSet.setSheetName(QStringLiteral("RawPacket"));
+
+    for (int i = 0; i < m_parameterModel.parameterCount(); ++i)
+    {
+        const ParsedParameter *param = m_parameterModel.parameterAt(i);
+        if (!param) continue;
+
+        ColumnInfo col;
+        col.setName(param->dataName);
+        col.setOriginalName(param->dataName);
+
+        QVector<QVariant> vals;
+        if (param->parsedSuccessfully())
+        {
+            vals.append(param->value);
+        }
+        else
+        {
+            vals.append(QVariant());
+        }
+        col.setValues(vals);
+        dataSet.addColumn(col);
+    }
+
+    if (datasetIndex == 1)
+    {
+        m_originalDataset1 = dataSet;
+        m_dataset1 = dataSet;
+        m_dataset1Modified = false;
+        m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+        clearDataset1Quality();
+        clearDataset1Outliers();
+        clearDataset1Eda();
+        clearDataset1Correlation();
+        clearAnalysis();
+        emit dataset1Changed();
+        tryGenerateMappings();
+        analyzeDataset1Quality();
+    }
+    else
+    {
+        m_originalDataset2 = dataSet;
+        m_dataset2 = dataSet;
+        m_dataset2Modified = false;
+        m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+        clearDataset2Quality();
+        clearDataset2Outliers();
+        clearDataset2Eda();
+        clearDataset2Correlation();
+        clearAnalysis();
+        emit dataset2Changed();
+        tryGenerateMappings();
+        analyzeDataset2Quality();
+    }
+
+    return true;
+}
+
 void AppController::clearRawMetadata()
 {
     const bool hadData =

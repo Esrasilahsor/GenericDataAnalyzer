@@ -17,5 +17,6 @@
         <file>qml/qmldir</file>
         <file>qml/pages/DataCleaningPage.qml</file>
         <file>qml/pages/VisualizationPage.qml</file>
+        <file>qml/pages/RawDataPage.qml</file>
     </qresource>
 </RCC>

@@ -95,7 +95,8 @@ Rectangle {
                 { title: "Veri Analizi", icon: "▥" },
                 { title: "Veri Temizleme", icon: "✦" },
                 { title: "Karşılaştırma", icon: "⇆" },
-                { title: "Görselleştirme & Export", icon: "📈" }
+                { title: "Görselleştirme & Export", icon: "📈" },
+                { title: "Raw Data Ayrıştırma", icon: "⚡" }
             ]
 
             delegate: Rectangle {

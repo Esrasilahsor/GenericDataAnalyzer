@@ -548,6 +548,62 @@ Item {
             // DATASET 2 DETAY TABLOSU
             // =================================================
 
+            // =================================================
+            // HAM VERİ (RAW DATA) AYRIŞTIRMA KARTI
+            // =================================================
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 78
+                radius: 14
+                color: theme.surfaceAlt
+                border.color: theme.border
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 16
+                    spacing: 14
+
+                    Rectangle {
+                        Layout.preferredWidth: 42
+                        Layout.preferredHeight: 42
+                        radius: 10
+                        color: "#FF4081"
+                        Label {
+                            anchors.centerIn: parent
+                            text: "⚡"
+                            color: "#FFFFFF"
+                            font.bold: true
+                            font.pixelSize: 18
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Label {
+                            text: "Ham Veri & Metadata Ayrıştırma (Raw Data Parsing)"
+                            color: theme.text
+                            font.pixelSize: 14
+                            font.bold: true
+                        }
+                        Label {
+                            text: "Binary/text ham veri paketlerini parametre metadatasını kullanarak ayrıştırın ve tablo olarak inceleyin."
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                    }
+
+                    Button {
+                        Layout.preferredWidth: 210
+                        Layout.preferredHeight: 38
+                        text: "⚡ Ham Veri Ayrıştır →"
+                        onClicked: page.goToPage(6)
+                    }
+                }
+            }
+
             Components.DatasetDetails {
                 visible: page.dataset2Loaded
                 Layout.fillWidth: true

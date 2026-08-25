@@ -347,6 +347,7 @@ public:
     Q_INVOKABLE bool loadRawMetadata(const QString &filePath);
     Q_INVOKABLE bool loadRawDataFile(const QString &filePath);
     Q_INVOKABLE bool parseRawData();
+    Q_INVOKABLE bool importParsedRawDataAsDataset(int datasetIndex, const QString &customName = QString());
 
     Q_INVOKABLE void clearRawMetadata();
     Q_INVOKABLE void clearRawData();

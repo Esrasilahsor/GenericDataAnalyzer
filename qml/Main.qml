@@ -46,6 +46,9 @@ ApplicationWindow {
         case 5:
             return "Görselleştirme & Export"
 
+        case 6:
+            return "Raw Data Parsing"
+
         default:
             return "Dashboard"
         }
@@ -74,6 +77,9 @@ ApplicationWindow {
 
         case 5:
             return "Temizlenmiş veya orijinal verilerin grafiklerini inceleyin ve Excel/CSV/JSON olarak dışa aktarın."
+
+        case 6:
+            return "Ham ikili veri paketlerini ve parametre metadatasını ayrıştırın, tablosunu inceleyin."
 
         default:
             return ""
@@ -184,6 +190,9 @@ ApplicationWindow {
 
                     case 5:
                         return "qrc:/qml/pages/VisualizationPage.qml"
+
+                    case 6:
+                        return "qrc:/qml/pages/RawDataPage.qml"
 
                     default:
                         return "qrc:/qml/pages/DashboardPage.qml"
