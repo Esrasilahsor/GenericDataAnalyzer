@@ -194,37 +194,37 @@ ApplicationWindow {
 
                 Pages.DashboardPage {
                     mainWindow: window
-                    appController: window.appController
+                    appController: appController
                 }
 
                 Pages.DatasetsPage {
                     mainWindow: window
-                    appController: window.appController
+                    appController: appController
                 }
 
                 Pages.AnalysisPage {
                     mainWindow: window
-                    appController: window.appController
+                    appController: appController
                 }
 
                 Pages.DataCleaningPage {
                     mainWindow: window
-                    appController: window.appController
+                    appController: appController
                 }
 
                 Pages.ComparisonPage {
                     mainWindow: window
-                    appController: window.appController
+                    appController: appController
                 }
 
                 Pages.VisualizationPage {
                     mainWindow: window
-                    appController: window.appController
+                    appController: appController
                 }
 
                 Pages.RawDataPage {
                     mainWindow: window
-                    appController: window.appController
+                    appController: appController
                 }
             }
         }
