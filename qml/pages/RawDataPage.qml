@@ -29,7 +29,7 @@ Item {
     FileDialog {
         id: metadataDialog
         title: "Parametre Metadata Dosyası Seç (.xlsx)"
-        folder: appController ? ("file:///" + appController.dataDirectory().replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
+        folder: appController && appController.dataDirectory !== "" ? ("file:///" + String(appController.dataDirectory).replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
         nameFilters: ["Excel Dosyaları (*.xlsx *.xls)", "Tüm Dosyalar (*.*)"]
         onAccepted: {
             var path = String(fileUrl).replace("file:///", "")
@@ -46,7 +46,7 @@ Item {
     FileDialog {
         id: rawDataDialog
         title: "Ham Veri Dosyası Seç (.bin, .txt, .dat, .raw)"
-        folder: appController ? ("file:///" + appController.dataDirectory().replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
+        folder: appController && appController.dataDirectory !== "" ? ("file:///" + String(appController.dataDirectory).replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
         nameFilters: ["Ham Veri Dosyaları (*.bin *.dat *.txt *.raw)", "Tüm Dosyalar (*.*)"]
         onAccepted: {
             var path = String(fileUrl).replace("file:///", "")

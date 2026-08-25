@@ -154,6 +154,38 @@ void MappingModel::addMapping(
     emit countChanged();
 }
 
+void MappingModel::addMapping(
+    const QString &sourceColumn,
+    const QString &targetColumn,
+    double similarityScore,
+    bool accepted
+    )
+{
+    ColumnMapping mapping;
+    mapping.sourceColumn = sourceColumn;
+    mapping.targetColumn = targetColumn;
+    mapping.similarityScore = similarityScore;
+    mapping.accepted = accepted;
+
+    addMapping(mapping);
+}
+
+void MappingModel::removeMapping(int index)
+{
+    if (index < 0 || index >= m_mappings.size())
+        return;
+
+    beginRemoveRows(QModelIndex(), index, index);
+    m_mappings.removeAt(index);
+    endRemoveRows();
+    emit countChanged();
+}
+
+void MappingModel::remove(int index)
+{
+    removeMapping(index);
+}
+
 void MappingModel::clear()
 {
     if (m_mappings.isEmpty())

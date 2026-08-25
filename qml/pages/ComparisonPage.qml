@@ -15,6 +15,10 @@ Item {
     property string saveStatusMessage: ""
     property bool saveSuccess: true
 
+    ListModel {
+        id: mappingRows
+    }
+
     function goToPage(index) {
         if (mainWindow) mainWindow.currentPage = index
     }
@@ -23,24 +27,78 @@ Item {
         if (!appController) return false
         return ds === 1 ? (appController.dataset1Name !== "") : (appController.dataset2Name !== "")
     }
+
     function name(ds) {
         if (!appController) return "Dataset " + ds
         var n = ds === 1 ? appController.dataset1Name : appController.dataset2Name
         return n && n !== "" ? n : "Dataset " + ds
     }
 
+    function columnModel(ds) {
+        if (!appController) return null
+        return ds === 1 ? appController.dataset1ColumnModel : appController.dataset2ColumnModel
+    }
+
+    function firstColumn(ds) {
+        var m = columnModel(ds)
+        if (m && m.count > 0) {
+            var item = m.get(0)
+            return item && item.name !== undefined ? item.name : ""
+        }
+        return ""
+    }
+
+    function addMapping(src, tgt, score) {
+        mappingRows.append({
+            sourceColumn: src !== undefined ? src : firstColumn(1),
+            targetColumn: tgt !== undefined ? tgt : firstColumn(2),
+            similarityScore: score !== undefined ? score : 0
+        })
+    }
+
+    function removeMapping(index) {
+        if (index >= 0 && index < mappingRows.count) {
+            mappingRows.remove(index)
+        }
+    }
+
+    function loadSuggestedMappings() {
+        mappingRows.clear()
+        if (!appController) return
+
+        var suggestions = appController.getSuggestedMappings()
+        if (suggestions && suggestions.length > 0) {
+            for (var i = 0; i < suggestions.length; ++i) {
+                var s = suggestions[i]
+                var score = Math.round(Number(s.similarityScore || 0) * 100)
+                addMapping(s.sourceColumn, s.targetColumn, score)
+            }
+        } else {
+            addMapping()
+        }
+    }
+
+    function validMappingCount() {
+        var c = 0
+        for (var i = 0; i < mappingRows.count; ++i) {
+            var row = mappingRows.get(i)
+            if (row.sourceColumn && row.sourceColumn !== "" &&
+                row.targetColumn && row.targetColumn !== "") {
+                c++
+            }
+        }
+        return c
+    }
+
     function runComparison() {
         if (!appController) return
-        var model = appController.mappingModel
-        if (!model || model.count === 0) return
-
         var list = []
-        for (var i = 0; i < model.count; ++i) {
-            var item = model.get(i)
-            if (item && item.sourceColumn && item.targetColumn) {
+        for (var i = 0; i < mappingRows.count; ++i) {
+            var r = mappingRows.get(i)
+            if (r.sourceColumn && r.targetColumn) {
                 list.push({
-                    sourceColumn: item.sourceColumn,
-                    targetColumn: item.targetColumn
+                    sourceColumn: r.sourceColumn,
+                    targetColumn: r.targetColumn
                 })
             }
         }
@@ -52,24 +110,6 @@ Item {
             page.comparisonResult = appController.datasetComparisonResult
             page.selectedComparisonIndex = 0
             compCanvas.requestPaint()
-        }
-    }
-
-    function loadSuggestedMappings() {
-        if (!appController) return
-        var suggestions = appController.getSuggestedMappings()
-        if (!suggestions || suggestions.length === 0) {
-            appController.generateMappings()
-            return
-        }
-
-        var model = appController.mappingModel
-        if (model) {
-            model.clear()
-            for (var i = 0; i < suggestions.length; ++i) {
-                var s = suggestions[i]
-                model.addMapping(s.sourceColumn, s.targetColumn)
-            }
         }
     }
 
@@ -94,6 +134,10 @@ Item {
         id: statusTimer
         interval: 5000
         onTriggered: page.saveStatusMessage = ""
+    }
+
+    Component.onCompleted: {
+        loadSuggestedMappings()
     }
 
     ScrollView {
@@ -127,52 +171,195 @@ Item {
                 }
             }
 
-            // Controls & Suggestions Header
+            // Sütun Eşleştirme Kartı
             Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 90
+                Layout.preferredHeight: Math.max(220, 160 + mappingRows.count * 52)
                 radius: 16
                 color: theme.surface
                 border.color: theme.border
                 border.width: 1
 
-                RowLayout {
+                ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 16
-                    spacing: 14
+                    spacing: 10
 
-                    ColumnLayout {
+                    RowLayout {
                         Layout.fillWidth: true
-                        spacing: 3
-                        Label {
-                            text: "Dataset 1 (" + page.name(1) + ") ⇆ Dataset 2 (" + page.name(2) + ")"
-                            color: theme.text
-                            font.pixelSize: 15
-                            font.bold: true
+                        spacing: 10
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Label {
+                                text: "Sütun Eşleştirme (Dataset 1 ⇆ Dataset 2)"
+                                color: theme.text
+                                font.pixelSize: 15
+                                font.bold: true
+                            }
+                            Label {
+                                text: "Otomatik benzerlik algoritmasıyla veya manuel olarak sütunları eşleştirip karşılaştırabilirsiniz."
+                                color: theme.textSecondary
+                                font.pixelSize: 12
+                            }
                         }
+
+                        Button {
+                            Layout.preferredWidth: 210
+                            Layout.preferredHeight: 38
+                            text: "⚡ Otomatik Eşleştirme Öner"
+                            onClicked: page.loadSuggestedMappings()
+                        }
+
+                        Button {
+                            Layout.preferredWidth: 140
+                            Layout.preferredHeight: 38
+                            text: "+ Manuel Ekle"
+                            onClicked: page.addMapping()
+                        }
+                    }
+
+                    // Sütun Başlıkları
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 36
+                        radius: 8
+                        color: theme.surfaceAlt
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            Label {
+                                Layout.fillWidth: true
+                                text: "DATASET 1: " + page.name(1)
+                                color: "#FF4081"
+                                font.pixelSize: 11
+                                font.bold: true
+                            }
+                            Item { Layout.preferredWidth: 130 }
+                            Label {
+                                Layout.fillWidth: true
+                                text: "DATASET 2: " + page.name(2)
+                                color: "#7C4DFF"
+                                font.pixelSize: 11
+                                font.bold: true
+                            }
+                            Item { Layout.preferredWidth: 40 }
+                        }
+                    }
+
+                    // Mapping Rows
+                    Repeater {
+                        model: mappingRows
+                        delegate: RowLayout {
+                            property int rowIndex: index
+                            property var itemData: model
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            ComboBox {
+                                id: sourceCombo
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 40
+                                model: page.columnModel(1)
+                                textRole: "name"
+                                Component.onCompleted: {
+                                    if (itemData.sourceColumn && itemData.sourceColumn !== "") {
+                                        for (var k = 0; k < count; ++k) {
+                                            if (textAt(k) === itemData.sourceColumn) {
+                                                currentIndex = k
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                                onActivated:
+                                    mappingRows.setProperty(rowIndex, "sourceColumn", currentText)
+                            }
+
+                            // Similarity Badge
+                            Rectangle {
+                                Layout.preferredWidth: 130
+                                Layout.preferredHeight: 32
+                                radius: 16
+                                color: itemData.similarityScore > 75 ? "#E6F6EE" : (itemData.similarityScore > 40 ? "#FFF4E5" : theme.surfaceAlt)
+                                border.color: itemData.similarityScore > 75 ? "#00E676" : (itemData.similarityScore > 40 ? "#FFAB00" : theme.border)
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 4
+                                    Label {
+                                        text: itemData.similarityScore > 0 ? "⚡ %" + itemData.similarityScore : "↔"
+                                        color: itemData.similarityScore > 75 ? "#00C853" : (itemData.similarityScore > 40 ? "#FF8F00" : theme.primary)
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+                                    Label {
+                                        visible: itemData.similarityScore > 0
+                                        text: "Eşleşme"
+                                        color: theme.textSecondary
+                                        font.pixelSize: 10
+                                    }
+                                }
+                            }
+
+                            ComboBox {
+                                id: targetCombo
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 40
+                                model: page.columnModel(2)
+                                textRole: "name"
+                                Component.onCompleted: {
+                                    if (itemData.targetColumn && itemData.targetColumn !== "") {
+                                        for (var k = 0; k < count; ++k) {
+                                            if (textAt(k) === itemData.targetColumn) {
+                                                currentIndex = k
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                                onActivated:
+                                    mappingRows.setProperty(rowIndex, "targetColumn", currentText)
+                            }
+
+                            Button {
+                                Layout.preferredWidth: 38
+                                Layout.preferredHeight: 38
+                                text: "×"
+                                onClicked: page.removeMapping(rowIndex)
+                            }
+                        }
+                    }
+
+                    Label {
+                        visible: mappingRows.count === 0
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 60
+                        text: "Henüz eşleştirme eklenmedi. '⚡ Otomatik Eşleştirme Öner' veya '+ Manuel Ekle' butonuna tıklayın."
+                        color: theme.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        font.pixelSize: 12
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
                         Label {
-                            text: "Sütun eşleştirmelerini otomatik öner ile belirleyebilir ve karşılaştırma grafikleri üretebilirsiniz."
+                            Layout.fillWidth: true
+                            text: validMappingCount() + " geçerli eşleştirme"
                             color: theme.textSecondary
                             font.pixelSize: 12
                         }
-                    }
-
-                    Button {
-                        Layout.preferredWidth: 200
-                        Layout.preferredHeight: 40
-                        text: "⚡ Otomatik Eşleştirme Öner"
-                        enabled: page.isLoaded(1) && page.isLoaded(2)
-                        onClicked: page.loadSuggestedMappings()
-                    }
-
-                    Button {
-                        Layout.preferredWidth: 160
-                        Layout.preferredHeight: 40
-                        text: "⇆ Karşılaştır"
-                        enabled: page.isLoaded(1) && page.isLoaded(2)
-                        onClicked: page.runComparison()
+                        Button {
+                            Layout.preferredWidth: 230
+                            Layout.preferredHeight: 42
+                            enabled: validMappingCount() > 0
+                            text: "📊 Karşılaştırmayı Başlat →"
+                            onClicked: page.runComparison()
+                        }
                     }
                 }
             }
@@ -187,7 +374,7 @@ Item {
                 // Left: Comparison Results List
                 Rectangle {
                     Layout.preferredWidth: 380
-                    Layout.preferredHeight: 520
+                    Layout.preferredHeight: 480
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -199,7 +386,7 @@ Item {
                         spacing: 10
 
                         Label {
-                            text: "Eşleştirme Sonuçları"
+                            text: "Karşılaştırma Sonuçları"
                             color: theme.text
                             font.pixelSize: 15
                             font.bold: true
@@ -273,7 +460,7 @@ Item {
                             visible: !page.comparisonResult.results || page.comparisonResult.results.length === 0
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            text: "Henüz karşılaştırma yapılmadı. 'Karşılaştır' butonuna tıklayın."
+                            text: "Henüz karşılaştırma yapılmadı. Yukarıdan eşleştirme ekleyip 'Karşılaştırmayı Başlat' butonuna tıklayın."
                             color: theme.textSecondary
                             font.pixelSize: 12
                             horizontalAlignment: Text.AlignHCenter
@@ -282,10 +469,10 @@ Item {
                     }
                 }
 
-                // Right: Multi-Type Comparative Chart & Save Button
+                // Right: Multi-Type Comparative Chart Panel & Save Button
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 520
+                    Layout.preferredHeight: 480
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -296,7 +483,7 @@ Item {
                         anchors.margins: 16
                         spacing: 10
 
-                        // Chart Header & Controls
+                        // Header & Chart Type Selector & Save Button
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
@@ -313,7 +500,6 @@ Item {
                                 elide: Text.ElideMiddle
                             }
 
-                            // Chart Type Selector
                             ComboBox {
                                 Layout.preferredWidth: 190
                                 Layout.preferredHeight: 34
@@ -329,7 +515,6 @@ Item {
                                 }
                             }
 
-                            // Save Button
                             Button {
                                 Layout.preferredWidth: 140
                                 Layout.preferredHeight: 34
@@ -436,7 +621,6 @@ Item {
                                     }
                                 }
                                 else if (page.compChartType === "distribution" || page.compChartType === "trend") {
-                                    // Trend comparison lines
                                     var pts = 20
                                     var base1 = Math.abs(dataItem.meanDifference || 10)
                                     var base2 = Math.abs(dataItem.medianDifference || 8)
@@ -464,7 +648,6 @@ Item {
                                     ctx.stroke()
                                 }
                                 else if (page.compChartType === "boxplot") {
-                                    // Side-by-side Box Plot comparison
                                     var c1X = padL + plotW * 0.35
                                     var c2X = padL + plotW * 0.65
                                     var bW = 60

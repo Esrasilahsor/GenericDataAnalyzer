@@ -68,7 +68,17 @@ public:
         const ColumnMapping &mapping
         );
 
-    void clear();
+    Q_INVOKABLE void addMapping(
+        const QString &sourceColumn,
+        const QString &targetColumn,
+        double similarityScore = 1.0,
+        bool accepted = true
+        );
+
+    Q_INVOKABLE void removeMapping(int index);
+    Q_INVOKABLE void remove(int index);
+
+    Q_INVOKABLE void clear();
 
     int count() const;
 

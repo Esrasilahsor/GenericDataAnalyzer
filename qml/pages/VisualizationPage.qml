@@ -133,7 +133,7 @@ Item {
         id: exportDialog
         title: "Temizlenmiş Veri Setini Dışa Aktar"
         selectExisting: false
-        folder: appController ? ("file:///" + appController.dataDirectory().replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
+        folder: appController && appController.dataDirectory !== "" ? ("file:///" + String(appController.dataDirectory).replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
         nameFilters: page.exportFormat === "xlsx" ? ["Excel Dosyası (*.xlsx)"] :
                      page.exportFormat === "csv" ? ["CSV Dosyası (*.csv)"] : ["JSON Dosyası (*.json)"]
         onAccepted: {

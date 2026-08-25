@@ -97,7 +97,7 @@ public:
 
     QString dataset1Name() const;
     QString dataset2Name() const;
-    QString dataDirectory() const;
+    Q_INVOKABLE QString dataDirectory() const;
 
     int dataset1RowCount() const;
     int dataset2RowCount() const;
