@@ -351,27 +351,23 @@ TimeSeriesResult VisualizationEngine::createTimeSeries(
         return result;
     }
 
-    if (xColumnName.trimmed().isEmpty() ||
-        yColumnName.trimmed().isEmpty())
+    QString actualY = yColumnName.trimmed();
+    QString actualX = xColumnName.trimmed();
+
+    if (actualY.isEmpty() && !actualX.isEmpty())
     {
-        result.errorMessage =
-            QStringLiteral("Time series column name is empty.");
-        return result;
+        actualY = actualX;
+        actualX.clear();
     }
 
-    const ColumnInfo *xColumn =
-        findColumn(
-            dataSet,
-            xColumnName
-            );
+    const ColumnInfo *yColumn = findColumn(dataSet, actualY);
+    if (!yColumn && !actualX.isEmpty())
+    {
+        yColumn = findColumn(dataSet, actualX);
+        actualX.clear();
+    }
 
-    const ColumnInfo *yColumn =
-        findColumn(
-            dataSet,
-            yColumnName
-            );
-
-    if (!xColumn || !yColumn)
+    if (!yColumn)
     {
         result.errorMessage =
             QStringLiteral("Time series column was not found.");
@@ -385,36 +381,24 @@ TimeSeriesResult VisualizationEngine::createTimeSeries(
         return result;
     }
 
-    const QVector<QVariant> xRawValues =
-        xColumn->values();
+    const ColumnInfo *xColumn = actualX.isEmpty() ? nullptr : findColumn(dataSet, actualX);
+    const QVector<QVariant> yRawValues = yColumn->values();
+    const QVector<QVariant> xRawValues = (xColumn && xColumn != yColumn) ? xColumn->values() : QVector<QVariant>();
 
-    const QVector<QVariant> yRawValues =
-        yColumn->values();
-
-    const int rowCount =
-        std::min(
-            xRawValues.size(),
-            yRawValues.size()
-            );
+    const int rowCount = xRawValues.isEmpty() ? yRawValues.size() : std::min(xRawValues.size(), yRawValues.size());
 
     for (int row = 0; row < rowCount; ++row)
     {
-        double x = 0.0;
+        double x = static_cast<double>(row + 1);
         double y = 0.0;
 
-        /*
-         * X numeric ise gerçek X değeri kullanılır.
-         * Numeric değilse generic time/index visualization için
-         * satır indexi kullanılır.
-         */
-        if (!variantToFiniteDouble(
-                xRawValues.at(row),
-                &x))
+        if (!xRawValues.isEmpty())
         {
-            x =
-                static_cast<double>(
-                    row + 1
-                    );
+            double parsedX = 0.0;
+            if (variantToFiniteDouble(xRawValues.at(row), &parsedX))
+            {
+                x = parsedX;
+            }
         }
 
         if (!variantToFiniteDouble(

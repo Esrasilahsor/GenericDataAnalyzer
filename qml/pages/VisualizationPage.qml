@@ -46,72 +46,79 @@ Item {
     function generateChart() {
         if (!appController) return
         page.isRendering = true
+        renderTimer.restart()
+    }
 
-        if (page.chartType === "histogram") {
-            if (page.isDualMode) {
-                page.chartData1 = appController.createDataset1Histogram(page.selectedCol1, page.binCount)
-                page.chartData2 = appController.createDataset2Histogram(page.selectedCol2, page.binCount)
-            } else {
-                if (page.activeDataset === 1)
+    Timer {
+        id: renderTimer
+        interval: 30
+        repeat: false
+        onTriggered: {
+            if (page.chartType === "histogram") {
+                if (page.isDualMode) {
                     page.chartData1 = appController.createDataset1Histogram(page.selectedCol1, page.binCount)
-                else
-                    page.chartData1 = appController.createDataset2Histogram(page.selectedCol1, page.binCount)
+                    page.chartData2 = appController.createDataset2Histogram(page.selectedCol2, page.binCount)
+                } else {
+                    if (page.activeDataset === 1)
+                        page.chartData1 = appController.createDataset1Histogram(page.selectedCol1, page.binCount)
+                    else
+                        page.chartData1 = appController.createDataset2Histogram(page.selectedCol1, page.binCount)
+                }
             }
-        }
-        else if (page.chartType === "boxplot") {
-            if (page.isDualMode) {
-                page.chartData1 = appController.createDataset1BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
-                page.chartData2 = appController.createDataset2BoxPlot(page.selectedCol2, page.boxPlotMultiplier)
-            } else {
-                if (page.activeDataset === 1)
+            else if (page.chartType === "boxplot") {
+                if (page.isDualMode) {
                     page.chartData1 = appController.createDataset1BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
-                else
-                    page.chartData1 = appController.createDataset2BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
+                    page.chartData2 = appController.createDataset2BoxPlot(page.selectedCol2, page.boxPlotMultiplier)
+                } else {
+                    if (page.activeDataset === 1)
+                        page.chartData1 = appController.createDataset1BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
+                    else
+                        page.chartData1 = appController.createDataset2BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
+                }
             }
-        }
-        else if (page.chartType === "timeseries") {
-            if (page.isDualMode) {
-                page.chartData1 = appController.createDataset1TimeSeries(page.selectedCol1, page.selectedCol2)
-                page.chartData2 = appController.createDataset2TimeSeries(page.selectedCol1, page.selectedCol2)
-            } else {
-                if (page.activeDataset === 1)
-                    page.chartData1 = appController.createDataset1TimeSeries(page.selectedCol1, page.selectedCol2)
-                else
-                    page.chartData1 = appController.createDataset2TimeSeries(page.selectedCol1, page.selectedCol2)
+            else if (page.chartType === "timeseries") {
+                if (page.isDualMode) {
+                    page.chartData1 = appController.createDataset1TimeSeries(page.selectedCol1, "")
+                    page.chartData2 = appController.createDataset2TimeSeries(page.selectedCol2, "")
+                } else {
+                    if (page.activeDataset === 1)
+                        page.chartData1 = appController.createDataset1TimeSeries(page.selectedCol1, "")
+                    else
+                        page.chartData1 = appController.createDataset2TimeSeries(page.selectedCol1, "")
+                }
             }
-        }
-        else if (page.chartType === "distribution") {
-            if (page.isDualMode) {
-                page.chartData1 = appController.createDataset1Distribution(page.selectedCol1, page.binCount)
-                page.chartData2 = appController.createDataset2Distribution(page.selectedCol2, page.binCount)
-            } else {
-                if (page.activeDataset === 1)
+            else if (page.chartType === "distribution") {
+                if (page.isDualMode) {
                     page.chartData1 = appController.createDataset1Distribution(page.selectedCol1, page.binCount)
-                else
-                    page.chartData1 = appController.createDataset2Distribution(page.selectedCol1, page.binCount)
+                    page.chartData2 = appController.createDataset2Distribution(page.selectedCol2, page.binCount)
+                } else {
+                    if (page.activeDataset === 1)
+                        page.chartData1 = appController.createDataset1Distribution(page.selectedCol1, page.binCount)
+                    else
+                        page.chartData1 = appController.createDataset2Distribution(page.selectedCol1, page.binCount)
+                }
             }
-        }
-        else if (page.chartType === "correlation") {
-            if (page.isDualMode) {
-                page.chartData1 = appController.createDataset1CorrelationMatrix()
-                page.chartData2 = appController.createDataset2CorrelationMatrix()
-            } else {
-                if (page.activeDataset === 1)
+            else if (page.chartType === "correlation") {
+                if (page.isDualMode) {
                     page.chartData1 = appController.createDataset1CorrelationMatrix()
-                else
-                    page.chartData1 = appController.createDataset2CorrelationMatrix()
+                    page.chartData2 = appController.createDataset2CorrelationMatrix()
+                } else {
+                    if (page.activeDataset === 1)
+                        page.chartData1 = appController.createDataset1CorrelationMatrix()
+                    else
+                        page.chartData1 = appController.createDataset2CorrelationMatrix()
+                }
             }
-        }
-        else if (page.chartType === "comparison") {
-            // Comparison chart creates a paired result (Dataset 1 sourceValues & Dataset 2 targetValues)
-            var comp = appController.createDatasetComparisonChart(page.selectedCol1, page.selectedCol2)
-            page.chartData1 = comp
-            page.chartData2 = comp
-        }
+            else if (page.chartType === "comparison") {
+                var comp = appController.createDatasetComparisonChart(page.selectedCol1, page.selectedCol2)
+                page.chartData1 = comp
+                page.chartData2 = comp
+            }
 
-        page.isRendering = false
-        chartCanvas1.requestPaint()
-        if (chartCanvas2) chartCanvas2.requestPaint()
+            page.isRendering = false
+            chartCanvas1.requestPaint()
+            if (chartCanvas2) chartCanvas2.requestPaint()
+        }
     }
 
     function saveChart(canvasObj, prefix) {
@@ -190,6 +197,30 @@ Item {
                         text: page.saveStatusMessage
                         color: "#FFFFFF"
                         font.pixelSize: 12
+                        font.bold: true
+                    }
+                }
+            }
+
+            // Loading overlay indicator
+            Rectangle {
+                visible: page.isRendering
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 42
+                radius: 8
+                color: theme.surfaceAlt
+                border.color: theme.primary
+                border.width: 1
+
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 10
+                    Label {
+                        text: "⏳ Grafik hesaplanıyor ve çiziliyor, lütfen bekleyin..."
+                        color: theme.primary
+                        font.pixelSize: 13
                         font.bold: true
                     }
                 }
@@ -350,7 +381,7 @@ Item {
                             visible: page.chartType !== "correlation"
                             spacing: 2
                             Label {
-                                text: (page.isDualMode || page.chartType === "comparison") ? "Dataset 1 Sütunu" : (page.chartType === "timeseries" ? "X Ekseni Sütunu" : "Analiz Sütunu")
+                                text: (page.isDualMode || page.chartType === "comparison") ? "Dataset 1 Sütunu" : (page.chartType === "timeseries" ? "Çizgi Sütunu" : "Analiz Sütunu")
                                 color: (page.isDualMode || page.chartType === "comparison") ? "#FF4081" : theme.textSecondary
                                 font.pixelSize: 11
                                 font.bold: page.isDualMode || page.chartType === "comparison"
@@ -370,19 +401,19 @@ Item {
 
                         // Column 2
                         ColumnLayout {
-                            visible: (page.isDualMode || page.chartType === "timeseries" || page.chartType === "comparison") && page.chartType !== "correlation"
+                            visible: (page.isDualMode || page.chartType === "comparison") && page.chartType !== "correlation"
                             spacing: 2
                             Label {
-                                text: (page.isDualMode || page.chartType === "comparison") ? "Dataset 2 Sütunu" : "Y Ekseni Sütunu"
-                                color: (page.isDualMode || page.chartType === "comparison") ? "#7C4DFF" : theme.textSecondary
+                                text: "Dataset 2 Sütunu"
+                                color: "#7C4DFF"
                                 font.pixelSize: 11
-                                font.bold: page.isDualMode || page.chartType === "comparison"
+                                font.bold: true
                             }
                             ComboBox {
                                 id: col2Combo
                                 Layout.preferredWidth: 180
                                 Layout.preferredHeight: 36
-                                model: (page.isDualMode || page.chartType === "comparison") ? page.columnModel(2) : page.columnModel(page.activeDataset)
+                                model: page.columnModel(2)
                                 textRole: "name"
                                 onActivated: page.selectedCol2 = currentText
                                 Component.onCompleted: {
@@ -423,7 +454,7 @@ Item {
                         Button {
                             Layout.preferredWidth: 160
                             Layout.preferredHeight: 38
-                            text: page.isRendering ? "Çiziliyor..." : "📊 Grafiği Çiz"
+                            text: page.isRendering ? "⏳ Çiziliyor..." : "📊 Grafiği Çiz"
                             onClicked: page.generateChart()
                         }
                     }
@@ -457,10 +488,11 @@ Item {
                             Label {
                                 text: page.chartType === "comparison" && !page.isDualMode
                                       ? "İki Veri Seti Karşılaştırma Grafiği (D1: " + page.name(1) + " vs D2: " + page.name(2) + ")"
-                                      : (page.isDualMode ? "Dataset 1: " + page.name(1) + " (" + page.selectedCol1 + ")" : page.name(page.activeDataset) + " Grafiği")
+                                      : (page.isDualMode ? "Dataset 1: " + page.name(1) + " (" + page.selectedCol1 + ")" : page.name(page.activeDataset) + " (" + page.selectedCol1 + ") Grafiği")
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
+                                elide: Text.ElideMiddle
                             }
                             Item { Layout.fillWidth: true }
                             Button {
@@ -500,7 +532,8 @@ Item {
                                     ctx.fillStyle = theme.textSecondary
                                     ctx.font = "13px sans-serif"
                                     ctx.textAlign = "center"
-                                    ctx.fillText("Grafik görüntülemek için yukarıdan parametre seçip 'Grafiği Çiz' butonuna tıklayın.", width / 2, height / 2)
+                                    var errMsg = (page.chartData1 && page.chartData1.errorMessage) ? ("Hata: " + page.chartData1.errorMessage) : "Grafik görüntülemek için yukarıdan parametre seçip 'Grafiği Çiz' butonuna tıklayın."
+                                    ctx.fillText(errMsg, width / 2, height / 2)
                                     return
                                 }
 
@@ -509,7 +542,6 @@ Item {
                                 var plotH = height - padT - padB
 
                                 if (page.chartType === "correlation" && page.chartData1.columnNames) {
-                                    // Correlation Heatmap
                                     var cols = page.chartData1.columnNames
                                     var n = cols.length
                                     if (n === 0) return
@@ -585,7 +617,6 @@ Item {
                                 }
                                 else if (page.chartType === "distribution" && page.chartData1.relativeFrequencies) {
                                     var distFreqs = page.chartData1.relativeFrequencies
-                                    var centers = page.chartData1.centers || []
                                     var maxD = 0.001
                                     for (var df = 0; df < distFreqs.length; ++df) if (distFreqs[df] > maxD) maxD = distFreqs[df]
 
@@ -642,11 +673,12 @@ Item {
                                 else if (page.chartType === "timeseries" && page.chartData1.pointCount > 0) {
                                     var pts = page.chartData1.pointCount
                                     var yVals = page.chartData1.yValues || []
-                                    var minY = 0, maxY = 1
+                                    var minY = 999999, maxY = -999999
                                     for (var p = 0; p < yVals.length; ++p) {
                                         if (yVals[p] < minY) minY = yVals[p]
                                         if (yVals[p] > maxY) maxY = yVals[p]
                                     }
+                                    if (minY === 999999) { minY = 0; maxY = 1; }
                                     var rngY = (maxY - minY) === 0 ? 1 : (maxY - minY)
 
                                     var step = Math.max(1, Math.floor(pts / 1000))
@@ -660,12 +692,19 @@ Item {
                                         if (first) { ctx.moveTo(xP, yP); first = false } else { ctx.lineTo(xP, yP) }
                                     }
                                     ctx.stroke()
+
+                                    // Y min/max labels
+                                    ctx.fillStyle = theme.textSecondary
+                                    ctx.font = "10px sans-serif"
+                                    ctx.textAlign = "right"
+                                    ctx.fillText(Number(maxY).toFixed(1), padL - 8, padT + 10)
+                                    ctx.fillText(Number(minY).toFixed(1), padL - 8, height - padB)
                                 }
                                 else if (page.chartType === "comparison" && page.chartData1.pointCount > 0) {
                                     var cpts = page.chartData1.pointCount
                                     var sVals = page.chartData1.sourceValues || []
                                     var tVals = page.chartData1.targetValues || []
-                                    var minComp = 0, maxComp = 1
+                                    var minComp = 999999, maxComp = -999999
                                     for (var cp = 0; cp < sVals.length; ++cp) {
                                         if (sVals[cp] < minComp) minComp = sVals[cp]
                                         if (sVals[cp] > maxComp) maxComp = sVals[cp]
@@ -674,6 +713,7 @@ Item {
                                         if (tVals[cq] < minComp) minComp = tVals[cq]
                                         if (tVals[cq] > maxComp) maxComp = tVals[cq]
                                     }
+                                    if (minComp === 999999) { minComp = 0; maxComp = 1; }
                                     var rngComp = (maxComp - minComp) === 0 ? 1 : (maxComp - minComp)
                                     var cStep = Math.max(1, Math.floor(cpts / 1000))
 
@@ -702,6 +742,13 @@ Item {
                                         }
                                         ctx.stroke()
                                     }
+
+                                    // Labels
+                                    ctx.fillStyle = theme.textSecondary
+                                    ctx.font = "10px sans-serif"
+                                    ctx.textAlign = "right"
+                                    ctx.fillText(Number(maxComp).toFixed(1), padL - 8, padT + 10)
+                                    ctx.fillText(Number(minComp).toFixed(1), padL - 8, height - padB)
                                 }
                             }
                         }
@@ -731,6 +778,7 @@ Item {
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
+                                elide: Text.ElideMiddle
                             }
                             Item { Layout.fillWidth: true }
                             Button {
@@ -754,7 +802,8 @@ Item {
                                     ctx.fillStyle = theme.textSecondary
                                     ctx.font = "12px sans-serif"
                                     ctx.textAlign = "center"
-                                    ctx.fillText("Dataset 2 grafiği için 'Grafiği Çiz' butonuna tıklayın.", width / 2, height / 2)
+                                    var errMsg2 = (page.chartData2 && page.chartData2.errorMessage) ? ("Hata: " + page.chartData2.errorMessage) : "Dataset 2 grafiği için 'Grafiği Çiz' butonuna tıklayın."
+                                    ctx.fillText(errMsg2, width / 2, height / 2)
                                     return
                                 }
 
@@ -894,11 +943,12 @@ Item {
                                 else if (page.chartType === "timeseries" && page.chartData2.pointCount > 0) {
                                     var pts2 = page.chartData2.pointCount
                                     var yVals2 = page.chartData2.yValues || []
-                                    var minY2 = 0, maxY2 = 1
+                                    var minY2 = 999999, maxY2 = -999999
                                     for (var p2 = 0; p2 < yVals2.length; ++p2) {
                                         if (yVals2[p2] < minY2) minY2 = yVals2[p2]
                                         if (yVals2[p2] > maxY2) maxY2 = yVals2[p2]
                                     }
+                                    if (minY2 === 999999) { minY2 = 0; maxY2 = 1; }
                                     var rngY2 = (maxY2 - minY2) === 0 ? 1 : (maxY2 - minY2)
                                     var step2 = Math.max(1, Math.floor(pts2 / 1000))
 
@@ -912,15 +962,22 @@ Item {
                                         if (first2) { ctx.moveTo(xP2, yP2); first2 = false } else { ctx.lineTo(xP2, yP2) }
                                     }
                                     ctx.stroke()
+
+                                    // Y min/max labels
+                                    ctx.fillStyle = theme.textSecondary
+                                    ctx.font = "10px sans-serif"
+                                    ctx.textAlign = "right"
+                                    ctx.fillText(Number(maxY2).toFixed(1), padL - 8, padT + 10)
+                                    ctx.fillText(Number(minY2).toFixed(1), padL - 8, height - padB)
                                 }
                                 else if (page.chartType === "comparison" && page.chartData2.pointCount > 0) {
-                                    // In dual mode, right panel plots Dataset 2 targetValues in Purple
                                     var tVals2 = page.chartData2.targetValues || []
-                                    var minT = 0, maxT = 1
+                                    var minT = 999999, maxT = -999999
                                     for (var tp = 0; tp < tVals2.length; ++tp) {
                                         if (tVals2[tp] < minT) minT = tVals2[tp]
                                         if (tVals2[tp] > maxT) maxT = tVals2[tp]
                                     }
+                                    if (minT === 999999) { minT = 0; maxT = 1; }
                                     var rngT = (maxT - minT) === 0 ? 1 : (maxT - minT)
                                     var stepT = Math.max(1, Math.floor(tVals2.length / 1000))
 
@@ -934,6 +991,13 @@ Item {
                                         if (firstT) { ctx.moveTo(xPT, yPT); firstT = false } else { ctx.lineTo(xPT, yPT) }
                                     }
                                     ctx.stroke()
+
+                                    // Labels
+                                    ctx.fillStyle = theme.textSecondary
+                                    ctx.font = "10px sans-serif"
+                                    ctx.textAlign = "right"
+                                    ctx.fillText(Number(maxT).toFixed(1), padL - 8, padT + 10)
+                                    ctx.fillText(Number(minT).toFixed(1), padL - 8, height - padB)
                                 }
                             }
                         }

@@ -47,7 +47,7 @@ Item {
         if (!colModel) return false
         for (var i = 0; i < colModel.count; ++i) {
             var c = colModel.get(i)
-            if (c.name === colName) {
+            if (c && c.name === colName) {
                 return c.type === "int" || c.type === "double" || c.type === "float" || c.type === "number" || c.isNumeric === true
             }
         }
@@ -143,6 +143,7 @@ Item {
     function applySingleMissing(index) {
         if (index < 0 || index >= missingModel.count) return
         var item = missingModel.get(index)
+        if (!item) return
         var ds = page.activeDs
         var ok = false
 
@@ -206,6 +207,7 @@ Item {
     function applySingleOutlier(index) {
         if (index < 0 || index >= outlierModel.count) return
         var item = outlierModel.get(index)
+        if (!item) return
         var ds = page.activeDs
         var backendAction = mapOutlierAction(item.action)
 
@@ -224,7 +226,9 @@ Item {
         var backendAction = mapOutlierAction(page.bulkOutlierAction)
 
         for (var i = 0; i < outlierModel.count; ++i) {
-            var col = outlierModel.get(i).columnName
+            var rowItem = outlierModel.get(i)
+            if (!rowItem) continue
+            var col = rowItem.columnName
             var ok = ds === 1
                 ? appController.applyDataset1OutlierAction(col, page.outlierMethod, backendAction, page.outlierParam)
                 : appController.applyDataset2OutlierAction(col, page.outlierMethod, backendAction, page.outlierParam)
@@ -371,6 +375,8 @@ Item {
                     Repeater {
                         model: duplicateModel
                         delegate: Rectangle {
+                            property string rowTitle: (model && model.title !== undefined) ? model.title : ""
+                            visible: rowTitle !== ""
                             Layout.fillWidth: true
                             Layout.preferredHeight: 46
                             radius: 8
@@ -382,7 +388,7 @@ Item {
                                 spacing: 12
 
                                 Label {
-                                    text: "⧉ " + model.title
+                                    text: "⧉ " + rowTitle
                                     color: theme.text
                                     font.pixelSize: 13
                                     font.bold: true
@@ -403,6 +409,10 @@ Item {
                         model: missingModel
                         delegate: Rectangle {
                             property int rowIndex: index
+                            property string colName: (model && model.columnName !== undefined) ? model.columnName : ""
+                            property bool isNum: (model && model.isNumeric !== undefined) ? model.isNumeric : false
+                            property string actName: (model && model.action !== undefined) ? model.action : "Mean"
+                            visible: colName !== ""
                             Layout.fillWidth: true
                             Layout.preferredHeight: 48
                             radius: 8
@@ -414,7 +424,7 @@ Item {
                                 spacing: 12
 
                                 Label {
-                                    text: "! " + model.columnName
+                                    text: "! " + colName
                                     color: theme.text
                                     font.pixelSize: 13
                                     font.bold: true
@@ -424,12 +434,16 @@ Item {
 
                                 ComboBox {
                                     id: missingCombo
-                                    visible: model.columnName !== "Tüm Eksik Değerli Satırlar"
+                                    visible: colName !== "Tüm Eksik Değerli Satırlar"
                                     Layout.preferredWidth: 160
                                     Layout.preferredHeight: 34
-                                    model: model.isNumeric ? ["Mean", "Median", "Mode", "Satırları kaldır"] : ["Mode", "Satırları kaldır"]
-                                    currentIndex: Math.max(0, model.indexOf(model.action))
-                                    onActivated: missingModel.setProperty(rowIndex, "action", currentText)
+                                    model: isNum ? ["Mean", "Median", "Mode", "Satırları kaldır"] : ["Mode", "Satırları kaldır"]
+                                    currentIndex: Math.max(0, model.indexOf(actName))
+                                    onActivated: {
+                                        if (rowIndex >= 0 && rowIndex < missingModel.count) {
+                                            missingModel.setProperty(rowIndex, "action", currentText)
+                                        }
+                                    }
                                 }
 
                                 Button {
@@ -513,6 +527,11 @@ Item {
                         model: outlierModel
                         delegate: Rectangle {
                             property int outIndex: index
+                            property string outColName: (model && model.columnName !== undefined) ? model.columnName : ""
+                            property string outCountStr: (model && model.outlierCount !== undefined) ? String(model.outlierCount) : "0"
+                            property string outPctStr: (model && model.percentage !== undefined) ? String(model.percentage) : "0"
+                            property string outActionStr: (model && model.action !== undefined) ? model.action : "Aykırıları kaldır"
+                            visible: outColName !== ""
                             Layout.fillWidth: true
                             Layout.preferredHeight: 50
                             radius: 8
@@ -524,7 +543,7 @@ Item {
                                 spacing: 12
 
                                 Label {
-                                    text: "△ " + model.columnName
+                                    text: "△ " + outColName
                                     color: theme.text
                                     font.pixelSize: 13
                                     font.bold: true
@@ -533,7 +552,7 @@ Item {
                                 }
 
                                 Label {
-                                    text: model.outlierCount + " aykırı değer (% " + model.percentage + ")"
+                                    text: outCountStr + " aykırı değer (% " + outPctStr + ")"
                                     color: "#FF6E40"
                                     font.pixelSize: 12
                                     Layout.fillWidth: true
@@ -544,8 +563,12 @@ Item {
                                     Layout.preferredWidth: 170
                                     Layout.preferredHeight: 34
                                     model: ["Aykırıları kaldır", "Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Sınırla (Cap)"]
-                                    currentIndex: Math.max(0, model.indexOf(model.action))
-                                    onActivated: outlierModel.setProperty(outIndex, "action", currentText)
+                                    currentIndex: Math.max(0, model.indexOf(outActionStr))
+                                    onActivated: {
+                                        if (outIndex >= 0 && outIndex < outlierModel.count) {
+                                            outlierModel.setProperty(outIndex, "action", currentText)
+                                        }
+                                    }
                                 }
 
                                 Button {
@@ -594,6 +617,8 @@ Item {
                     Repeater {
                         model: constantModel
                         delegate: Rectangle {
+                            property string constCol: (model && model.columnName !== undefined) ? model.columnName : ""
+                            visible: constCol !== ""
                             Layout.fillWidth: true
                             Layout.preferredHeight: 46
                             radius: 8
@@ -605,7 +630,7 @@ Item {
                                 spacing: 12
 
                                 Label {
-                                    text: "C • " + model.columnName + " (Tek bir sabit değer içeriyor)"
+                                    text: "C • " + constCol + " (Tek bir sabit değer içeriyor)"
                                     color: theme.text
                                     font.pixelSize: 13
                                     Layout.fillWidth: true
@@ -614,7 +639,7 @@ Item {
                                     Layout.preferredWidth: 130
                                     Layout.preferredHeight: 32
                                     text: "Sütunu Kaldır"
-                                    onClicked: page.applyRemoveConstant(model.columnName)
+                                    onClicked: page.applyRemoveConstant(constCol)
                                 }
                             }
                         }
@@ -668,8 +693,8 @@ Item {
                                 width: logView.width
                                 spacing: 8
                                 Label {
-                                    text: model.message
-                                    color: model.success ? theme.success : theme.error
+                                    text: (model && model.message !== undefined) ? model.message : ""
+                                    color: (model && model.success) ? theme.success : theme.error
                                     font.pixelSize: 12
                                     font.family: "Consolas, monospace"
                                 }
