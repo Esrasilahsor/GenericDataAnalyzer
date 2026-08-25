@@ -58,10 +58,16 @@ Item {
     function rebuild(ds) {
         var m = ds === 1 ? dataset1Problems : dataset2Problems
         m.clear()
-        if (!available(ds) && appController) {
-            if (ds === 1 && appController.dataset1Name !== "") appController.analyzeDataset1Quality()
-            else if (ds === 2 && appController.dataset2Name !== "") appController.analyzeDataset2Quality()
+        if (!appController) return
+
+        if (ds === 1 && appController.dataset1Name !== "") {
+            if (!appController.dataset1QualityAvailable) appController.analyzeDataset1Quality()
+            if (!appController.dataset1OutlierAvailable) appController.analyzeDataset1OutliersAllColumns("IQR", 1.5)
+        } else if (ds === 2 && appController.dataset2Name !== "") {
+            if (!appController.dataset2QualityAvailable) appController.analyzeDataset2Quality()
+            if (!appController.dataset2OutlierAvailable) appController.analyzeDataset2OutliersAllColumns("IQR", 1.5)
         }
+
         if (!available(ds)) return
 
         // 1. Missing columns
@@ -237,9 +243,15 @@ Item {
             log((ok ? "✓ " : "✕ ") + "Dataset " + act.ds + " • " + act.title + " → " + act.action + detail, ok)
         }
 
-        // 3. Refresh quality analysis
-        if (ds1Affected && appController.dataset1Name !== "") appController.analyzeDataset1Quality()
-        if (ds2Affected && appController.dataset2Name !== "") appController.analyzeDataset2Quality()
+        // 3. Refresh quality & outlier analysis
+        if (ds1Affected && appController.dataset1Name !== "") {
+            appController.analyzeDataset1Quality()
+            appController.analyzeDataset1OutliersAllColumns("IQR", 1.5)
+        }
+        if (ds2Affected && appController.dataset2Name !== "") {
+            appController.analyzeDataset2Quality()
+            appController.analyzeDataset2OutliersAllColumns("IQR", 1.5)
+        }
 
         applying = false
         applied = true
@@ -252,14 +264,31 @@ Item {
         var ok = ds === 1 ? appController.restoreDataset1() : appController.restoreDataset2()
         if (ok) {
             log("↶ Dataset " + ds + " orijinal çalışma verisine döndürüldü.", true)
-            if (ds === 1) appController.analyzeDataset1Quality()
-            else appController.analyzeDataset2Quality()
+            if (ds === 1) {
+                appController.analyzeDataset1Quality()
+                appController.analyzeDataset1OutliersAllColumns("IQR", 1.5)
+            } else {
+                appController.analyzeDataset2Quality()
+                appController.analyzeDataset2OutliersAllColumns("IQR", 1.5)
+            }
             applied = false
             rebuildAll()
         }
     }
 
-    Component.onCompleted: rebuildAll()
+    Component.onCompleted: {
+        if (appController) {
+            if (appController.dataset1Name !== "") {
+                appController.analyzeDataset1Quality()
+                appController.analyzeDataset1OutliersAllColumns("IQR", 1.5)
+            }
+            if (appController.dataset2Name !== "") {
+                appController.analyzeDataset2Quality()
+                appController.analyzeDataset2OutliersAllColumns("IQR", 1.5)
+            }
+        }
+        rebuildAll()
+    }
 
     Connections {
         target: page.appController
@@ -403,7 +432,9 @@ Item {
                                             currentIndex: Math.max(0, model.indexOf(itemData.action))
                                             onActivated: {
                                                 var a = currentText
-                                                card.problems.setProperty(index, "action", a)
+                                                if (index >= 0 && index < card.problems.count) {
+                                                    card.problems.setProperty(index, "action", a)
+                                                }
                                                 page.applied = false
                                             }
                                         }

@@ -25,6 +25,7 @@ Item {
     property string exportFormat: "xlsx"
     property string saveStatusMessage: ""
     property bool saveSuccess: true
+    property bool isRendering: false
 
     function isLoaded(ds) {
         if (!appController) return false
@@ -44,6 +45,7 @@ Item {
 
     function generateChart() {
         if (!appController) return
+        page.isRendering = true
 
         if (page.chartType === "histogram") {
             if (page.isDualMode) {
@@ -101,9 +103,13 @@ Item {
             }
         }
         else if (page.chartType === "comparison") {
-            page.chartData1 = appController.createDatasetComparisonChart(page.selectedCol1, page.selectedCol2)
+            // Comparison chart creates a paired result (Dataset 1 sourceValues & Dataset 2 targetValues)
+            var comp = appController.createDatasetComparisonChart(page.selectedCol1, page.selectedCol2)
+            page.chartData1 = comp
+            page.chartData2 = comp
         }
 
+        page.isRendering = false
         chartCanvas1.requestPaint()
         if (chartCanvas2) chartCanvas2.requestPaint()
     }
@@ -237,7 +243,7 @@ Item {
                         }
 
                         RowLayout {
-                            visible: !page.isDualMode
+                            visible: !page.isDualMode && page.chartType !== "comparison"
                             spacing: 6
                             Label { text: "• Veri Seti:"; color: theme.text; font.pixelSize: 12; font.bold: true }
 
@@ -319,7 +325,7 @@ Item {
                             Label { text: "Grafik Türü"; color: theme.textSecondary; font.pixelSize: 11 }
                             ComboBox {
                                 id: typeCombo
-                                Layout.preferredWidth: 200
+                                Layout.preferredWidth: 205
                                 Layout.preferredHeight: 36
                                 model: ["Histogram (Frekans)", "Kutu Grafiği (Box Plot)", "Çizgi Grafiği (Line)", "Dağılım (Distribution)", "Korelasyon Matrisi (Heatmap)", "İki Veri Seti Karşılaştırma"]
                                 onActivated: {
@@ -344,16 +350,16 @@ Item {
                             visible: page.chartType !== "correlation"
                             spacing: 2
                             Label {
-                                text: page.isDualMode ? "Dataset 1 Sütunu" : (page.chartType === "timeseries" ? "X Ekseni Sütunu" : (page.chartType === "comparison" ? "Dataset 1 Sütunu" : "Analiz Sütunu"))
-                                color: page.isDualMode ? "#FF4081" : theme.textSecondary
+                                text: (page.isDualMode || page.chartType === "comparison") ? "Dataset 1 Sütunu" : (page.chartType === "timeseries" ? "X Ekseni Sütunu" : "Analiz Sütunu")
+                                color: (page.isDualMode || page.chartType === "comparison") ? "#FF4081" : theme.textSecondary
                                 font.pixelSize: 11
-                                font.bold: page.isDualMode
+                                font.bold: page.isDualMode || page.chartType === "comparison"
                             }
                             ComboBox {
                                 id: col1Combo
                                 Layout.preferredWidth: 180
                                 Layout.preferredHeight: 36
-                                model: page.isDualMode ? page.columnModel(1) : (page.chartType === "comparison" ? page.columnModel(1) : page.columnModel(page.activeDataset))
+                                model: (page.isDualMode || page.chartType === "comparison") ? page.columnModel(1) : page.columnModel(page.activeDataset)
                                 textRole: "name"
                                 onActivated: page.selectedCol1 = currentText
                                 Component.onCompleted: {
@@ -367,16 +373,16 @@ Item {
                             visible: (page.isDualMode || page.chartType === "timeseries" || page.chartType === "comparison") && page.chartType !== "correlation"
                             spacing: 2
                             Label {
-                                text: page.isDualMode ? "Dataset 2 Sütunu" : (page.chartType === "comparison" ? "Dataset 2 Sütunu" : "Y Ekseni Sütunu")
-                                color: page.isDualMode ? "#7C4DFF" : theme.textSecondary
+                                text: (page.isDualMode || page.chartType === "comparison") ? "Dataset 2 Sütunu" : "Y Ekseni Sütunu"
+                                color: (page.isDualMode || page.chartType === "comparison") ? "#7C4DFF" : theme.textSecondary
                                 font.pixelSize: 11
-                                font.bold: page.isDualMode
+                                font.bold: page.isDualMode || page.chartType === "comparison"
                             }
                             ComboBox {
                                 id: col2Combo
                                 Layout.preferredWidth: 180
                                 Layout.preferredHeight: 36
-                                model: page.isDualMode ? page.columnModel(2) : (page.chartType === "comparison" ? page.columnModel(2) : page.columnModel(page.activeDataset))
+                                model: (page.isDualMode || page.chartType === "comparison") ? page.columnModel(2) : page.columnModel(page.activeDataset)
                                 textRole: "name"
                                 onActivated: page.selectedCol2 = currentText
                                 Component.onCompleted: {
@@ -417,7 +423,7 @@ Item {
                         Button {
                             Layout.preferredWidth: 160
                             Layout.preferredHeight: 38
-                            text: "📊 Grafiği Çiz"
+                            text: page.isRendering ? "Çiziliyor..." : "📊 Grafiği Çiz"
                             onClicked: page.generateChart()
                         }
                     }
@@ -431,7 +437,7 @@ Item {
                 Layout.rightMargin: 28
                 spacing: 14
 
-                // Panel 1 (Dataset 1 or Active Dataset)
+                // Panel 1 (Dataset 1 or Active Dataset or Overlaid Single Comparison)
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 340
@@ -449,7 +455,9 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             Label {
-                                text: page.isDualMode ? "Dataset 1: " + page.name(1) : (page.name(page.activeDataset) + " Grafiği")
+                                text: page.chartType === "comparison" && !page.isDualMode
+                                      ? "İki Veri Seti Karşılaştırma Grafiği (D1: " + page.name(1) + " vs D2: " + page.name(2) + ")"
+                                      : (page.isDualMode ? "Dataset 1: " + page.name(1) + " (" + page.selectedCol1 + ")" : page.name(page.activeDataset) + " Grafiği")
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
@@ -460,6 +468,22 @@ Item {
                                 Layout.preferredHeight: 30
                                 text: "💾 Grafiği Kaydet"
                                 onClicked: page.saveChart(chartCanvas1, page.chartType + "_D1")
+                            }
+                        }
+
+                        // Legend for comparison in single mode
+                        RowLayout {
+                            visible: page.chartType === "comparison" && !page.isDualMode
+                            spacing: 14
+                            RowLayout {
+                                spacing: 6
+                                Rectangle { width: 12; height: 12; radius: 6; color: "#FF4081" }
+                                Label { text: "D1: " + page.selectedCol1; color: theme.text; font.pixelSize: 11; font.bold: true }
+                            }
+                            RowLayout {
+                                spacing: 6
+                                Rectangle { width: 12; height: 12; radius: 6; color: "#7C4DFF" }
+                                Label { text: "D2: " + page.selectedCol2; color: theme.text; font.pixelSize: 11; font.bold: true }
                             }
                         }
 
@@ -480,7 +504,7 @@ Item {
                                     return
                                 }
 
-                                var padL = 55, padR = 25, padT = 30, padB = 45
+                                var padL = 60, padR = 25, padT = 30, padB = 45
                                 var plotW = width - padL - padR
                                 var plotH = height - padT - padB
 
@@ -500,7 +524,6 @@ Item {
                                             var x = startX + c * cellW
                                             var y = startY + r * cellH
 
-                                            // Color map: -1.0 (#2979FF) -> 0.0 (#374151) -> +1.0 (#FF4081)
                                             if (val >= 0) {
                                                 ctx.fillStyle = "rgba(255, 64, 129, " + Math.max(0.15, val) + ")"
                                             } else {
@@ -513,7 +536,6 @@ Item {
                                             ctx.textAlign = "center"
                                             ctx.fillText(Number(val).toFixed(2), x + cellW / 2, y + cellH / 2 + 3)
                                         }
-                                        // Row label
                                         ctx.fillStyle = theme.textSecondary
                                         ctx.font = "9px sans-serif"
                                         ctx.textAlign = "right"
@@ -522,7 +544,7 @@ Item {
                                     return
                                 }
 
-                                // Eksenler
+                                // Axes
                                 ctx.strokeStyle = theme.border
                                 ctx.lineWidth = 1
                                 ctx.beginPath()
@@ -561,6 +583,27 @@ Item {
                                         }
                                     }
                                 }
+                                else if (page.chartType === "distribution" && page.chartData1.relativeFrequencies) {
+                                    var distFreqs = page.chartData1.relativeFrequencies
+                                    var centers = page.chartData1.centers || []
+                                    var maxD = 0.001
+                                    for (var df = 0; df < distFreqs.length; ++df) if (distFreqs[df] > maxD) maxD = distFreqs[df]
+
+                                    ctx.strokeStyle = "#FF4081"
+                                    ctx.fillStyle = "rgba(255, 64, 129, 0.25)"
+                                    ctx.lineWidth = 3
+                                    ctx.beginPath()
+                                    ctx.moveTo(padL, height - padB)
+                                    for (var di = 0; di < distFreqs.length; ++di) {
+                                        var dX = padL + (di / Math.max(1, distFreqs.length - 1)) * plotW
+                                        var dY = (height - padB) - (distFreqs[di] / maxD) * (plotH - 30)
+                                        ctx.lineTo(dX, dY)
+                                    }
+                                    ctx.lineTo(width - padR, height - padB)
+                                    ctx.closePath()
+                                    ctx.fill()
+                                    ctx.stroke()
+                                }
                                 else if (page.chartType === "boxplot" && page.chartData1.minimum !== undefined) {
                                     var min = page.chartData1.minimum, max = page.chartData1.maximum
                                     var q1 = page.chartData1.q1, med = page.chartData1.median, q3 = page.chartData1.q3
@@ -596,10 +639,9 @@ Item {
                                     ctx.fillText("Medyan: " + Number(med).toFixed(1), cX + boxW / 2 + 10, toY(med))
                                     ctx.fillText("Min: " + Number(min).toFixed(1), cX + boxW / 2 + 10, toY(min))
                                 }
-                                else if ((page.chartType === "timeseries" || page.chartType === "distribution" || page.chartType === "comparison") && page.chartData1.pointCount > 0) {
+                                else if (page.chartType === "timeseries" && page.chartData1.pointCount > 0) {
                                     var pts = page.chartData1.pointCount
-                                    var xVals = page.chartData1.xValues || page.chartData1.indexes || []
-                                    var yVals = page.chartData1.yValues || page.chartData1.sourceValues || []
+                                    var yVals = page.chartData1.yValues || []
                                     var minY = 0, maxY = 1
                                     for (var p = 0; p < yVals.length; ++p) {
                                         if (yVals[p] < minY) minY = yVals[p]
@@ -607,15 +649,59 @@ Item {
                                     }
                                     var rngY = (maxY - minY) === 0 ? 1 : (maxY - minY)
 
+                                    var step = Math.max(1, Math.floor(pts / 1000))
                                     ctx.strokeStyle = "#FF4081"
-                                    ctx.lineWidth = 2.5
+                                    ctx.lineWidth = 2
                                     ctx.beginPath()
-                                    for (var k = 0; k < pts; ++k) {
+                                    var first = true
+                                    for (var k = 0; k < pts; k += step) {
                                         var xP = padL + (k / Math.max(1, pts - 1)) * plotW
                                         var yP = (height - padB) - ((yVals[k] - minY) / rngY) * (plotH - 20)
-                                        if (k === 0) ctx.moveTo(xP, yP); else ctx.lineTo(xP, yP)
+                                        if (first) { ctx.moveTo(xP, yP); first = false } else { ctx.lineTo(xP, yP) }
                                     }
                                     ctx.stroke()
+                                }
+                                else if (page.chartType === "comparison" && page.chartData1.pointCount > 0) {
+                                    var cpts = page.chartData1.pointCount
+                                    var sVals = page.chartData1.sourceValues || []
+                                    var tVals = page.chartData1.targetValues || []
+                                    var minComp = 0, maxComp = 1
+                                    for (var cp = 0; cp < sVals.length; ++cp) {
+                                        if (sVals[cp] < minComp) minComp = sVals[cp]
+                                        if (sVals[cp] > maxComp) maxComp = sVals[cp]
+                                    }
+                                    for (var cq = 0; cq < tVals.length; ++cq) {
+                                        if (tVals[cq] < minComp) minComp = tVals[cq]
+                                        if (tVals[cq] > maxComp) maxComp = tVals[cq]
+                                    }
+                                    var rngComp = (maxComp - minComp) === 0 ? 1 : (maxComp - minComp)
+                                    var cStep = Math.max(1, Math.floor(cpts / 1000))
+
+                                    // Line 1: Dataset 1 in Pink
+                                    ctx.strokeStyle = "#FF4081"
+                                    ctx.lineWidth = 2.2
+                                    ctx.beginPath()
+                                    var cFirst1 = true
+                                    for (var ck1 = 0; ck1 < sVals.length; ck1 += cStep) {
+                                        var cxP1 = padL + (ck1 / Math.max(1, sVals.length - 1)) * plotW
+                                        var cyP1 = (height - padB) - ((sVals[ck1] - minComp) / rngComp) * (plotH - 20)
+                                        if (cFirst1) { ctx.moveTo(cxP1, cyP1); cFirst1 = false } else { ctx.lineTo(cxP1, cyP1) }
+                                    }
+                                    ctx.stroke()
+
+                                    // If Single Mode, overlay Line 2: Dataset 2 in Purple
+                                    if (!page.isDualMode) {
+                                        ctx.strokeStyle = "#7C4DFF"
+                                        ctx.lineWidth = 2.2
+                                        ctx.beginPath()
+                                        var cFirst2 = true
+                                        for (var ck2 = 0; ck2 < tVals.length; ck2 += cStep) {
+                                            var cxP2 = padL + (ck2 / Math.max(1, tVals.length - 1)) * plotW
+                                            var cyP2 = (height - padB) - ((tVals[ck2] - minComp) / rngComp) * (plotH - 20)
+                                            if (cFirst2) { ctx.moveTo(cxP2, cyP2); cFirst2 = false } else { ctx.lineTo(cxP2, cyP2) }
+                                        }
+                                        ctx.stroke()
+                                    }
                                 }
                             }
                         }
@@ -641,7 +727,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             Label {
-                                text: "Dataset 2: " + page.name(2)
+                                text: "Dataset 2: " + page.name(2) + " (" + page.selectedCol2 + ")"
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
@@ -672,7 +758,7 @@ Item {
                                     return
                                 }
 
-                                var padL = 55, padR = 25, padT = 30, padB = 45
+                                var padL = 60, padR = 25, padT = 30, padB = 45
                                 var plotW = width - padL - padR
                                 var plotH = height - padT - padB
 
@@ -711,7 +797,7 @@ Item {
                                     return
                                 }
 
-                                // Eksenler
+                                // Axes
                                 ctx.strokeStyle = theme.border
                                 ctx.lineWidth = 1
                                 ctx.beginPath()
@@ -750,6 +836,26 @@ Item {
                                         }
                                     }
                                 }
+                                else if (page.chartType === "distribution" && page.chartData2.relativeFrequencies) {
+                                    var distFreqs2 = page.chartData2.relativeFrequencies
+                                    var maxD2 = 0.001
+                                    for (var df2 = 0; df2 < distFreqs2.length; ++df2) if (distFreqs2[df2] > maxD2) maxD2 = distFreqs2[df2]
+
+                                    ctx.strokeStyle = "#7C4DFF"
+                                    ctx.fillStyle = "rgba(124, 77, 255, 0.25)"
+                                    ctx.lineWidth = 3
+                                    ctx.beginPath()
+                                    ctx.moveTo(padL, height - padB)
+                                    for (var di2 = 0; di2 < distFreqs2.length; ++di2) {
+                                        var dX2 = padL + (di2 / Math.max(1, distFreqs2.length - 1)) * plotW
+                                        var dY2 = (height - padB) - (distFreqs2[di2] / maxD2) * (plotH - 30)
+                                        ctx.lineTo(dX2, dY2)
+                                    }
+                                    ctx.lineTo(width - padR, height - padB)
+                                    ctx.closePath()
+                                    ctx.fill()
+                                    ctx.stroke()
+                                }
                                 else if (page.chartType === "boxplot" && page.chartData2.minimum !== undefined) {
                                     var min = page.chartData2.minimum, max = page.chartData2.maximum
                                     var q1 = page.chartData2.q1, med = page.chartData2.median, q3 = page.chartData2.q3
@@ -785,24 +891,47 @@ Item {
                                     ctx.fillText("Medyan: " + Number(med).toFixed(1), cX + boxW / 2 + 10, toY2(med))
                                     ctx.fillText("Min: " + Number(min).toFixed(1), cX + boxW / 2 + 10, toY2(min))
                                 }
-                                else if ((page.chartType === "timeseries" || page.chartType === "distribution" || page.chartType === "comparison") && page.chartData2.pointCount > 0) {
+                                else if (page.chartType === "timeseries" && page.chartData2.pointCount > 0) {
                                     var pts2 = page.chartData2.pointCount
-                                    var xVals2 = page.chartData2.xValues || page.chartData2.indexes || []
-                                    var yVals2 = page.chartData2.yValues || page.chartData2.targetValues || []
+                                    var yVals2 = page.chartData2.yValues || []
                                     var minY2 = 0, maxY2 = 1
                                     for (var p2 = 0; p2 < yVals2.length; ++p2) {
                                         if (yVals2[p2] < minY2) minY2 = yVals2[p2]
                                         if (yVals2[p2] > maxY2) maxY2 = yVals2[p2]
                                     }
                                     var rngY2 = (maxY2 - minY2) === 0 ? 1 : (maxY2 - minY2)
+                                    var step2 = Math.max(1, Math.floor(pts2 / 1000))
 
                                     ctx.strokeStyle = "#7C4DFF"
-                                    ctx.lineWidth = 2.5
+                                    ctx.lineWidth = 2
                                     ctx.beginPath()
-                                    for (var k2 = 0; k2 < pts2; ++k2) {
+                                    var first2 = true
+                                    for (var k2 = 0; k2 < pts2; k2 += step2) {
                                         var xP2 = padL + (k2 / Math.max(1, pts2 - 1)) * plotW
                                         var yP2 = (height - padB) - ((yVals2[k2] - minY2) / rngY2) * (plotH - 20)
-                                        if (k2 === 0) ctx.moveTo(xP2, yP2); else ctx.lineTo(xP2, yP2)
+                                        if (first2) { ctx.moveTo(xP2, yP2); first2 = false } else { ctx.lineTo(xP2, yP2) }
+                                    }
+                                    ctx.stroke()
+                                }
+                                else if (page.chartType === "comparison" && page.chartData2.pointCount > 0) {
+                                    // In dual mode, right panel plots Dataset 2 targetValues in Purple
+                                    var tVals2 = page.chartData2.targetValues || []
+                                    var minT = 0, maxT = 1
+                                    for (var tp = 0; tp < tVals2.length; ++tp) {
+                                        if (tVals2[tp] < minT) minT = tVals2[tp]
+                                        if (tVals2[tp] > maxT) maxT = tVals2[tp]
+                                    }
+                                    var rngT = (maxT - minT) === 0 ? 1 : (maxT - minT)
+                                    var stepT = Math.max(1, Math.floor(tVals2.length / 1000))
+
+                                    ctx.strokeStyle = "#7C4DFF"
+                                    ctx.lineWidth = 2.2
+                                    ctx.beginPath()
+                                    var firstT = true
+                                    for (var tk = 0; tk < tVals2.length; tk += stepT) {
+                                        var xPT = padL + (tk / Math.max(1, tVals2.length - 1)) * plotW
+                                        var yPT = (height - padB) - ((tVals2[tk] - minT) / rngT) * (plotH - 20)
+                                        if (firstT) { ctx.moveTo(xPT, yPT); firstT = false } else { ctx.lineTo(xPT, yPT) }
                                     }
                                     ctx.stroke()
                                 }

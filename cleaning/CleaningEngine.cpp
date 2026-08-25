@@ -36,11 +36,10 @@ CleaningResult CleaningEngine::removeDuplicateRows(
 
     if (rows.isEmpty())
     {
-        result.errorMessage =
-            QStringLiteral(
-                "Dataset does not contain duplicate rows."
-                );
-
+        result.success = true;
+        result.modified = false;
+        result.message = QStringLiteral("Tekrarlanan kayıt bulunmuyor (zaten temiz).");
+        result.details.insert(QStringLiteral("removedRowCount"), 0);
         return result;
     }
 
@@ -95,11 +94,10 @@ CleaningResult CleaningEngine::removeRowsWithMissingValues(
 
     if (rows.isEmpty())
     {
-        result.errorMessage =
-            QStringLiteral(
-                "Dataset does not contain rows with missing values."
-                );
-
+        result.success = true;
+        result.modified = false;
+        result.message = QStringLiteral("Eksik değerli satır bulunmuyor (zaten temiz).");
+        result.details.insert(QStringLiteral("removedRowCount"), 0);
         return result;
     }
 
@@ -911,11 +909,10 @@ CleaningResult CleaningEngine::applyOutlierAction(
     {
         if (outlierRows.isEmpty())
         {
-            result.errorMessage =
-                QStringLiteral(
-                    "Selected column does not contain outliers."
-                    );
-
+            result.success = true;
+            result.modified = false;
+            result.message = QStringLiteral("Aykırı değer bulunmuyor (zaten temiz).");
+            result.details = resultMap;
             return result;
         }
 
