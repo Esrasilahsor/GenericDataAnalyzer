@@ -25,10 +25,11 @@ Item {
             : appController.dataset2QualityAvailable)
     }
     function quality(ds) {
-        return ds === 1 ? appController.dataset1QualityResult
-                        : appController.dataset2QualityResult
+        return ds === 1 ? (appController ? appController.dataset1QualityResult : ({}))
+                        : (appController ? appController.dataset2QualityResult : ({}))
     }
     function name(ds) {
+        if (!appController) return "Dataset " + ds
         var n = ds === 1 ? appController.dataset1Name : appController.dataset2Name
         return n && n !== "" ? n : "Dataset " + ds
     }
@@ -41,49 +42,77 @@ Item {
         return r[key] === undefined || r[key] === null ? [] : r[key]
     }
 
+    function isColumnNumeric(ds, colName) {
+        if (!appController) return false
+        var colModel = ds === 1 ? appController.dataset1ColumnModel : appController.dataset2ColumnModel
+        if (!colModel) return false
+        for (var i = 0; i < colModel.count; ++i) {
+            var c = colModel.get(i)
+            if (c.name === colName) {
+                return c.type === "int" || c.type === "double" || c.type === "float" || c.type === "number" || c.isNumeric === true
+            }
+        }
+        return false
+    }
+
     function rebuild(ds) {
         var m = ds === 1 ? dataset1Problems : dataset2Problems
         m.clear()
+        if (!available(ds) && appController) {
+            if (ds === 1 && appController.dataset1Name !== "") appController.analyzeDataset1Quality()
+            else if (ds === 2 && appController.dataset2Name !== "") appController.analyzeDataset2Quality()
+        }
         if (!available(ds)) return
 
+        // 1. Missing columns
         var missing = arr(ds, "columnsWithMissing")
         for (var i = 0; i < missing.length; ++i) {
+            var col = String(missing[i])
+            var isNum = isColumnNumeric(ds, col)
             m.append({
                 type: "missing",
-                title: String(missing[i]),
-                description: "Bu sütunda eksik değer bulunuyor.",
+                title: col,
+                isNumeric: isNum,
+                description: isNum ? "Sayısal sütunda eksik değerler mevcut." : "Metinsel sütunda eksik değerler mevcut.",
                 action: "Atla"
             })
         }
 
+        // 2. Missing rows bulk
         if (missing.length > 0) {
             m.append({
                 type: "missingRows",
                 title: "Eksik değer içeren satırlar",
-                description: "Eksik değer bulunan tüm kayıtları kaldırır.",
+                isNumeric: false,
+                description: "Eksik değer bulunan tüm kayıtları veri setinden kaldırır.",
                 action: "Atla"
             })
         }
 
-        if (n(ds, "duplicateRowCount") > 0)
+        // 3. Duplicate rows
+        if (n(ds, "duplicateRowCount") > 0) {
             m.append({
                 type: "duplicate",
                 title: "Tekrarlanan kayıtlar",
-                description: n(ds, "duplicateRowCount") + " duplicate kayıt tespit edildi.",
+                isNumeric: false,
+                description: n(ds, "duplicateRowCount") + " adet tekrar eden kayıt tespit edildi.",
                 action: "Atla"
             })
+        }
 
+        // 4. Constant columns
         var constants = arr(ds, "constantColumns")
-        for (var j = 0; j < constants.length; ++j)
+        for (var j = 0; j < constants.length; ++j) {
             m.append({
                 type: "constant",
                 title: String(constants[j]),
-                description: "Sütunda tek bir benzersiz değer bulunuyor.",
+                isNumeric: false,
+                description: "Sütunda yalnızca tek bir sabit değer bulunuyor.",
                 action: "Atla"
             })
+        }
 
-        // Veri Analizi sayfasında tüm sayısal sütunlara uygulanan
-        // Outlier sonucunu doğrudan temizleme kuyruğuna aktar.
+        // 5. Outliers
         var outAvailable = ds === 1
             ? appController.dataset1OutlierAvailable
             : appController.dataset2OutlierAvailable
@@ -93,43 +122,24 @@ Item {
                 ? appController.dataset1OutlierResult
                 : appController.dataset2OutlierResult
 
-            var outColumns =
-                out && out.columns !== undefined && out.columns !== null
-                ? out.columns
-                : []
-
+            var outColumns = out && out.columns ? out.columns : []
             var outMethod = String(out.method || "IQR")
-            var outParameter = Number(
-                out.parameter ||
-                (outMethod === "IQR" ? 1.5 : 3.0)
-            )
+            var outParameter = Number(out.parameter || (outMethod === "IQR" ? 1.5 : 3.0))
 
             for (var k = 0; k < outColumns.length; ++k) {
-                var outColumn = outColumns[k]
-                var outCount = Number(outColumn.outlierCount || 0)
-
-                if (outCount <= 0)
-                    continue
-
-                m.append({
-                    type: "outlier",
-                    title: String(outColumn.columnName || "Sayısal sütun"),
-                    description:
-                        outCount
-                        + " aykırı değer bulundu • "
-                        + Number(
-                            outColumn.outlierPercentage || 0
-                        ).toFixed(2)
-                        + "% • "
-                        + outMethod
-                        + " ("
-                        + outParameter
-                        + ")",
-                    action: "Atla",
-                    method: outMethod,
-                    parameter: outParameter,
-                    outlierCount: outCount
-                })
+                var outCol = outColumns[k]
+                var outCount = Number(outCol.outlierCount || 0)
+                if (outCount > 0) {
+                    m.append({
+                        type: "outlier",
+                        title: String(outCol.columnName || "Sayısal Sütun"),
+                        isNumeric: true,
+                        description: outCount + " aykırı değer bulundu • %" + Number(outCol.outlierPercentage || 0).toFixed(2) + " (" + outMethod + ")",
+                        action: "Atla",
+                        method: outMethod,
+                        parameter: outParameter
+                    })
+                }
             }
         }
     }
@@ -138,10 +148,6 @@ Item {
         applied = false
         rebuild(1)
         rebuild(2)
-    }
-
-    function problemCount() {
-        return dataset1Problems.count + dataset2Problems.count
     }
 
     function selectedCount() {
@@ -165,7 +171,7 @@ Item {
         applying = true
         logModel.clear()
 
-        // 1. Snapshot actions so mid-loop updates do not mutate iteration
+        // 1. Snapshot all actions
         var actionsToRun = []
         for (var i = 0; i < dataset1Problems.count; ++i) {
             var item1 = dataset1Problems.get(i)
@@ -197,6 +203,7 @@ Item {
         var ds1Affected = false
         var ds2Affected = false
 
+        // 2. Execute each action sequentially
         for (var k = 0; k < actionsToRun.length; ++k) {
             var act = actionsToRun[k]
             if (act.ds === 1) ds1Affected = true
@@ -216,6 +223,8 @@ Item {
                 ok = act.ds === 1 ? appController.removeDataset1MissingRows() : appController.removeDataset2MissingRows()
             } else if (act.type === "duplicate") {
                 ok = act.ds === 1 ? appController.removeDataset1Duplicates() : appController.removeDataset2Duplicates()
+            } else if (act.type === "constant") {
+                ok = act.ds === 1 ? appController.removeDataset1Column(act.title) : appController.removeDataset2Column(act.title)
             } else if (act.type === "outlier") {
                 var outMethod = String(act.method || "IQR")
                 var outParam = Number(act.parameter || (outMethod === "IQR" ? 1.5 : 3.0))
@@ -228,6 +237,7 @@ Item {
             log((ok ? "✓ " : "✕ ") + "Dataset " + act.ds + " • " + act.title + " → " + act.action + detail, ok)
         }
 
+        // 3. Refresh quality analysis
         if (ds1Affected && appController.dataset1Name !== "") appController.analyzeDataset1Quality()
         if (ds2Affected && appController.dataset2Name !== "") appController.analyzeDataset2Quality()
 
@@ -238,8 +248,8 @@ Item {
     }
 
     function restore(ds) {
-        var ok = ds === 1 ? appController.restoreDataset1()
-                           : appController.restoreDataset2()
+        if (!appController) return
+        var ok = ds === 1 ? appController.restoreDataset1() : appController.restoreDataset2()
         if (ok) {
             log("↶ Dataset " + ds + " orijinal çalışma verisine döndürüldü.", true)
             if (ds === 1) appController.analyzeDataset1Quality()
@@ -249,43 +259,18 @@ Item {
         }
     }
 
-    onAppControllerChanged: rebuildAll()
-
     Component.onCompleted: rebuildAll()
 
     Connections {
         target: page.appController
         ignoreUnknownSignals: true
 
-        function onDataset1QualityChanged() {
-            if (!page.applying)
-                page.rebuildAll()
-        }
-
-        function onDataset2QualityChanged() {
-            if (!page.applying)
-                page.rebuildAll()
-        }
-
-        function onDataset1OutlierChanged() {
-            if (!page.applying)
-                page.rebuildAll()
-        }
-
-        function onDataset2OutlierChanged() {
-            if (!page.applying)
-                page.rebuildAll()
-        }
-
-        function onDataset1Changed() {
-            if (!page.applying)
-                page.rebuildAll()
-        }
-
-        function onDataset2Changed() {
-            if (!page.applying)
-                page.rebuildAll()
-        }
+        function onDataset1QualityChanged() { if (!page.applying) page.rebuildAll() }
+        function onDataset2QualityChanged() { if (!page.applying) page.rebuildAll() }
+        function onDataset1OutlierChanged() { if (!page.applying) page.rebuildAll() }
+        function onDataset2OutlierChanged() { if (!page.applying) page.rebuildAll() }
+        function onDataset1Changed() { if (!page.applying) page.rebuildAll() }
+        function onDataset2Changed() { if (!page.applying) page.rebuildAll() }
     }
 
     ScrollView {
@@ -296,82 +281,9 @@ Item {
             width: page.width
             spacing: 16
 
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.topMargin: 12
+            Item { Layout.preferredHeight: 8 }
 
-                Button {
-                    Layout.preferredWidth: 190
-                    Layout.preferredHeight: 36
-                    text: "← Veri Analizine Dön"
-                    onClicked: page.goToPage(2)
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.preferredHeight: 90
-                radius: 16
-                color: theme.surfaceAlt
-                border.color: applied ? theme.success : theme.border
-                border.width: 1
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 16
-                    spacing: 16
-
-                    Rectangle {
-                        Layout.preferredWidth: 48
-                        Layout.preferredHeight: 48
-                        radius: 13
-                        color: applied ? theme.success : theme.warning
-
-                        Label {
-                            anchors.centerIn: parent
-                            text: applied ? "✓" : String(problemCount())
-                            color: "#FFFFFF"
-                            font.pixelSize: 18
-                            font.bold: true
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 3
-
-                        Label {
-                            text: applied ? "Temizleme tamamlandı"
-                                  : problemCount() + " temizleme adımı hazır"
-                            color: theme.text
-                            font.pixelSize: 15
-                            font.bold: true
-                        }
-
-                        Label {
-                            text: selectedCount() + " işlem seçildi • Orijinal veri korunur, yalnızca çalışma kopyası değişir."
-                            color: theme.textSecondary
-                            font.pixelSize: 12
-                        }
-                    }
-
-                    Label {
-                        text: selectedCount() + " seçili"
-                        color: theme.primary
-                        font.pixelSize: 13
-                        font.bold: true
-                    }
-                }
-            }
-
+            // Dataset Cards
             RowLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
@@ -403,7 +315,7 @@ Item {
                                     spacing: 2
                                     Label {
                                         text: "DATASET " + card.ds
-                                        color: theme.primary
+                                        color: card.ds === 1 ? "#FF4081" : "#7C4DFF"
                                         font.pixelSize: 11
                                         font.bold: true
                                     }
@@ -416,7 +328,7 @@ Item {
                                     }
                                 }
                                 Label {
-                                    text: available(card.ds) ? "Analiz edildi" : "Analiz bekleniyor"
+                                    text: available(card.ds) ? "✓ Analiz Edildi" : "Analiz Bekleniyor"
                                     color: available(card.ds) ? theme.success : theme.textSecondary
                                     font.pixelSize: 12
                                     font.bold: true
@@ -443,9 +355,7 @@ Item {
                                             Layout.preferredWidth: 36
                                             Layout.preferredHeight: 36
                                             radius: 9
-                                            color: itemData.type === "outlier"
-                                                   ? theme.warning
-                                                   : theme.primary
+                                            color: itemData.type === "outlier" ? "#FF6E40" : (itemData.type === "missing" ? "#FF4081" : theme.primary)
                                             Label {
                                                 anchors.centerIn: parent
                                                 text: itemData.type === "missing" ? "!" :
@@ -477,17 +387,19 @@ Item {
 
                                         ComboBox {
                                             id: actionCombo
-                                            Layout.preferredWidth: 155
+                                            Layout.preferredWidth: 165
                                             Layout.preferredHeight: 36
                                             model: itemData.type === "missing"
-                                                   ? ["Atla", "Mean", "Median", "Mode", "Satırları kaldır"]
+                                                   ? (itemData.isNumeric ? ["Atla", "Mean", "Median", "Mode", "Satırları kaldır"] : ["Atla", "Mode", "Satırları kaldır"])
                                                    : itemData.type === "missingRows"
                                                      ? ["Atla", "Satırları kaldır"]
                                                      : itemData.type === "duplicate"
                                                        ? ["Atla", "Kayıtları kaldır"]
-                                                       : itemData.type === "outlier"
-                                                         ? ["Atla", "Aykırıları kaldır"]
-                                                         : ["Atla"]
+                                                       : itemData.type === "constant"
+                                                         ? ["Atla", "Sütunu kaldır"]
+                                                         : itemData.type === "outlier"
+                                                           ? ["Atla", "Aykırıları kaldır"]
+                                                           : ["Atla"]
                                             currentIndex: Math.max(0, model.indexOf(itemData.action))
                                             onActivated: {
                                                 var a = currentText
@@ -504,8 +416,8 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 text: available(card.ds)
-                                      ? "✓ Bu veri setinde temizlenecek problem yok."
-                                      : "Önce Veri Kalitesi ve gerekiyorsa Outlier Analizi çalıştırın."
+                                      ? "✓ Bu veri setinde temizlenecek problem bulunmuyor."
+                                      : "Önce Veri Kalitesi analizi çalıştırın."
                                 color: available(card.ds) ? theme.success : theme.textSecondary
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -526,6 +438,7 @@ Item {
                 }
             }
 
+            // Apply Panel
             Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
@@ -547,7 +460,7 @@ Item {
                             font.bold: true
                         }
                         Label {
-                            text: "Seçimler tek seferde uygulanır. Uygulama sonrasında kalite analizi yeniden hesaplanır."
+                            text: "Seçilen bütün işlemler arka yüzde çalışma kopyasına sırayla ve güvenle uygulanır."
                             color: theme.textSecondary
                             font.pixelSize: 11
                         }
@@ -562,59 +475,84 @@ Item {
                 }
             }
 
+            // Log Console Panel
             Rectangle {
-                visible: logModel.count > 0
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 64 + logModel.count * 34
-                radius: 15
+                Layout.preferredHeight: Math.max(140, 70 + logModel.count * 28)
+                radius: 16
                 color: theme.surface
                 border.color: theme.border
+                border.width: 1
+
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 14
+                    anchors.margins: 16
+                    spacing: 8
+
                     Label {
-                        text: "İşlem Geçmişi"
+                        text: "Temizleme Günlüğü (Log)"
                         color: theme.text
-                        font.pixelSize: 13
+                        font.pixelSize: 15
                         font.bold: true
                     }
+
                     Repeater {
                         model: logModel
-                        delegate: Label {
+                        delegate: RowLayout {
                             Layout.fillWidth: true
-                            text: model.message
-                            color: model.success ? theme.success : theme.error
-                            font.pixelSize: 12
-                            elide: Text.ElideRight
+                            spacing: 8
+                            Label {
+                                text: model.message
+                                color: model.success ? theme.success : theme.error
+                                font.pixelSize: 12
+                                font.family: "Consolas, monospace"
+                            }
                         }
+                    }
+
+                    Label {
+                        visible: logModel.count === 0
+                        text: "Henüz bir işlem uygulanmadı."
+                        color: theme.textSecondary
+                        font.pixelSize: 12
                     }
                 }
             }
 
+            // Next Step
             Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 84
+                Layout.preferredHeight: 82
                 radius: 15
                 color: theme.surfaceAlt
                 border.color: theme.border
+
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: 16
+                    spacing: 14
                     ColumnLayout {
                         Layout.fillWidth: true
-                        Label { text: "Sonraki adım"; color: theme.textSecondary; font.pixelSize: 11 }
-                        Label { text: "Sütun Eşleştirme / Karşılaştırma"; color: theme.text; font.pixelSize: 14; font.bold: true }
-                        Label { text: "Temizlenmiş çalışma verisini eşleştirip datasetleri karşılaştırabilirsiniz."; color: theme.textSecondary; font.pixelSize: 11 }
+                        Label {
+                            text: "Sonraki Adım: Karşılaştırma veya Görselleştirme"
+                            color: theme.text
+                            font.pixelSize: 14
+                            font.bold: true
+                        }
+                        Label {
+                            text: "Temizlenen verileri karşılaştırabilir veya görselleştirme sayfasında grafiklerini çıkarabilirsiniz."
+                            color: theme.textSecondary
+                            font.pixelSize: 12
+                        }
                     }
                     Button {
-                        Layout.preferredWidth: 190
-                        Layout.preferredHeight: 40
-                        enabled: applied || problemCount() === 0
-                        text: "Eşleştirmeye Geç →"
+                        Layout.preferredWidth: 170
+                        Layout.preferredHeight: 38
+                        text: "Karşılaştırmaya Geç →"
                         onClicked: page.goToPage(4)
                     }
                 }

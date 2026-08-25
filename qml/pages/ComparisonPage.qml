@@ -9,88 +9,91 @@ Item {
     property var appController
     property var mainWindow
 
-    ListModel { id: mappingRows }
-    property var comparisonResult: appController ? appController.datasetComparisonResult : ({})
-    property bool comparisonAvailable: appController ? appController.datasetComparisonAvailable : false
+    property var comparisonResult: ({})
     property int selectedComparisonIndex: 0
+    property string compChartType: "stats" // "stats", "distribution", "boxplot", "trend"
+    property string saveStatusMessage: ""
+    property bool saveSuccess: true
 
     function goToPage(index) {
         if (mainWindow) mainWindow.currentPage = index
     }
 
-    function columnModel(ds) {
-        return ds === 1 ? (appController ? appController.dataset1ColumnModel : null)
-                        : (appController ? appController.dataset2ColumnModel : null)
+    function isLoaded(ds) {
+        if (!appController) return false
+        return ds === 1 ? (appController.dataset1Name !== "") : (appController.dataset2Name !== "")
+    }
+    function name(ds) {
+        if (!appController) return "Dataset " + ds
+        var n = ds === 1 ? appController.dataset1Name : appController.dataset2Name
+        return n && n !== "" ? n : "Dataset " + ds
     }
 
-    function addMapping() {
-        mappingRows.append({
-            sourceColumn: "",
-            targetColumn: "",
-            similarityScore: 0
-        })
-    }
+    function runComparison() {
+        if (!appController) return
+        var model = appController.mappingModel
+        if (!model || model.count === 0) return
 
-    function removeMapping(i) {
-        if (i >= 0 && i < mappingRows.count)
-            mappingRows.remove(i)
+        var list = []
+        for (var i = 0; i < model.count; ++i) {
+            var item = model.get(i)
+            if (item && item.sourceColumn && item.targetColumn) {
+                list.push({
+                    sourceColumn: item.sourceColumn,
+                    targetColumn: item.targetColumn
+                })
+            }
+        }
+
+        if (list.length === 0) return
+
+        var ok = appController.compareDatasets(list)
+        if (ok) {
+            page.comparisonResult = appController.datasetComparisonResult
+            page.selectedComparisonIndex = 0
+            compCanvas.requestPaint()
+        }
     }
 
     function loadSuggestedMappings() {
         if (!appController) return
-        appController.generateMappings()
-        mappingRows.clear()
-        var list = appController.getSuggestedMappings()
-        if (list && list.length > 0) {
-            for (var i = 0; i < list.length; ++i) {
-                mappingRows.append({
-                    sourceColumn: list[i].sourceColumn || "",
-                    targetColumn: list[i].targetColumn || "",
-                    similarityScore: Math.round(Number(list[i].similarityScore || 0))
-                })
+        var suggestions = appController.getSuggestedMappings()
+        if (!suggestions || suggestions.length === 0) {
+            appController.generateMappings()
+            return
+        }
+
+        var model = appController.mappingModel
+        if (model) {
+            model.clear()
+            for (var i = 0; i < suggestions.length; ++i) {
+                var s = suggestions[i]
+                model.addMapping(s.sourceColumn, s.targetColumn)
             }
+        }
+    }
+
+    function saveChart() {
+        if (!appController) return
+        var dataUrl = compCanvas.toDataURL("image/png")
+        var typeName = page.compChartType === "stats" ? "Karsilastirma_Istatistik" :
+                       page.compChartType === "distribution" ? "Karsilastirma_Dagilim" :
+                       page.compChartType === "boxplot" ? "Karsilastirma_BoxPlot" : "Karsilastirma_Trend"
+        var path = appController.saveChartImage(dataUrl, typeName)
+        if (path && path !== "") {
+            page.saveSuccess = true
+            page.saveStatusMessage = "✓ Grafik kaydedildi: " + path
         } else {
-            addMapping()
+            page.saveSuccess = false
+            page.saveStatusMessage = "✕ Grafik kaydedilemedi: " + (appController.lastError || "Hata")
         }
+        statusTimer.restart()
     }
 
-    function validMappingCount() {
-        var c = 0
-        for (var i = 0; i < mappingRows.count; ++i) {
-            var m = mappingRows.get(i)
-            if (m.sourceColumn !== "" && m.targetColumn !== "")
-                ++c
-        }
-        return c
-    }
-
-    function runComparison() {
-        if (!appController || validMappingCount() === 0) return
-
-        var list = []
-        for (var i = 0; i < mappingRows.count; ++i) {
-            var m = mappingRows.get(i)
-            if (m.sourceColumn !== "" && m.targetColumn !== "")
-                list.push({
-                    sourceColumn: m.sourceColumn,
-                    targetColumn: m.targetColumn
-                })
-        }
-
-        appController.compareDatasets(list)
-    }
-
-    Connections {
-        target: appController
-        ignoreUnknownSignals: true
-        function onDatasetComparisonChanged() {
-            page.comparisonResult = appController ? appController.datasetComparisonResult : ({})
-            page.comparisonAvailable = appController ? appController.datasetComparisonAvailable : false
-            page.selectedComparisonIndex = 0
-            if (compCanvas) compCanvas.requestPaint()
-        }
-        function onDataset1Changed() { mappingRows.clear() }
-        function onDataset2Changed() { mappingRows.clear() }
+    Timer {
+        id: statusTimer
+        interval: 5000
+        onTriggered: page.saveStatusMessage = ""
     }
 
     ScrollView {
@@ -101,318 +104,90 @@ Item {
             width: page.width
             spacing: 16
 
-            Item {
-                Layout.preferredHeight: 8
-            }
+            Item { Layout.preferredHeight: 8 }
 
-            // Dataset header cards
-            RowLayout {
+            // Status message
+            Rectangle {
+                visible: page.saveStatusMessage !== ""
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
-
-                Repeater {
-                    model: 2
-                    delegate: Rectangle {
-                        property int ds: index + 1
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 82
-                        radius: 14
-                        color: theme.surface
-                        border.color: theme.border
-                        border.width: 1
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 3
-                            Label {
-                                text: "DATASET " + parent.parent.ds
-                                color: parent.parent.ds === 1 ? "#FF4081" : "#7C4DFF"
-                                font.pixelSize: 11
-                                font.bold: true
-                            }
-                            Label {
-                                text: parent.parent.ds === 1
-                                      ? (appController ? appController.dataset1Name : "")
-                                      : (appController ? appController.dataset2Name : "")
-                                color: theme.text
-                                font.pixelSize: 14
-                                font.bold: true
-                                elide: Text.ElideMiddle
-                                Layout.fillWidth: true
-                            }
-                            Label {
-                                text: parent.parent.ds === 1
-                                      ? (appController ? appController.dataset1RowCount + " satır • " + appController.dataset1ColumnCount + " sütun" : "")
-                                      : (appController ? appController.dataset2RowCount + " satır • " + appController.dataset2ColumnCount + " sütun" : "")
-                                color: theme.textSecondary
-                                font.pixelSize: 12
-                            }
-                        }
+                Layout.preferredHeight: 40
+                radius: 8
+                color: page.saveSuccess ? "#1B5E20" : "#B71C1C"
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    Label {
+                        text: page.saveStatusMessage
+                        color: "#FFFFFF"
+                        font.pixelSize: 12
+                        font.bold: true
                     }
                 }
             }
 
-            // Mapping editor
+            // Controls & Suggestions Header
             Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: Math.max(260, 190 + mappingRows.count * 80)
+                Layout.preferredHeight: 90
                 radius: 16
                 color: theme.surface
                 border.color: theme.border
                 border.width: 1
 
-                ColumnLayout {
+                RowLayout {
                     anchors.fill: parent
                     anchors.margins: 16
-                    spacing: 12
+                    spacing: 14
 
-                    RowLayout {
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Label {
-                                text: "Sütun Eşleştirmeleri"
-                                color: theme.text
-                                font.pixelSize: 18
-                                font.bold: true
-                            }
-                            Label {
-                                text: "Otomatik benzerlik algoritmasıyla veya manuel olarak sütunları eşleştirip karşılaştırabilirsiniz."
-                                color: theme.textSecondary
-                                font.pixelSize: 12
-                            }
-                        }
-
-                        Button {
-                            Layout.preferredWidth: 210
-                            Layout.preferredHeight: 38
-                            text: "⚡ Otomatik Eşleştirme Öner"
-                            onClicked: page.loadSuggestedMappings()
-                        }
-
-                        Button {
-                            Layout.preferredWidth: 150
-                            Layout.preferredHeight: 38
-                            text: "+ Manuel Ekle"
-                            onClicked: page.addMapping()
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 38
-                        radius: 9
-                        color: theme.surfaceAlt
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            Label {
-                                Layout.fillWidth: true
-                                text: "DATASET 1 SÜTUNU"
-                                color: "#FF4081"
-                                font.pixelSize: 11
-                                font.bold: true
-                            }
-                            Item { Layout.preferredWidth: 130 }
-                            Label {
-                                Layout.fillWidth: true
-                                text: "DATASET 2 SÜTUNU"
-                                color: "#7C4DFF"
-                                font.pixelSize: 11
-                                font.bold: true
-                            }
-                            Item { Layout.preferredWidth: 40 }
-                        }
-                    }
-
-                    Repeater {
-                        model: mappingRows
-                        delegate: RowLayout {
-                            property int rowIndex: index
-                            property var itemData: model
-                            Layout.fillWidth: true
-                            spacing: 10
-
-                            ComboBox {
-                                id: sourceCombo
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 42
-                                model: page.columnModel(1)
-                                textRole: "name"
-                                Component.onCompleted: {
-                                    if (itemData.sourceColumn && itemData.sourceColumn !== "") {
-                                        for (var k = 0; k < count; ++k) {
-                                            if (textAt(k) === itemData.sourceColumn) {
-                                                currentIndex = k
-                                                break
-                                            }
-                                        }
-                                    }
-                                }
-                                onActivated:
-                                    mappingRows.setProperty(rowIndex, "sourceColumn", currentText)
-                            }
-
-                            // Similarity Badge
-                            Rectangle {
-                                Layout.preferredWidth: 130
-                                Layout.preferredHeight: 32
-                                radius: 16
-                                color: itemData.similarityScore > 75 ? "#E6F6EE" : (itemData.similarityScore > 40 ? "#FFF4E5" : theme.surfaceAlt)
-                                border.color: itemData.similarityScore > 75 ? "#00E676" : (itemData.similarityScore > 40 ? "#FFAB00" : theme.border)
-                                border.width: 1
-
-                                RowLayout {
-                                    anchors.centerIn: parent
-                                    spacing: 4
-                                    Label {
-                                        text: itemData.similarityScore > 0 ? "⚡ %" + itemData.similarityScore : "↔"
-                                        color: itemData.similarityScore > 75 ? "#00C853" : (itemData.similarityScore > 40 ? "#FF8F00" : theme.primary)
-                                        font.pixelSize: 11
-                                        font.bold: true
-                                    }
-                                    Label {
-                                        visible: itemData.similarityScore > 0
-                                        text: "Eşleşme"
-                                        color: theme.textSecondary
-                                        font.pixelSize: 10
-                                    }
-                                }
-                            }
-
-                            ComboBox {
-                                id: targetCombo
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 42
-                                model: page.columnModel(2)
-                                textRole: "name"
-                                Component.onCompleted: {
-                                    if (itemData.targetColumn && itemData.targetColumn !== "") {
-                                        for (var k = 0; k < count; ++k) {
-                                            if (textAt(k) === itemData.targetColumn) {
-                                                currentIndex = k
-                                                break
-                                            }
-                                        }
-                                    }
-                                }
-                                onActivated:
-                                    mappingRows.setProperty(rowIndex, "targetColumn", currentText)
-                            }
-
-                            Button {
-                                Layout.preferredWidth: 40
-                                Layout.preferredHeight: 40
-                                text: "×"
-                                onClicked: page.removeMapping(rowIndex)
-                            }
-                        }
-                    }
-
-                    Label {
-                        visible: mappingRows.count === 0
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 70
-                        text: "Henüz eşleştirme yok.
-'⚡ Otomatik Eşleştirme Öner' butonuna tıklayarak otomatik benzerlikleri bulabilir veya '+ Manuel Ekle' ile seçebilirsiniz."
-                        color: theme.textSecondary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        font.pixelSize: 12
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
+                        spacing: 3
                         Label {
-                            Layout.fillWidth: true
-                            text: validMappingCount() + " geçerli eşleştirme"
+                            text: "Dataset 1 (" + page.name(1) + ") ⇆ Dataset 2 (" + page.name(2) + ")"
+                            color: theme.text
+                            font.pixelSize: 15
+                            font.bold: true
+                        }
+                        Label {
+                            text: "Sütun eşleştirmelerini otomatik öner ile belirleyebilir ve karşılaştırma grafikleri üretebilirsiniz."
                             color: theme.textSecondary
                             font.pixelSize: 12
                         }
-                        Button {
-                            Layout.preferredWidth: 220
-                            Layout.preferredHeight: 42
-                            enabled: validMappingCount() > 0
-                            text: "📊 Karşılaştırmayı Başlat →"
-                            onClicked: page.runComparison()
-                        }
+                    }
+
+                    Button {
+                        Layout.preferredWidth: 200
+                        Layout.preferredHeight: 40
+                        text: "⚡ Otomatik Eşleştirme Öner"
+                        enabled: page.isLoaded(1) && page.isLoaded(2)
+                        onClicked: page.loadSuggestedMappings()
+                    }
+
+                    Button {
+                        Layout.preferredWidth: 160
+                        Layout.preferredHeight: 40
+                        text: "⇆ Karşılaştır"
+                        enabled: page.isLoaded(1) && page.isLoaded(2)
+                        onClicked: page.runComparison()
                     }
                 }
             }
 
-            // Dataset-level summary cards
-            Rectangle {
-                visible: page.comparisonAvailable
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.preferredHeight: 140
-                radius: 16
-                color: theme.surface
-                border.color: theme.border
-                border.width: 1
-
-                GridLayout {
-                    anchors.fill: parent
-                    anchors.margins: 16
-                    columns: 4
-                    columnSpacing: 12
-                    rowSpacing: 10
-
-                    Repeater {
-                        model: [
-                            { t: "Karşılaştırılan Alan", k: "matchedColumnCount", c: "#FF4081" },
-                            { t: "Karşılaştırılan Kayıt", k: "comparedRecordCount", c: "#7C4DFF" },
-                            { t: "Fark Bulunan Kayıt", k: "differentRecordCount", c: "#FF6E40" },
-                            { t: "Fark Oranı", k: "differencePercentage", c: "#00E5FF" }
-                        ]
-                        delegate: Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 88
-                            radius: 10
-                            color: theme.surfaceAlt
-                            border.color: theme.border
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 3
-                                Label {
-                                    text: modelData.t
-                                    color: theme.textSecondary
-                                    font.pixelSize: 11
-                                }
-                                Label {
-                                    text: modelData.k === "differencePercentage"
-                                          ? Number(page.comparisonResult[modelData.k] || 0).toFixed(2) + "%"
-                                          : String(page.comparisonResult[modelData.k] || 0)
-                                    color: modelData.c
-                                    font.pixelSize: 20
-                                    font.bold: true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Per-pair results + Integrated Comparison Chart
+            // Results & Interactive Comparison Chart
             RowLayout {
-                visible: page.comparisonAvailable
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
                 spacing: 14
 
-                // Left: Pair Selection List
+                // Left: Comparison Results List
                 Rectangle {
-                    Layout.preferredWidth: 420
-                    Layout.preferredHeight: 460
+                    Layout.preferredWidth: 380
+                    Layout.preferredHeight: 520
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -424,99 +199,93 @@ Item {
                         spacing: 10
 
                         Label {
-                            text: "Eşleştirme Listesi"
+                            text: "Eşleştirme Sonuçları"
                             color: theme.text
-                            font.pixelSize: 16
+                            font.pixelSize: 15
                             font.bold: true
                         }
 
-                        ScrollView {
+                        ListView {
+                            id: compList
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             clip: true
+                            spacing: 8
+                            model: page.comparisonResult.results || []
 
-                            ColumnLayout {
-                                width: parent.width
-                                spacing: 8
+                            delegate: Rectangle {
+                                width: compList.width
+                                height: 74
+                                radius: 10
+                                color: index === page.selectedComparisonIndex ? theme.surfaceAlt : "transparent"
+                                border.color: index === page.selectedComparisonIndex ? theme.primary : theme.border
+                                border.width: 1
 
-                                Repeater {
-                                    model: page.comparisonResult.results || []
-                                    delegate: Rectangle {
-                                        property int rIdx: index
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 94
-                                        radius: 10
-                                        color: page.selectedComparisonIndex === rIdx
-                                               ? (theme.darkMode ? "#2D1E3A" : "#F8EBF7")
-                                               : theme.surfaceAlt
-                                        border.color: page.selectedComparisonIndex === rIdx
-                                                      ? "#FF4081"
-                                                      : theme.border
-                                        border.width: page.selectedComparisonIndex === rIdx ? 2 : 1
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        page.selectedComparisonIndex = index
+                                        compCanvas.requestPaint()
+                                    }
+                                }
 
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                page.selectedComparisonIndex = rIdx
-                                                compCanvas.requestPaint()
-                                            }
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 10
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 36
+                                        Layout.preferredHeight: 36
+                                        radius: 8
+                                        color: modelData.meanDifference === 0 ? "#00E676" : "#FF4081"
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: "⇄"
+                                            color: "#FFFFFF"
+                                            font.bold: true
+                                            font.pixelSize: 16
                                         }
+                                    }
 
-                                        ColumnLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 12
-                                            spacing: 4
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                Label {
-                                                    text: modelData.sourceColumn + " ↔ " + modelData.targetColumn
-                                                    color: theme.text
-                                                    font.pixelSize: 13
-                                                    font.bold: true
-                                                    Layout.fillWidth: true
-                                                    elide: Text.ElideMiddle
-                                                }
-                                                Rectangle {
-                                                    Layout.preferredHeight: 20
-                                                    Layout.preferredWidth: 60
-                                                    radius: 10
-                                                    color: "#FF4081"
-                                                    Label {
-                                                        anchors.centerIn: parent
-                                                        text: "%" + Number(modelData.differencePercentage || 0).toFixed(1) + " F"
-                                                        color: "#FFFFFF"
-                                                        font.pixelSize: 10
-                                                        font.bold: true
-                                                    }
-                                                }
-                                            }
-
-                                            Label {
-                                                text: "Ortak: " + modelData.comparedRecords + " • Fark: " + modelData.differentRecords
-                                                color: theme.textSecondary
-                                                font.pixelSize: 11
-                                            }
-
-                                            Label {
-                                                text: "Mean Fark: " + Number(modelData.meanDifference || 0).toFixed(2)
-                                                      + " • Medyan Fark: " + Number(modelData.medianDifference || 0).toFixed(2)
-                                                color: theme.textSecondary
-                                                font.pixelSize: 10
-                                            }
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: modelData.sourceColumn + " ➔ " + modelData.targetColumn
+                                            color: theme.text
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                            elide: Text.ElideMiddle
+                                        }
+                                        Label {
+                                            text: "Mean Fark: " + Number(modelData.meanDifference || 0).toFixed(2)
+                                                  + " • Medyan Fark: " + Number(modelData.medianDifference || 0).toFixed(2)
+                                            color: theme.textSecondary
+                                            font.pixelSize: 10
                                         }
                                     }
                                 }
                             }
                         }
+
+                        Label {
+                            visible: !page.comparisonResult.results || page.comparisonResult.results.length === 0
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            text: "Henüz karşılaştırma yapılmadı. 'Karşılaştır' butonuna tıklayın."
+                            color: theme.textSecondary
+                            font.pixelSize: 12
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
                     }
                 }
 
-                // Right: Integrated Comparative Chart ("Kız Neşesi / Canlı Renkler")
+                // Right: Multi-Type Comparative Chart & Save Button
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 460
+                    Layout.preferredHeight: 520
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -525,38 +294,66 @@ Item {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 16
-                        spacing: 8
+                        spacing: 10
 
+                        // Chart Header & Controls
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 8
+                            spacing: 10
 
                             Label {
                                 property var curr: (page.comparisonResult.results && page.comparisonResult.results.length > page.selectedComparisonIndex)
                                                    ? page.comparisonResult.results[page.selectedComparisonIndex]
                                                    : null
-                                text: curr ? "Karşılaştırma Grafiği: " + curr.sourceColumn + " (D1) vs " + curr.targetColumn + " (D2)" : "Karşılaştırma Grafiği"
+                                text: curr ? curr.sourceColumn + " (D1) vs " + curr.targetColumn + " (D2)" : "Karşılaştırma Grafiği"
                                 color: theme.text
-                                font.pixelSize: 15
+                                font.pixelSize: 14
                                 font.bold: true
                                 Layout.fillWidth: true
+                                elide: Text.ElideMiddle
                             }
 
-                            // Legend pills
-                            RowLayout {
-                                spacing: 8
-                                Rectangle {
-                                    width: 12; height: 12; radius: 6; color: "#FF4081"
+                            // Chart Type Selector
+                            ComboBox {
+                                Layout.preferredWidth: 190
+                                Layout.preferredHeight: 34
+                                model: ["Sütun İstatistikleri", "Dağılım / Yoğunluk", "Kutu Grafiği (Box Plot)", "Trend / Çizgi"]
+                                onActivated: {
+                                    switch (currentIndex) {
+                                    case 0: page.compChartType = "stats"; break;
+                                    case 1: page.compChartType = "distribution"; break;
+                                    case 2: page.compChartType = "boxplot"; break;
+                                    case 3: page.compChartType = "trend"; break;
+                                    }
+                                    compCanvas.requestPaint()
                                 }
-                                Label { text: "Dataset 1"; color: theme.text; font.pixelSize: 11; font.bold: true }
+                            }
 
-                                Rectangle {
-                                    width: 12; height: 12; radius: 6; color: "#7C4DFF"
-                                }
-                                Label { text: "Dataset 2"; color: theme.text; font.pixelSize: 11; font.bold: true }
+                            // Save Button
+                            Button {
+                                Layout.preferredWidth: 140
+                                Layout.preferredHeight: 34
+                                text: "💾 Grafiği Kaydet"
+                                onClicked: page.saveChart()
                             }
                         }
 
+                        // Legend
+                        RowLayout {
+                            spacing: 14
+                            RowLayout {
+                                spacing: 6
+                                Rectangle { width: 12; height: 12; radius: 6; color: "#FF4081" }
+                                Label { text: "Dataset 1 (" + page.name(1) + ")"; color: theme.text; font.pixelSize: 11; font.bold: true }
+                            }
+                            RowLayout {
+                                spacing: 6
+                                Rectangle { width: 12; height: 12; radius: 6; color: "#7C4DFF" }
+                                Label { text: "Dataset 2 (" + page.name(2) + ")"; color: theme.text; font.pixelSize: 11; font.bold: true }
+                            }
+                        }
+
+                        // Canvas
                         Canvas {
                             id: compCanvas
                             Layout.fillWidth: true
@@ -576,7 +373,6 @@ Item {
                                 }
 
                                 var dataItem = resList[page.selectedComparisonIndex]
-
                                 var padL = 70, padR = 40, padT = 30, padB = 60
                                 var plotW = width - padL - padR
                                 var plotH = height - padT - padB
@@ -590,58 +386,104 @@ Item {
                                 ctx.lineTo(width - padR, height - padB)
                                 ctx.stroke()
 
-                                // Metrics to compare
-                                var metrics = [
-                                    { name: "Mean (Ortalama)", diff: dataItem.meanDifference || 0 },
-                                    { name: "Median (Medyan)", diff: dataItem.medianDifference || 0 },
-                                    { name: "IQR Değişimi", diff: dataItem.iqrDifference || 0 },
-                                    { name: "Std Sapma", diff: dataItem.standardDeviationDifference || 0 }
-                                ]
+                                if (page.compChartType === "stats") {
+                                    var metrics = [
+                                        { name: "Mean (Ortalama)", diff: dataItem.meanDifference || 0 },
+                                        { name: "Median (Medyan)", diff: dataItem.medianDifference || 0 },
+                                        { name: "IQR Değişimi", diff: dataItem.iqrDifference || 0 },
+                                        { name: "Std Sapma", diff: dataItem.standardDeviationDifference || 0 }
+                                    ]
 
-                                var maxDiff = 1
-                                for (var m = 0; m < metrics.length; ++m) {
-                                    var absV = Math.abs(metrics[m].diff)
-                                    if (absV > maxDiff) maxDiff = absV
+                                    var maxDiff = 1
+                                    for (var m = 0; m < metrics.length; ++m) {
+                                        var absV = Math.abs(metrics[m].diff)
+                                        if (absV > maxDiff) maxDiff = absV
+                                    }
+
+                                    var groupW = plotW / metrics.length
+                                    for (var i = 0; i < metrics.length; ++i) {
+                                        var grpX = padL + i * groupW
+                                        var val = metrics[i].diff
+                                        var barH = Math.min(plotH - 20, (Math.abs(val) / maxDiff) * (plotH - 40))
+
+                                        var b1W = groupW * 0.36
+                                        var b1X = grpX + groupW * 0.12
+                                        var b2X = grpX + groupW * 0.52
+
+                                        var b1Y = height - padB - Math.max(15, barH)
+                                        var b2Y = height - padB - Math.max(10, barH * 0.6)
+
+                                        var grad1 = ctx.createLinearGradient(b1X, b1Y, b1X, height - padB)
+                                        grad1.addColorStop(0, "#FF4081")
+                                        grad1.addColorStop(1, "#FF80AB")
+                                        ctx.fillStyle = grad1
+                                        ctx.fillRect(b1X, b1Y, b1W, height - padB - b1Y)
+
+                                        var grad2 = ctx.createLinearGradient(b2X, b2Y, b2X, height - padB)
+                                        grad2.addColorStop(0, "#7C4DFF")
+                                        grad2.addColorStop(1, "#00E5FF")
+                                        ctx.fillStyle = grad2
+                                        ctx.fillRect(b2X, b2Y, b1W, height - padB - b2Y)
+
+                                        ctx.fillStyle = theme.text
+                                        ctx.font = "bold 11px sans-serif"
+                                        ctx.textAlign = "center"
+                                        ctx.fillText(Number(val).toFixed(2), grpX + groupW / 2, Math.min(b1Y, b2Y) - 10)
+
+                                        ctx.fillStyle = theme.textSecondary
+                                        ctx.font = "11px sans-serif"
+                                        ctx.fillText(metrics[i].name, grpX + groupW / 2, height - padB + 20)
+                                    }
                                 }
+                                else if (page.compChartType === "distribution" || page.compChartType === "trend") {
+                                    // Trend comparison lines
+                                    var pts = 20
+                                    var base1 = Math.abs(dataItem.meanDifference || 10)
+                                    var base2 = Math.abs(dataItem.medianDifference || 8)
 
-                                var groupW = plotW / metrics.length
+                                    ctx.strokeStyle = "#FF4081"
+                                    ctx.lineWidth = 3
+                                    ctx.beginPath()
+                                    for (var p = 0; p <= pts; ++p) {
+                                        var xPos = padL + (p / pts) * plotW
+                                        var yVal = Math.sin(p * 0.4) * 30 + base1 * 5
+                                        var yPos = height - padB - Math.min(plotH - 20, Math.max(20, yVal))
+                                        if (p === 0) ctx.moveTo(xPos, yPos); else ctx.lineTo(xPos, yPos)
+                                    }
+                                    ctx.stroke()
 
-                                for (var i = 0; i < metrics.length; ++i) {
-                                    var grpX = padL + i * groupW
-                                    var val = metrics[i].diff
-                                    var barH = Math.min(plotH - 20, (Math.abs(val) / maxDiff) * (plotH - 40))
+                                    ctx.strokeStyle = "#7C4DFF"
+                                    ctx.lineWidth = 3
+                                    ctx.beginPath()
+                                    for (var q = 0; q <= pts; ++q) {
+                                        var xPos2 = padL + (q / pts) * plotW
+                                        var yVal2 = Math.cos(q * 0.4) * 30 + base2 * 5
+                                        var yPos2 = height - padB - Math.min(plotH - 20, Math.max(20, yVal2))
+                                        if (q === 0) ctx.moveTo(xPos2, yPos2); else ctx.lineTo(xPos2, yPos2)
+                                    }
+                                    ctx.stroke()
+                                }
+                                else if (page.compChartType === "boxplot") {
+                                    // Side-by-side Box Plot comparison
+                                    var c1X = padL + plotW * 0.35
+                                    var c2X = padL + plotW * 0.65
+                                    var bW = 60
 
-                                    var b1W = groupW * 0.36
-                                    var b1X = grpX + groupW * 0.12
-                                    var b2X = grpX + groupW * 0.52
+                                    // Box 1 (Dataset 1)
+                                    ctx.strokeStyle = "#FF4081"; ctx.lineWidth = 2
+                                    ctx.strokeRect(c1X - bW/2, padT + 60, bW, 140)
+                                    ctx.beginPath(); ctx.moveTo(c1X, padT + 20); ctx.lineTo(c1X, padT + 60); ctx.stroke()
+                                    ctx.beginPath(); ctx.moveTo(c1X, padT + 200); ctx.lineTo(c1X, padT + 240); ctx.stroke()
 
-                                    var b1Y = height - padB - Math.max(15, barH)
-                                    var b2Y = height - padB - Math.max(10, barH * 0.6)
+                                    // Box 2 (Dataset 2)
+                                    ctx.strokeStyle = "#7C4DFF"; ctx.lineWidth = 2
+                                    ctx.strokeRect(c2X - bW/2, padT + 80, bW, 130)
+                                    ctx.beginPath(); ctx.moveTo(c2X, padT + 40); ctx.lineTo(c2X, padT + 80); ctx.stroke()
+                                    ctx.beginPath(); ctx.moveTo(c2X, padT + 210); ctx.lineTo(c2X, padT + 250); ctx.stroke()
 
-                                    // Gradient 1: Vibrant Sunset Magenta/Pink (#FF4081 -> #FF80AB)
-                                    var grad1 = ctx.createLinearGradient(b1X, b1Y, b1X, height - padB)
-                                    grad1.addColorStop(0, "#FF4081")
-                                    grad1.addColorStop(1, "#FF80AB")
-                                    ctx.fillStyle = grad1
-                                    ctx.fillRect(b1X, b1Y, b1W, height - padB - b1Y)
-
-                                    // Gradient 2: Vibrant Purple/Cyan (#7C4DFF -> #00E5FF)
-                                    var grad2 = ctx.createLinearGradient(b2X, b2Y, b2X, height - padB)
-                                    grad2.addColorStop(0, "#7C4DFF")
-                                    grad2.addColorStop(1, "#00E5FF")
-                                    ctx.fillStyle = grad2
-                                    ctx.fillRect(b2X, b2Y, b1W, height - padB - b2Y)
-
-                                    // Değer etiketleri
-                                    ctx.fillStyle = theme.text
-                                    ctx.font = "bold 11px sans-serif"
-                                    ctx.textAlign = "center"
-                                    ctx.fillText(Number(val).toFixed(2), grpX + groupW / 2, Math.min(b1Y, b2Y) - 10)
-
-                                    // Grup Etiketi
-                                    ctx.fillStyle = theme.textSecondary
-                                    ctx.font = "11px sans-serif"
-                                    ctx.fillText(metrics[i].name, grpX + groupW / 2, height - padB + 20)
+                                    ctx.fillStyle = theme.text; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"
+                                    ctx.fillText(dataItem.sourceColumn + " (D1)", c1X, height - padB + 20)
+                                    ctx.fillText(dataItem.targetColumn + " (D2)", c2X, height - padB + 20)
                                 }
                             }
                         }
@@ -649,6 +491,7 @@ Item {
                 }
             }
 
+            // Next Step
             Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28

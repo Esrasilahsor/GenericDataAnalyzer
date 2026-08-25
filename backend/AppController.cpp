@@ -3,6 +3,8 @@
 #include <QDir>
 #include <QUrl>
 #include <QVariantList>
+#include <QDateTime>
+#include <QImage>
 #include <cmath>
 
 #include "../raw/FileRawDataSource.h"
@@ -1760,6 +1762,114 @@ bool AppController::exportDataset2ToXlsx(const QString &filePath)
     }
 
     return true;
+}
+
+bool AppController::removeDataset1Column(const QString &columnName)
+{
+    clearError();
+
+    if (m_dataset1.isEmpty())
+    {
+        setError(QStringLiteral("Dataset 1 is not loaded."));
+        return false;
+    }
+
+    if (!m_dataset1.removeColumn(columnName))
+    {
+        setError(QStringLiteral("Column could not be removed from Dataset 1: ") + columnName);
+        return false;
+    }
+
+    m_dataset1Modified = true;
+    m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+    clearDataset1Quality();
+    clearDataset1Outliers();
+    clearDataset1Eda();
+    clearDataset1Correlation();
+    clearAnalysis();
+    emit dataset1Changed();
+    tryGenerateMappings();
+    return true;
+}
+
+bool AppController::removeDataset2Column(const QString &columnName)
+{
+    clearError();
+
+    if (m_dataset2.isEmpty())
+    {
+        setError(QStringLiteral("Dataset 2 is not loaded."));
+        return false;
+    }
+
+    if (!m_dataset2.removeColumn(columnName))
+    {
+        setError(QStringLiteral("Column could not be removed from Dataset 2: ") + columnName);
+        return false;
+    }
+
+    m_dataset2Modified = true;
+    m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+    clearDataset2Quality();
+    clearDataset2Outliers();
+    clearDataset2Eda();
+    clearDataset2Correlation();
+    clearAnalysis();
+    emit dataset2Changed();
+    tryGenerateMappings();
+    return true;
+}
+
+QString AppController::saveChartImage(const QString &base64Data, const QString &chartTypePrefix)
+{
+    clearError();
+
+    if (base64Data.isEmpty())
+    {
+        setError(QStringLiteral("Görsel verisi boş."));
+        return QString();
+    }
+
+    QString baseDir = QDir::currentPath();
+    const QString knownProjectPath = QStringLiteral("C:/Users/aybuk/Desktop/GenericDataAnalyzer");
+    if (QDir(knownProjectPath).exists())
+    {
+        baseDir = knownProjectPath;
+    }
+
+    QDir outputDir(baseDir + QStringLiteral("/output"));
+    if (!outputDir.exists())
+    {
+        outputDir.mkpath(QStringLiteral("."));
+    }
+
+    QString raw = base64Data;
+    int commaIndex = raw.indexOf(QLatin1Char(','));
+    if (commaIndex != -1)
+    {
+        raw = raw.mid(commaIndex + 1);
+    }
+
+    QByteArray bytes = QByteArray::fromBase64(raw.toUtf8());
+    QImage image;
+    if (!image.loadFromData(bytes, "PNG"))
+    {
+        setError(QStringLiteral("Grafik görseli dönüştürülemedi."));
+        return QString();
+    }
+
+    const QString safePrefix = chartTypePrefix.isEmpty() ? QStringLiteral("Grafik") : chartTypePrefix;
+    const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss"));
+    const QString fileName = QStringLiteral("%1_%2.png").arg(safePrefix, timestamp);
+    const QString fullPath = outputDir.filePath(fileName);
+
+    if (!image.save(fullPath, "PNG"))
+    {
+        setError(QStringLiteral("Grafik dosyası kaydedilemedi: ") + fullPath);
+        return QString();
+    }
+
+    return fullPath;
 }
 
 // =========================================================

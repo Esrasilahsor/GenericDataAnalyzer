@@ -485,6 +485,19 @@ void DataSet::refreshColumnMetadata(
 // CLEAR
 // =========================================================
 
+bool DataSet::removeColumn(const QString &columnName)
+{
+    for (int i = 0; i < m_columns.size(); ++i)
+    {
+        if (m_columns.at(i).name().compare(columnName, Qt::CaseInsensitive) == 0)
+        {
+            m_columns.removeAt(i);
+            return true;
+        }
+    }
+    return false;
+}
+
 void DataSet::clear()
 {
     m_name.clear();

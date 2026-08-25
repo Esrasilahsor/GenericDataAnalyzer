@@ -2,281 +2,159 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Dialogs 1.3
-
 import "../" as AppTheme
 
 Item {
     id: page
-
     property var theme: AppTheme.Theme
     property var appController
     property var mainWindow
 
-    property bool isDualMode: false
     property int activeDataset: 1
-    property string chartType: "histogram"
+    property string chartType: "histogram" // histogram, boxplot, timeseries, distribution, correlation, comparison
+    property bool isDualMode: false
+
     property string selectedCol1: ""
     property string selectedCol2: ""
     property int binCount: 10
     property double boxPlotMultiplier: 1.5
 
-    // Chart Data
     property var chartData1: ({})
     property var chartData2: ({})
-    property string statusMessage: ""
-    property bool statusSuccess: true
 
     property string exportFormat: "xlsx"
-
-    function goToPage(index) {
-        if (page.mainWindow)
-            page.mainWindow.currentPage = index
-    }
+    property string saveStatusMessage: ""
+    property bool saveSuccess: true
 
     function isLoaded(ds) {
-        if (!page.appController) return false
-        return ds === 1
-            ? page.appController.dataset1Name !== ""
-            : page.appController.dataset2Name !== ""
+        if (!appController) return false
+        return ds === 1 ? (appController.dataset1Name !== "") : (appController.dataset2Name !== "")
     }
 
-    function datasetName(ds) {
-        if (!page.appController) return "Dataset " + ds
-        var n = ds === 1 ? page.appController.dataset1Name : page.appController.dataset2Name
+    function name(ds) {
+        if (!appController) return "Dataset " + ds
+        var n = ds === 1 ? appController.dataset1Name : appController.dataset2Name
         return n && n !== "" ? n : "Dataset " + ds
     }
 
     function columnModel(ds) {
-        if (!page.appController) return null
-        return ds === 1 ? page.appController.dataset1ColumnModel : page.appController.dataset2ColumnModel
-    }
-
-    function generateChart1() {
-        if (!page.appController || page.selectedCol1 === "") return
-        if (page.chartType === "histogram") {
-            var r = page.appController.createDataset1Histogram(page.selectedCol1, page.binCount)
-            if (r && r.success) { page.chartData1 = r; chartCanvas1.requestPaint(); }
-        } else if (page.chartType === "boxplot") {
-            var rb = page.appController.createDataset1BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
-            if (rb && rb.success) { page.chartData1 = rb; chartCanvas1.requestPaint(); }
-        } else if (page.chartType === "distribution") {
-            var rd = page.appController.createDataset1Distribution(page.selectedCol1, page.binCount)
-            if (rd && rd.success) { page.chartData1 = rd; chartCanvas1.requestPaint(); }
-        }
-    }
-
-    function generateChart2() {
-        if (!page.appController || page.selectedCol2 === "") return
-        if (page.chartType === "histogram") {
-            var r = page.appController.createDataset2Histogram(page.selectedCol2, page.binCount)
-            if (r && r.success) { page.chartData2 = r; if (chartCanvas2) chartCanvas2.requestPaint(); }
-        } else if (page.chartType === "boxplot") {
-            var rb = page.appController.createDataset2BoxPlot(page.selectedCol2, page.boxPlotMultiplier)
-            if (rb && rb.success) { page.chartData2 = rb; if (chartCanvas2) chartCanvas2.requestPaint(); }
-        } else if (page.chartType === "distribution") {
-            var rd = page.appController.createDataset2Distribution(page.selectedCol2, page.binCount)
-            if (rd && rd.success) { page.chartData2 = rd; if (chartCanvas2) chartCanvas2.requestPaint(); }
-        }
+        if (!appController) return null
+        return ds === 1 ? appController.dataset1ColumnModel : appController.dataset2ColumnModel
     }
 
     function generateChart() {
-        if (!page.appController) return
-        page.statusMessage = ""
-
-        if (page.isDualMode) {
-            if (page.selectedCol1 === "" || page.selectedCol2 === "") {
-                page.showStatus("Lütfen her iki veri seti için de sütun seçin.", false)
-                return
-            }
-            generateChart1()
-            generateChart2()
-            page.showStatus("Yan yana grafikler başarıyla oluşturuldu.", true)
-            return
-        }
+        if (!appController) return
 
         if (page.chartType === "histogram") {
-            if (page.selectedCol1 === "") {
-                page.showStatus("Lütfen bir sütun seçin.", false)
-                return
-            }
-            var resHist = page.activeDataset === 1
-                ? page.appController.createDataset1Histogram(page.selectedCol1, page.binCount)
-                : page.appController.createDataset2Histogram(page.selectedCol1, page.binCount)
-
-            if (resHist && resHist.success) {
-                page.chartData1 = resHist
-                chartCanvas1.requestPaint()
-                page.showStatus("Histogram başarıyla üretildi.", true)
+            if (page.isDualMode) {
+                page.chartData1 = appController.createDataset1Histogram(page.selectedCol1, page.binCount)
+                page.chartData2 = appController.createDataset2Histogram(page.selectedCol2, page.binCount)
             } else {
-                page.showStatus((resHist && resHist.errorMessage) || "Grafik oluşturulamadı. Sütun sayısal olmalıdır.", false)
+                if (page.activeDataset === 1)
+                    page.chartData1 = appController.createDataset1Histogram(page.selectedCol1, page.binCount)
+                else
+                    page.chartData1 = appController.createDataset2Histogram(page.selectedCol1, page.binCount)
             }
         }
         else if (page.chartType === "boxplot") {
-            if (page.selectedCol1 === "") {
-                page.showStatus("Lütfen bir sütun seçin.", false)
-                return
-            }
-            var resBox = page.activeDataset === 1
-                ? page.appController.createDataset1BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
-                : page.appController.createDataset2BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
-
-            if (resBox && resBox.success) {
-                page.chartData1 = resBox
-                chartCanvas1.requestPaint()
-                page.showStatus("Kutu Grafiği (Box Plot) başarıyla üretildi.", true)
+            if (page.isDualMode) {
+                page.chartData1 = appController.createDataset1BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
+                page.chartData2 = appController.createDataset2BoxPlot(page.selectedCol2, page.boxPlotMultiplier)
             } else {
-                page.showStatus((resBox && resBox.errorMessage) || "Grafik oluşturulamadı.", false)
+                if (page.activeDataset === 1)
+                    page.chartData1 = appController.createDataset1BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
+                else
+                    page.chartData1 = appController.createDataset2BoxPlot(page.selectedCol1, page.boxPlotMultiplier)
             }
         }
         else if (page.chartType === "timeseries") {
-            if (page.selectedCol1 === "" || page.selectedCol2 === "") {
-                page.showStatus("Lütfen X ve Y ekseni için iki sütun seçin.", false)
-                return
-            }
-            var resLine = page.activeDataset === 1
-                ? page.appController.createDataset1TimeSeries(page.selectedCol1, page.selectedCol2)
-                : page.appController.createDataset2TimeSeries(page.selectedCol1, page.selectedCol2)
-
-            if (resLine && resLine.success) {
-                page.chartData1 = resLine
-                chartCanvas1.requestPaint()
-                page.showStatus("Çizgi Grafiği başarıyla üretildi.", true)
+            if (page.isDualMode) {
+                page.chartData1 = appController.createDataset1TimeSeries(page.selectedCol1, page.selectedCol2)
+                page.chartData2 = appController.createDataset2TimeSeries(page.selectedCol1, page.selectedCol2)
             } else {
-                page.showStatus((resLine && resLine.errorMessage) || "Grafik oluşturulamadı.", false)
+                if (page.activeDataset === 1)
+                    page.chartData1 = appController.createDataset1TimeSeries(page.selectedCol1, page.selectedCol2)
+                else
+                    page.chartData1 = appController.createDataset2TimeSeries(page.selectedCol1, page.selectedCol2)
             }
         }
         else if (page.chartType === "distribution") {
-            if (page.selectedCol1 === "") {
-                page.showStatus("Lütfen bir sütun seçin.", false)
-                return
-            }
-            var resDist = page.activeDataset === 1
-                ? page.appController.createDataset1Distribution(page.selectedCol1, page.binCount)
-                : page.appController.createDataset2Distribution(page.selectedCol1, page.binCount)
-
-            if (resDist && resDist.success) {
-                page.chartData1 = resDist
-                chartCanvas1.requestPaint()
-                page.showStatus("Dağılım grafiği başarıyla üretildi.", true)
+            if (page.isDualMode) {
+                page.chartData1 = appController.createDataset1Distribution(page.selectedCol1, page.binCount)
+                page.chartData2 = appController.createDataset2Distribution(page.selectedCol2, page.binCount)
             } else {
-                page.showStatus((resDist && resDist.errorMessage) || "Grafik oluşturulamadı.", false)
+                if (page.activeDataset === 1)
+                    page.chartData1 = appController.createDataset1Distribution(page.selectedCol1, page.binCount)
+                else
+                    page.chartData1 = appController.createDataset2Distribution(page.selectedCol1, page.binCount)
             }
         }
-    }
-
-    function showStatus(msg, ok) {
-        page.statusMessage = msg
-        page.statusSuccess = ok
-    }
-
-    function doExport(path) {
-        if (!page.appController) return
-        var ok = false
-        if (page.exportFormat === "xlsx") {
-            ok = page.activeDataset === 1
-                ? page.appController.exportDataset1ToXlsx(path)
-                : page.appController.exportDataset2ToXlsx(path)
-        } else if (page.exportFormat === "csv") {
-            ok = page.activeDataset === 1
-                ? page.appController.exportDataset1ToCsv(path)
-                : page.appController.exportDataset2ToCsv(path)
-        } else if (page.exportFormat === "json") {
-            ok = page.activeDataset === 1
-                ? page.appController.exportDataset1ToJson(path)
-                : page.appController.exportDataset2ToJson(path)
+        else if (page.chartType === "correlation") {
+            if (page.isDualMode) {
+                page.chartData1 = appController.createDataset1CorrelationMatrix()
+                page.chartData2 = appController.createDataset2CorrelationMatrix()
+            } else {
+                if (page.activeDataset === 1)
+                    page.chartData1 = appController.createDataset1CorrelationMatrix()
+                else
+                    page.chartData1 = appController.createDataset2CorrelationMatrix()
+            }
+        }
+        else if (page.chartType === "comparison") {
+            page.chartData1 = appController.createDatasetComparisonChart(page.selectedCol1, page.selectedCol2)
         }
 
-        if (ok) {
-            page.showStatus("Dataset " + page.activeDataset + " başarıyla dışa aktarıldı: " + path, true)
-            exportFeedbackPopup.open()
+        chartCanvas1.requestPaint()
+        if (chartCanvas2) chartCanvas2.requestPaint()
+    }
+
+    function saveChart(canvasObj, prefix) {
+        if (!appController || !canvasObj) return
+        var dataUrl = canvasObj.toDataURL("image/png")
+        var path = appController.saveChartImage(dataUrl, prefix)
+        if (path && path !== "") {
+            page.saveSuccess = true
+            page.saveStatusMessage = "✓ Grafik başarıyla kaydedildi: " + path
         } else {
-            page.showStatus("Dışa aktarma başarısız oldu: " + (page.appController.lastError || "Bilinmeyen hata"), false)
-            exportFeedbackPopup.open()
+            page.saveSuccess = false
+            page.saveStatusMessage = "✕ Grafik kaydedilemedi: " + (appController.lastError || "Hata")
         }
+        statusTimer.restart()
     }
 
+    Timer {
+        id: statusTimer
+        interval: 5000
+        onTriggered: page.saveStatusMessage = ""
+    }
+
+    // Export Dialog
     FileDialog {
         id: exportDialog
-        title: "Temizlenmiş Veriyi Dışa Aktar"
+        title: "Temizlenmiş Veri Setini Dışa Aktar"
         selectExisting: false
-        folder: page.appController && page.appController.dataDirectory !== ""
-                ? ("file:///" + page.appController.dataDirectory.replace(/\\/g, "/"))
-                : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
-        nameFilters: page.exportFormat === "xlsx"
-                     ? ["Excel Dosyaları (*.xlsx)"]
-                     : (page.exportFormat === "csv" ? ["CSV Dosyaları (*.csv)"] : ["JSON Dosyaları (*.json)"])
+        folder: appController ? ("file:///" + appController.dataDirectory().replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
+        nameFilters: page.exportFormat === "xlsx" ? ["Excel Dosyası (*.xlsx)"] :
+                     page.exportFormat === "csv" ? ["CSV Dosyası (*.csv)"] : ["JSON Dosyası (*.json)"]
         onAccepted: {
-            page.doExport(fileUrl.toString())
-        }
-    }
-
-    Popup {
-        id: exportFeedbackPopup
-        anchors.centerIn: parent
-        width: Math.min(440, page.width - 40)
-        modal: true
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        padding: 0
-
-        background: Rectangle {
-            radius: 16
-            color: theme.surface
-            border.width: 1
-            border.color: theme.border
-        }
-
-        contentItem: ColumnLayout {
-            spacing: 16
-            anchors.margins: 20
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 12
-
-                Rectangle {
-                    Layout.preferredWidth: 42
-                    Layout.preferredHeight: 42
-                    radius: 21
-                    color: page.statusSuccess ? "#E6F6EE" : "#FFF4E5"
-                    Label {
-                        anchors.centerIn: parent
-                        text: page.statusSuccess ? "✓" : "✕"
-                        color: page.statusSuccess ? "#00E676" : "#FF5722"
-                        font.pixelSize: 22
-                        font.bold: true
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    Label {
-                        text: page.statusSuccess ? "Dışa Aktarma Başarılı" : "Dışa Aktarma Hatası"
-                        color: theme.text
-                        font.pixelSize: 15
-                        font.bold: true
-                    }
-                    Label {
-                        text: page.statusMessage
-                        color: theme.textSecondary
-                        font.pixelSize: 12
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
-                }
+            var path = String(fileUrl).replace("file:///", "")
+            var ok = false
+            if (page.exportFormat === "xlsx") {
+                ok = page.activeDataset === 1 ? appController.exportDataset1ToXlsx(path) : appController.exportDataset2ToXlsx(path)
+            } else if (page.exportFormat === "csv") {
+                ok = page.activeDataset === 1 ? appController.exportDataset1ToCsv(path) : appController.exportDataset2ToCsv(path)
+            } else if (page.exportFormat === "json") {
+                ok = page.activeDataset === 1 ? appController.exportDataset1ToJson(path) : appController.exportDataset2ToJson(path)
             }
 
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                Button {
-                    Layout.preferredWidth: 100
-                    Layout.preferredHeight: 36
-                    text: "Tamam"
-                    onClicked: exportFeedbackPopup.close()
-                }
+            if (ok) {
+                page.saveSuccess = true
+                page.saveStatusMessage = "✓ Dataset " + page.activeDataset + " başarıyla dışa aktarıldı: " + path
+            } else {
+                page.saveSuccess = false
+                page.saveStatusMessage = "✕ Dışa aktarma hatası: " + (appController.lastError || "Hata")
             }
+            statusTimer.restart()
         }
     }
 
@@ -288,16 +166,35 @@ Item {
             width: page.width
             spacing: 16
 
-            Item { Layout.preferredHeight: 6 }
+            Item { Layout.preferredHeight: 8 }
 
-            // =================================================
-            // KONTROL PANELİ: MOD, DATASET & GRAFİK TÜRÜ SEÇİMİ
-            // =================================================
+            // Status message
+            Rectangle {
+                visible: page.saveStatusMessage !== ""
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 40
+                radius: 8
+                color: page.saveSuccess ? "#1B5E20" : "#B71C1C"
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    Label {
+                        text: page.saveStatusMessage
+                        color: "#FFFFFF"
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+                }
+            }
+
+            // Controls Card
             Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 180
+                Layout.preferredHeight: 185
                 radius: 16
                 color: theme.surface
                 border.color: theme.border
@@ -308,11 +205,11 @@ Item {
                     anchors.margins: 16
                     spacing: 12
 
+                    // Row 1: Mode & Export
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 14
 
-                        // Mod Seçimi (Tekli vs Yan Yana Çift Grafik)
                         RowLayout {
                             spacing: 6
                             Button {
@@ -339,7 +236,6 @@ Item {
                             }
                         }
 
-                        // Veri Seti Seçimi (Tekli modda)
                         RowLayout {
                             visible: !page.isDualMode
                             spacing: 6
@@ -374,7 +270,6 @@ Item {
 
                         Item { Layout.fillWidth: true }
 
-                        // Dışa Aktarma Butonları
                         RowLayout {
                             spacing: 8
                             Label { text: "Temizlenmiş Veriyi Aktar:"; color: theme.textSecondary; font.pixelSize: 12 }
@@ -414,7 +309,7 @@ Item {
                         }
                     }
 
-                    // Sütun ve Grafik Tipi Seçimi
+                    // Row 2: Selectors & Draw Button
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 12
@@ -424,15 +319,17 @@ Item {
                             Label { text: "Grafik Türü"; color: theme.textSecondary; font.pixelSize: 11 }
                             ComboBox {
                                 id: typeCombo
-                                Layout.preferredWidth: 170
+                                Layout.preferredWidth: 200
                                 Layout.preferredHeight: 36
-                                model: ["Histogram (Frekans)", "Kutu Grafiği (Box Plot)", "Çizgi Grafiği (Line)", "Dağılım (Distribution)"]
+                                model: ["Histogram (Frekans)", "Kutu Grafiği (Box Plot)", "Çizgi Grafiği (Line)", "Dağılım (Distribution)", "Korelasyon Matrisi (Heatmap)", "İki Veri Seti Karşılaştırma"]
                                 onActivated: {
                                     switch (currentIndex) {
                                     case 0: page.chartType = "histogram"; break;
                                     case 1: page.chartType = "boxplot"; break;
                                     case 2: page.chartType = "timeseries"; break;
                                     case 3: page.chartType = "distribution"; break;
+                                    case 4: page.chartType = "correlation"; break;
+                                    case 5: page.chartType = "comparison"; break;
                                     }
                                     page.chartData1 = ({})
                                     page.chartData2 = ({})
@@ -442,20 +339,21 @@ Item {
                             }
                         }
 
-                        // Sütun 1
+                        // Column 1
                         ColumnLayout {
+                            visible: page.chartType !== "correlation"
                             spacing: 2
                             Label {
-                                text: page.isDualMode ? "Dataset 1 Sütunu" : (page.chartType === "timeseries" ? "X Ekseni Sütunu" : "Analiz Sütunu")
+                                text: page.isDualMode ? "Dataset 1 Sütunu" : (page.chartType === "timeseries" ? "X Ekseni Sütunu" : (page.chartType === "comparison" ? "Dataset 1 Sütunu" : "Analiz Sütunu"))
                                 color: page.isDualMode ? "#FF4081" : theme.textSecondary
                                 font.pixelSize: 11
                                 font.bold: page.isDualMode
                             }
                             ComboBox {
                                 id: col1Combo
-                                Layout.preferredWidth: 190
+                                Layout.preferredWidth: 180
                                 Layout.preferredHeight: 36
-                                model: page.isDualMode ? page.columnModel(1) : page.columnModel(page.activeDataset)
+                                model: page.isDualMode ? page.columnModel(1) : (page.chartType === "comparison" ? page.columnModel(1) : page.columnModel(page.activeDataset))
                                 textRole: "name"
                                 onActivated: page.selectedCol1 = currentText
                                 Component.onCompleted: {
@@ -464,21 +362,21 @@ Item {
                             }
                         }
 
-                        // Sütun 2
+                        // Column 2
                         ColumnLayout {
-                            visible: page.isDualMode || page.chartType === "timeseries"
+                            visible: (page.isDualMode || page.chartType === "timeseries" || page.chartType === "comparison") && page.chartType !== "correlation"
                             spacing: 2
                             Label {
-                                text: page.isDualMode ? "Dataset 2 Sütunu" : "Y Ekseni Sütunu"
+                                text: page.isDualMode ? "Dataset 2 Sütunu" : (page.chartType === "comparison" ? "Dataset 2 Sütunu" : "Y Ekseni Sütunu")
                                 color: page.isDualMode ? "#7C4DFF" : theme.textSecondary
                                 font.pixelSize: 11
                                 font.bold: page.isDualMode
                             }
                             ComboBox {
                                 id: col2Combo
-                                Layout.preferredWidth: 190
+                                Layout.preferredWidth: 180
                                 Layout.preferredHeight: 36
-                                model: page.isDualMode ? page.columnModel(2) : page.columnModel(page.activeDataset)
+                                model: page.isDualMode ? page.columnModel(2) : (page.chartType === "comparison" ? page.columnModel(2) : page.columnModel(page.activeDataset))
                                 textRole: "name"
                                 onActivated: page.selectedCol2 = currentText
                                 Component.onCompleted: {
@@ -487,7 +385,7 @@ Item {
                             }
                         }
 
-                        // Parametreler
+                        // Parameters
                         ColumnLayout {
                             visible: page.chartType === "histogram" || page.chartType === "distribution"
                             spacing: 2
@@ -526,19 +424,18 @@ Item {
                 }
             }
 
-            // =================================================
-            // GRAFİK ALANI: TEKLİ VEYA YAN YANA ÇİFT GRAFİK
-            // =================================================
+            // Canvas Layout: Single or Dual Side-by-Side
             RowLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
                 spacing: 14
 
-                // Panel 1 (Dataset 1 veya Tekli Grafik)
+                // Panel 1 (Dataset 1 or Active Dataset)
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 480
+                    Layout.minimumWidth: 340
+                    Layout.preferredHeight: 500
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -551,20 +448,18 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Rectangle { width: 10; height: 10; radius: 5; color: "#FF4081" }
                             Label {
-                                text: page.isDualMode
-                                      ? "DATASET 1 • " + page.selectedCol1
-                                      : page.chartType.toUpperCase() + " • " + page.datasetName(page.activeDataset) + (page.selectedCol1 !== "" ? " (" + page.selectedCol1 + ")" : "")
+                                text: page.isDualMode ? "Dataset 1: " + page.name(1) : (page.name(page.activeDataset) + " Grafiği")
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
                             }
                             Item { Layout.fillWidth: true }
-                            Label {
-                                text: page.chartData1.success ? "✓ Güncel" : "Bekleniyor"
-                                color: page.chartData1.success ? "#00E676" : theme.textSecondary
-                                font.pixelSize: 11
+                            Button {
+                                Layout.preferredWidth: 130
+                                Layout.preferredHeight: 30
+                                text: "💾 Grafiği Kaydet"
+                                onClicked: page.saveChart(chartCanvas1, page.chartType + "_D1")
                             }
                         }
 
@@ -579,9 +474,9 @@ Item {
 
                                 if (!page.chartData1 || !page.chartData1.success) {
                                     ctx.fillStyle = theme.textSecondary
-                                    ctx.font = "12px sans-serif"
+                                    ctx.font = "13px sans-serif"
                                     ctx.textAlign = "center"
-                                    ctx.fillText("Grafiği çizmek için sütun seçip 'Grafiği Çiz' butonuna tıklayın.", width / 2, height / 2)
+                                    ctx.fillText("Grafik görüntülemek için yukarıdan parametre seçip 'Grafiği Çiz' butonuna tıklayın.", width / 2, height / 2)
                                     return
                                 }
 
@@ -589,6 +484,45 @@ Item {
                                 var plotW = width - padL - padR
                                 var plotH = height - padT - padB
 
+                                if (page.chartType === "correlation" && page.chartData1.columnNames) {
+                                    // Correlation Heatmap
+                                    var cols = page.chartData1.columnNames
+                                    var n = cols.length
+                                    if (n === 0) return
+                                    var cellW = Math.min(plotW / n, 50)
+                                    var cellH = Math.min(plotH / n, 50)
+                                    var startX = padL + (plotW - n * cellW) / 2
+                                    var startY = padT + (plotH - n * cellH) / 2
+
+                                    for (var r = 0; r < n; ++r) {
+                                        for (var c = 0; c < n; ++c) {
+                                            var val = page.chartData1.values[r * n + c]
+                                            var x = startX + c * cellW
+                                            var y = startY + r * cellH
+
+                                            // Color map: -1.0 (#2979FF) -> 0.0 (#374151) -> +1.0 (#FF4081)
+                                            if (val >= 0) {
+                                                ctx.fillStyle = "rgba(255, 64, 129, " + Math.max(0.15, val) + ")"
+                                            } else {
+                                                ctx.fillStyle = "rgba(41, 121, 255, " + Math.max(0.15, Math.abs(val)) + ")"
+                                            }
+                                            ctx.fillRect(x, y, cellW - 2, cellH - 2)
+
+                                            ctx.fillStyle = "#FFFFFF"
+                                            ctx.font = "bold 9px sans-serif"
+                                            ctx.textAlign = "center"
+                                            ctx.fillText(Number(val).toFixed(2), x + cellW / 2, y + cellH / 2 + 3)
+                                        }
+                                        // Row label
+                                        ctx.fillStyle = theme.textSecondary
+                                        ctx.font = "9px sans-serif"
+                                        ctx.textAlign = "right"
+                                        ctx.fillText(cols[r], startX - 6, startY + r * cellH + cellH / 2 + 3)
+                                    }
+                                    return
+                                }
+
+                                // Eksenler
                                 ctx.strokeStyle = theme.border
                                 ctx.lineWidth = 1
                                 ctx.beginPath()
@@ -609,7 +543,6 @@ Item {
                                         var bX = padL + j * bW + 4
                                         var bY = height - padB - bH
 
-                                        // Canlı Renk Gradyanı: Pink to Rose Sunset (#FF4081 -> #FF80AB)
                                         var grad = ctx.createLinearGradient(bX, bY, bX, height - padB)
                                         grad.addColorStop(0, "#FF4081")
                                         grad.addColorStop(1, "#FF80AB")
@@ -637,8 +570,7 @@ Item {
                                     function toY(v) { return (height - padB) - ((v - min) / rng) * (plotH - 40) - 20 }
 
                                     var cX = width / 2, boxW = 90
-                                    ctx.strokeStyle = "#FF4081"
-                                    ctx.lineWidth = 2
+                                    ctx.strokeStyle = "#FF4081"; ctx.lineWidth = 2
                                     ctx.beginPath()
                                     ctx.moveTo(cX, toY(lW)); ctx.lineTo(cX, toY(uW))
                                     ctx.moveTo(cX - 20, toY(lW)); ctx.lineTo(cX + 20, toY(lW))
@@ -654,74 +586,48 @@ Item {
                                     ctx.strokeStyle = "#C2185B"
                                     ctx.strokeRect(cX - boxW / 2, yQ3, boxW, yQ1 - yQ3)
 
-                                    ctx.strokeStyle = "#FFD600"
-                                    ctx.lineWidth = 3
+                                    ctx.strokeStyle = "#FFD600"; ctx.lineWidth = 3
                                     ctx.beginPath()
                                     ctx.moveTo(cX - boxW / 2, toY(med)); ctx.lineTo(cX + boxW / 2, toY(med))
                                     ctx.stroke()
 
-                                    ctx.fillStyle = theme.text
-                                    ctx.font = "bold 10px sans-serif"
-                                    ctx.textAlign = "left"
+                                    ctx.fillStyle = theme.text; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left"
                                     ctx.fillText("Max: " + Number(max).toFixed(1), cX + boxW / 2 + 10, toY(max))
                                     ctx.fillText("Medyan: " + Number(med).toFixed(1), cX + boxW / 2 + 10, toY(med))
                                     ctx.fillText("Min: " + Number(min).toFixed(1), cX + boxW / 2 + 10, toY(min))
                                 }
-                                else if (page.chartType === "distribution" && page.chartData1.centers) {
-                                    var cents = page.chartData1.centers
-                                    var rels = page.chartData1.relativeFrequencies
-                                    var maxR = 0.01
-                                    for (var d = 0; d < rels.length; ++d) if (rels[d] > maxR) maxR = rels[d]
-                                    var bW2 = plotW / cents.length
-                                    for (var r = 0; r < cents.length; ++r) {
-                                        var brH = (rels[r] / maxR) * (plotH - 20)
-                                        var brX = padL + r * bW2 + 4
-                                        var brY = height - padB - brH
-
-                                        var gradD = ctx.createLinearGradient(brX, brY, brX, height - padB)
-                                        gradD.addColorStop(0, "#FF6E40")
-                                        gradD.addColorStop(1, "#FFD600")
-                                        ctx.fillStyle = gradD
-                                        ctx.fillRect(brX, brY, bW2 - 8, brH)
-
-                                        ctx.fillStyle = theme.text
-                                        ctx.font = "9px sans-serif"
-                                        ctx.textAlign = "center"
-                                        ctx.fillText((Number(rels[r]) * 100).toFixed(0) + "%", brX + (bW2 - 8) / 2, brY - 4)
+                                else if ((page.chartType === "timeseries" || page.chartType === "distribution" || page.chartType === "comparison") && page.chartData1.pointCount > 0) {
+                                    var pts = page.chartData1.pointCount
+                                    var xVals = page.chartData1.xValues || page.chartData1.indexes || []
+                                    var yVals = page.chartData1.yValues || page.chartData1.sourceValues || []
+                                    var minY = 0, maxY = 1
+                                    for (var p = 0; p < yVals.length; ++p) {
+                                        if (yVals[p] < minY) minY = yVals[p]
+                                        if (yVals[p] > maxY) maxY = yVals[p]
                                     }
-                                }
-                                else if (page.chartType === "timeseries" && page.chartData1.xValues) {
-                                    var xs = page.chartData1.xValues, ys = page.chartData1.yValues
-                                    if (xs.length > 0) {
-                                        var minX = xs[0], maxX = xs[0], minY = ys[0], maxY = ys[0]
-                                        for (var k = 0; k < xs.length; ++k) {
-                                            if (xs[k] < minX) minX = xs[k]; if (xs[k] > maxX) maxX = xs[k]
-                                            if (ys[k] < minY) minY = ys[k]; if (ys[k] > maxY) maxY = ys[k]
-                                        }
-                                        var rngX = (maxX - minX) === 0 ? 1 : (maxX - minX)
-                                        var rngY = (maxY - minY) === 0 ? 1 : (maxY - minY)
+                                    var rngY = (maxY - minY) === 0 ? 1 : (maxY - minY)
 
-                                        ctx.strokeStyle = "#FF4081"
-                                        ctx.lineWidth = 3
-                                        ctx.beginPath()
-                                        for (var p = 0; p < xs.length; ++p) {
-                                            var ptX = padL + ((xs[p] - minX) / rngX) * plotW
-                                            var ptY = (height - padB) - ((ys[p] - minY) / rngY) * plotH
-                                            if (p === 0) ctx.moveTo(ptX, ptY); else ctx.lineTo(ptX, ptY)
-                                        }
-                                        ctx.stroke()
+                                    ctx.strokeStyle = "#FF4081"
+                                    ctx.lineWidth = 2.5
+                                    ctx.beginPath()
+                                    for (var k = 0; k < pts; ++k) {
+                                        var xP = padL + (k / Math.max(1, pts - 1)) * plotW
+                                        var yP = (height - padB) - ((yVals[k] - minY) / rngY) * (plotH - 20)
+                                        if (k === 0) ctx.moveTo(xP, yP); else ctx.lineTo(xP, yP)
                                     }
+                                    ctx.stroke()
                                 }
                             }
                         }
                     }
                 }
 
-                // Panel 2 (Sadece Dual Mode'da Dataset 2 Grafiği)
+                // Panel 2 (Dataset 2 in Dual Mode)
                 Rectangle {
                     visible: page.isDualMode
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 480
+                    Layout.minimumWidth: 340
+                    Layout.preferredHeight: 500
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -734,18 +640,18 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Rectangle { width: 10; height: 10; radius: 5; color: "#7C4DFF" }
                             Label {
-                                text: "DATASET 2 • " + page.selectedCol2
+                                text: "Dataset 2: " + page.name(2)
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
                             }
                             Item { Layout.fillWidth: true }
-                            Label {
-                                text: page.chartData2.success ? "✓ Güncel" : "Bekleniyor"
-                                color: page.chartData2.success ? "#00E676" : theme.textSecondary
-                                font.pixelSize: 11
+                            Button {
+                                Layout.preferredWidth: 130
+                                Layout.preferredHeight: 30
+                                text: "💾 Grafiği Kaydet"
+                                onClicked: page.saveChart(chartCanvas2, page.chartType + "_D2")
                             }
                         }
 
@@ -770,6 +676,42 @@ Item {
                                 var plotW = width - padL - padR
                                 var plotH = height - padT - padB
 
+                                if (page.chartType === "correlation" && page.chartData2.columnNames) {
+                                    var cols = page.chartData2.columnNames
+                                    var n = cols.length
+                                    if (n === 0) return
+                                    var cellW = Math.min(plotW / n, 50)
+                                    var cellH = Math.min(plotH / n, 50)
+                                    var startX = padL + (plotW - n * cellW) / 2
+                                    var startY = padT + (plotH - n * cellH) / 2
+
+                                    for (var r = 0; r < n; ++r) {
+                                        for (var c = 0; c < n; ++c) {
+                                            var val = page.chartData2.values[r * n + c]
+                                            var x = startX + c * cellW
+                                            var y = startY + r * cellH
+
+                                            if (val >= 0) {
+                                                ctx.fillStyle = "rgba(124, 77, 255, " + Math.max(0.15, val) + ")"
+                                            } else {
+                                                ctx.fillStyle = "rgba(0, 229, 255, " + Math.max(0.15, Math.abs(val)) + ")"
+                                            }
+                                            ctx.fillRect(x, y, cellW - 2, cellH - 2)
+
+                                            ctx.fillStyle = "#FFFFFF"
+                                            ctx.font = "bold 9px sans-serif"
+                                            ctx.textAlign = "center"
+                                            ctx.fillText(Number(val).toFixed(2), x + cellW / 2, y + cellH / 2 + 3)
+                                        }
+                                        ctx.fillStyle = theme.textSecondary
+                                        ctx.font = "9px sans-serif"
+                                        ctx.textAlign = "right"
+                                        ctx.fillText(cols[r], startX - 6, startY + r * cellH + cellH / 2 + 3)
+                                    }
+                                    return
+                                }
+
+                                // Eksenler
                                 ctx.strokeStyle = theme.border
                                 ctx.lineWidth = 1
                                 ctx.beginPath()
@@ -790,7 +732,6 @@ Item {
                                         var bX = padL + j * bW + 4
                                         var bY = height - padB - bH
 
-                                        // Canlı Renk Gradyanı: Purple to Cyan (#7C4DFF -> #00E5FF)
                                         var grad = ctx.createLinearGradient(bX, bY, bX, height - padB)
                                         grad.addColorStop(0, "#7C4DFF")
                                         grad.addColorStop(1, "#00E5FF")
@@ -818,8 +759,7 @@ Item {
                                     function toY2(v) { return (height - padB) - ((v - min) / rng) * (plotH - 40) - 20 }
 
                                     var cX = width / 2, boxW = 90
-                                    ctx.strokeStyle = "#7C4DFF"
-                                    ctx.lineWidth = 2
+                                    ctx.strokeStyle = "#7C4DFF"; ctx.lineWidth = 2
                                     ctx.beginPath()
                                     ctx.moveTo(cX, toY2(lW)); ctx.lineTo(cX, toY2(uW))
                                     ctx.moveTo(cX - 20, toY2(lW)); ctx.lineTo(cX + 20, toY2(lW))
@@ -835,92 +775,36 @@ Item {
                                     ctx.strokeStyle = "#512DA8"
                                     ctx.strokeRect(cX - boxW / 2, yQ3, boxW, yQ1 - yQ3)
 
-                                    ctx.strokeStyle = "#FFD600"
-                                    ctx.lineWidth = 3
+                                    ctx.strokeStyle = "#FFD600"; ctx.lineWidth = 3
                                     ctx.beginPath()
                                     ctx.moveTo(cX - boxW / 2, toY2(med)); ctx.lineTo(cX + boxW / 2, toY2(med))
                                     ctx.stroke()
 
-                                    ctx.fillStyle = theme.text
-                                    ctx.font = "bold 10px sans-serif"
-                                    ctx.textAlign = "left"
+                                    ctx.fillStyle = theme.text; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left"
                                     ctx.fillText("Max: " + Number(max).toFixed(1), cX + boxW / 2 + 10, toY2(max))
                                     ctx.fillText("Medyan: " + Number(med).toFixed(1), cX + boxW / 2 + 10, toY2(med))
                                     ctx.fillText("Min: " + Number(min).toFixed(1), cX + boxW / 2 + 10, toY2(min))
                                 }
-                            }
-                        }
-                    }
-                }
-
-                // İstatistik ve Metrikler Paneli (Tekli Modda)
-                Rectangle {
-                    visible: !page.isDualMode
-                    Layout.preferredWidth: 320
-                    Layout.preferredHeight: 480
-                    radius: 16
-                    color: theme.surfaceAlt
-                    border.color: theme.border
-                    border.width: 1
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 18
-                        spacing: 12
-
-                        Label {
-                            text: "Grafik Özeti"
-                            color: theme.text
-                            font.pixelSize: 16
-                            font.bold: true
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            height: 1
-                            color: theme.border
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            spacing: 8
-
-                            Repeater {
-                                model: page.chartType === "histogram" ? [
-                                    { k: "Geçerli Değer", v: String(page.chartData1.validValueCount || "—") },
-                                    { k: "Bin Sayısı", v: String(page.chartData1.binCount || "—") },
-                                    { k: "Bin Genişliği", v: Number(page.chartData1.binWidth || 0).toFixed(3) },
-                                    { k: "Minimum", v: Number(page.chartData1.minimum || 0).toFixed(3) },
-                                    { k: "Maximum", v: Number(page.chartData1.maximum || 0).toFixed(3) }
-                                ] : (page.chartType === "boxplot" ? [
-                                    { k: "Geçerli Değer", v: String(page.chartData1.validValueCount || "—") },
-                                    { k: "Minimum", v: Number(page.chartData1.minimum || 0).toFixed(3) },
-                                    { k: "Q1 (1. Çeyrek)", v: Number(page.chartData1.q1 || 0).toFixed(3) },
-                                    { k: "Medyan (Q2)", v: Number(page.chartData1.median || 0).toFixed(3) },
-                                    { k: "Q3 (3. Çeyrek)", v: Number(page.chartData1.q3 || 0).toFixed(3) },
-                                    { k: "Maximum", v: Number(page.chartData1.maximum || 0).toFixed(3) },
-                                    { k: "IQR", v: Number(page.chartData1.iqr || 0).toFixed(3) },
-                                    { k: "Aykırı Değer Sayısı", v: String(page.chartData1.outlierCount || 0) }
-                                ] : [
-                                    { k: "Geçerli Nokta", v: String(page.chartData1.validValueCount || page.chartData1.pointCount || "—") },
-                                    { k: "Grafik Türü", v: page.chartType.toUpperCase() }
-                                ])
-
-                                delegate: RowLayout {
-                                    Layout.fillWidth: true
-                                    Label {
-                                        text: modelData.k
-                                        color: theme.textSecondary
-                                        font.pixelSize: 12
-                                        Layout.fillWidth: true
+                                else if ((page.chartType === "timeseries" || page.chartType === "distribution" || page.chartType === "comparison") && page.chartData2.pointCount > 0) {
+                                    var pts2 = page.chartData2.pointCount
+                                    var xVals2 = page.chartData2.xValues || page.chartData2.indexes || []
+                                    var yVals2 = page.chartData2.yValues || page.chartData2.targetValues || []
+                                    var minY2 = 0, maxY2 = 1
+                                    for (var p2 = 0; p2 < yVals2.length; ++p2) {
+                                        if (yVals2[p2] < minY2) minY2 = yVals2[p2]
+                                        if (yVals2[p2] > maxY2) maxY2 = yVals2[p2]
                                     }
-                                    Label {
-                                        text: modelData.v
-                                        color: theme.text
-                                        font.pixelSize: 13
-                                        font.bold: true
+                                    var rngY2 = (maxY2 - minY2) === 0 ? 1 : (maxY2 - minY2)
+
+                                    ctx.strokeStyle = "#7C4DFF"
+                                    ctx.lineWidth = 2.5
+                                    ctx.beginPath()
+                                    for (var k2 = 0; k2 < pts2; ++k2) {
+                                        var xP2 = padL + (k2 / Math.max(1, pts2 - 1)) * plotW
+                                        var yP2 = (height - padB) - ((yVals2[k2] - minY2) / rngY2) * (plotH - 20)
+                                        if (k2 === 0) ctx.moveTo(xP2, yP2); else ctx.lineTo(xP2, yP2)
                                     }
+                                    ctx.stroke()
                                 }
                             }
                         }

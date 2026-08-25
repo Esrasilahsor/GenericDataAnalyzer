@@ -90,6 +90,10 @@ public:
         const QVector<int> &rowIndexes
         );
 
+    bool removeColumn(
+        const QString &columnName
+        );
+
 
     // =====================================================
     // CLEAR

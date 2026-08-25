@@ -320,6 +320,11 @@ public:
     Q_INVOKABLE bool exportDataset1ToXlsx(const QString &filePath);
     Q_INVOKABLE bool exportDataset2ToXlsx(const QString &filePath);
 
+    Q_INVOKABLE bool removeDataset1Column(const QString &columnName);
+    Q_INVOKABLE bool removeDataset2Column(const QString &columnName);
+
+    Q_INVOKABLE QString saveChartImage(const QString &base64Data, const QString &chartTypePrefix);
+
     Q_INVOKABLE bool analyzeDataset1Quality();
     Q_INVOKABLE bool analyzeDataset2Quality();
 
