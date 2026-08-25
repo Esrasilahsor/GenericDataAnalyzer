@@ -260,7 +260,7 @@ bool DataSet::removeRows(
 
     if (rowIndexes.isEmpty())
     {
-        return false;
+        return true;
     }
 
 
