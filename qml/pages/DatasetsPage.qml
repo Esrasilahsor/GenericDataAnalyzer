@@ -526,6 +526,116 @@ Item {
             }
 
             // =================================================
+            // RECENT FILES QUICK ACCESS
+            // =================================================
+
+            Rectangle {
+                visible: page.appController && page.appController.recentFiles && page.appController.recentFiles.length > 0
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: Math.min(220, 70 + (page.appController ? page.appController.recentFiles.length : 0) * 50)
+                radius: 16
+                color: theme.surface
+                border.width: 1
+                border.color: theme.border
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 16
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label {
+                            text: "📂 Son Kullanılan Dosyalar (Tek Tıkla Yükle)"
+                            color: theme.text
+                            font.pixelSize: 14
+                            font.bold: true
+                        }
+                        Item { Layout.fillWidth: true }
+                        Label {
+                            text: "Açmak istediğiniz veri setini seçin"
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                    }
+
+                    ListView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        spacing: 6
+                        model: page.appController ? page.appController.recentFiles : []
+
+                        delegate: Rectangle {
+                            width: parent.width
+                            height: 44
+                            radius: 8
+                            color: theme.background
+                            border.width: 1
+                            border.color: theme.border
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 10
+
+                                Label {
+                                    text: "📄"
+                                    font.pixelSize: 14
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    Label {
+                                        text: modelData.name || ""
+                                        color: theme.text
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        elide: Text.ElideMiddle
+                                        Layout.fillWidth: true
+                                    }
+                                    Label {
+                                        text: (modelData.type || "") + " • " + (modelData.path || "")
+                                        color: theme.textSecondary
+                                        font.pixelSize: 10
+                                        elide: Text.ElideMiddle
+                                        Layout.fillWidth: true
+                                    }
+                                }
+
+                                Button {
+                                    Layout.preferredHeight: 28
+                                    Layout.preferredWidth: 120
+                                    text: "Dataset 1 Yap"
+                                    font.pixelSize: 10
+                                    onClicked: {
+                                        if (page.appController && modelData.path) {
+                                            page.appController.loadRecentFileAsDataset(1, modelData.path)
+                                        }
+                                    }
+                                }
+
+                                Button {
+                                    Layout.preferredHeight: 28
+                                    Layout.preferredWidth: 120
+                                    text: "Dataset 2 Yap"
+                                    font.pixelSize: 10
+                                    onClicked: {
+                                        if (page.appController && modelData.path) {
+                                            page.appController.loadRecentFileAsDataset(2, modelData.path)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // =================================================
             // DATASET 1 DETAY TABLOSU
             // =================================================
 

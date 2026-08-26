@@ -95,6 +95,13 @@ class AppController : public QObject
     Q_PROPERTY(QString rawDataFilePath READ rawDataFilePath NOTIFY rawDataChanged)
     Q_PROPERTY(QStringList rawWarnings READ rawWarnings NOTIFY rawMetadataChanged)
 
+    Q_PROPERTY(QVariantList recentActivities READ recentActivities NOTIFY recentActivitiesChanged)
+    Q_PROPERTY(QVariantList recentFiles READ recentFiles NOTIFY recentFilesChanged)
+    Q_PROPERTY(QString lastDataset1Path READ lastDataset1Path NOTIFY lastSessionChanged)
+    Q_PROPERTY(QString lastDataset2Path READ lastDataset2Path NOTIFY lastSessionChanged)
+    Q_PROPERTY(bool hasPreviousSession READ hasPreviousSession NOTIFY lastSessionChanged)
+    Q_PROPERTY(bool autoRestoreEnabled READ autoRestoreEnabled WRITE setAutoRestoreEnabled NOTIFY autoRestoreEnabledChanged)
+
 public:
     explicit AppController(QObject *parent = nullptr);
 
@@ -167,6 +174,20 @@ public:
     QString rawMetadataFilePath() const;
     QString rawDataFilePath() const;
     QStringList rawWarnings() const;
+
+    QVariantList recentActivities() const;
+    QVariantList recentFiles() const;
+    QString lastDataset1Path() const;
+    QString lastDataset2Path() const;
+    bool hasPreviousSession() const;
+    bool autoRestoreEnabled() const;
+    void setAutoRestoreEnabled(bool enabled);
+
+    Q_INVOKABLE void recordActivity(const QString &title, const QString &detail, const QString &category = QStringLiteral("Genel"));
+    Q_INVOKABLE void clearRecentActivities();
+    Q_INVOKABLE void clearRecentFiles();
+    Q_INVOKABLE bool restoreLastSession();
+    Q_INVOKABLE bool loadRecentFileAsDataset(int datasetIndex, const QString &filePath);
 
     Q_INVOKABLE bool loadDataset1(const QString &filePath);
     Q_INVOKABLE bool loadDataset2(const QString &filePath);
@@ -396,7 +417,24 @@ signals:
     void rawDataChanged();
     void rawParseChanged();
 
+    void recentActivitiesChanged();
+    void recentFilesChanged();
+    void lastSessionChanged();
+    void autoRestoreEnabledChanged();
+
 private:
+    void loadSettings();
+    void saveSettings();
+    void addRecentFile(const QString &filePath, const QString &type, int rowCount = 0, int colCount = 0);
+
+    QVariantList m_recentActivities;
+    QVariantList m_recentFiles;
+    QString m_lastDataset1Path;
+    QString m_lastDataset2Path;
+    QString m_lastRawMetadataPath;
+    QString m_lastRawDataPath;
+    bool m_autoRestoreEnabled = true;
+
     ExcelParser m_parser1;
     ExcelParser m_parser2;
     ExcelParser m_rawMetadataParser;

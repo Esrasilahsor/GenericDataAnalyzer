@@ -6,6 +6,11 @@
 #include <QDateTime>
 #include <QImage>
 #include <QSet>
+#include <QSettings>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QFileInfo>
 #include <cmath>
 
 #include "../raw/FileRawDataSource.h"
@@ -17,6 +22,12 @@ AppController::AppController(QObject *parent)
     m_mappingModel(this),
     m_parameterModel(this)
 {
+    loadSettings();
+
+    if (m_autoRestoreEnabled)
+    {
+        restoreLastSession();
+    }
 }
 
 // =========================================================
@@ -177,6 +188,214 @@ QStringList AppController::rawWarnings() const
     return m_rawWarnings;
 }
 
+QVariantList AppController::recentActivities() const
+{
+    return m_recentActivities;
+}
+
+QVariantList AppController::recentFiles() const
+{
+    return m_recentFiles;
+}
+
+QString AppController::lastDataset1Path() const
+{
+    return m_lastDataset1Path;
+}
+
+QString AppController::lastDataset2Path() const
+{
+    return m_lastDataset2Path;
+}
+
+bool AppController::hasPreviousSession() const
+{
+    return (!m_lastDataset1Path.isEmpty() && QFileInfo::exists(m_lastDataset1Path)) ||
+           (!m_lastDataset2Path.isEmpty() && QFileInfo::exists(m_lastDataset2Path));
+}
+
+bool AppController::autoRestoreEnabled() const
+{
+    return m_autoRestoreEnabled;
+}
+
+void AppController::setAutoRestoreEnabled(bool enabled)
+{
+    if (m_autoRestoreEnabled != enabled)
+    {
+        m_autoRestoreEnabled = enabled;
+        emit autoRestoreEnabledChanged();
+        saveSettings();
+    }
+}
+
+void AppController::loadSettings()
+{
+    QSettings settings;
+
+    m_lastDataset1Path = settings.value(QStringLiteral("session/lastDataset1Path")).toString();
+    m_lastDataset2Path = settings.value(QStringLiteral("session/lastDataset2Path")).toString();
+    m_lastRawMetadataPath = settings.value(QStringLiteral("session/lastRawMetadataPath")).toString();
+    m_lastRawDataPath = settings.value(QStringLiteral("session/lastRawDataPath")).toString();
+    m_autoRestoreEnabled = settings.value(QStringLiteral("session/autoRestoreEnabled"), true).toBool();
+
+    const QString actsJson = settings.value(QStringLiteral("history/recentActivities")).toString();
+    if (!actsJson.isEmpty())
+    {
+        const QJsonDocument doc = QJsonDocument::fromJson(actsJson.toUtf8());
+        if (doc.isArray())
+        {
+            m_recentActivities = doc.array().toVariantList();
+        }
+    }
+
+    const QString filesJson = settings.value(QStringLiteral("history/recentFiles")).toString();
+    if (!filesJson.isEmpty())
+    {
+        const QJsonDocument doc = QJsonDocument::fromJson(filesJson.toUtf8());
+        if (doc.isArray())
+        {
+            m_recentFiles = doc.array().toVariantList();
+        }
+    }
+}
+
+void AppController::saveSettings()
+{
+    QSettings settings;
+
+    settings.setValue(QStringLiteral("session/lastDataset1Path"), m_lastDataset1Path);
+    settings.setValue(QStringLiteral("session/lastDataset2Path"), m_lastDataset2Path);
+    settings.setValue(QStringLiteral("session/lastRawMetadataPath"), m_lastRawMetadataPath);
+    settings.setValue(QStringLiteral("session/lastRawDataPath"), m_lastRawDataPath);
+    settings.setValue(QStringLiteral("session/autoRestoreEnabled"), m_autoRestoreEnabled);
+
+    const QJsonDocument docActs(QJsonArray::fromVariantList(m_recentActivities));
+    settings.setValue(QStringLiteral("history/recentActivities"), QString::fromUtf8(docActs.toJson(QJsonDocument::Compact)));
+
+    const QJsonDocument docFiles(QJsonArray::fromVariantList(m_recentFiles));
+    settings.setValue(QStringLiteral("history/recentFiles"), QString::fromUtf8(docFiles.toJson(QJsonDocument::Compact)));
+}
+
+void AppController::recordActivity(const QString &title, const QString &detail, const QString &category)
+{
+    QVariantMap act;
+    act[QStringLiteral("title")] = title;
+    act[QStringLiteral("detail")] = detail;
+    act[QStringLiteral("category")] = category;
+    act[QStringLiteral("timestamp")] = QDateTime::currentDateTime().toString(QStringLiteral("dd.MM.yyyy hh:mm:ss"));
+    act[QStringLiteral("timeShort")] = QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss"));
+
+    m_recentActivities.prepend(act);
+    if (m_recentActivities.size() > 50)
+    {
+        m_recentActivities = m_recentActivities.mid(0, 50);
+    }
+
+    emit recentActivitiesChanged();
+    saveSettings();
+}
+
+void AppController::addRecentFile(const QString &filePath, const QString &type, int rowCount, int colCount)
+{
+    if (filePath.trimmed().isEmpty())
+        return;
+
+    const QString norm = normalizeFilePath(filePath);
+    const QFileInfo info(norm);
+    if (!info.exists())
+        return;
+
+    for (int i = 0; i < m_recentFiles.size(); ++i)
+    {
+        const QVariantMap item = m_recentFiles.at(i).toMap();
+        if (item.value(QStringLiteral("path")).toString() == norm)
+        {
+            m_recentFiles.removeAt(i);
+            break;
+        }
+    }
+
+    QVariantMap fileItem;
+    fileItem[QStringLiteral("name")] = info.fileName();
+    fileItem[QStringLiteral("path")] = norm;
+    fileItem[QStringLiteral("type")] = type;
+    fileItem[QStringLiteral("rowCount")] = rowCount;
+    fileItem[QStringLiteral("columnCount")] = colCount;
+    fileItem[QStringLiteral("size")] = QStringLiteral("%1 KB").arg(info.size() / 1024);
+    fileItem[QStringLiteral("timestamp")] = QDateTime::currentDateTime().toString(QStringLiteral("dd.MM.yyyy hh:mm"));
+
+    m_recentFiles.prepend(fileItem);
+    if (m_recentFiles.size() > 15)
+    {
+        m_recentFiles = m_recentFiles.mid(0, 15);
+    }
+
+    emit recentFilesChanged();
+    saveSettings();
+}
+
+void AppController::clearRecentActivities()
+{
+    m_recentActivities.clear();
+    emit recentActivitiesChanged();
+    saveSettings();
+}
+
+void AppController::clearRecentFiles()
+{
+    m_recentFiles.clear();
+    emit recentFilesChanged();
+    saveSettings();
+}
+
+bool AppController::restoreLastSession()
+{
+    bool restoredAny = false;
+
+    if (!m_lastDataset1Path.isEmpty() && QFileInfo::exists(m_lastDataset1Path))
+    {
+        if (loadDataset1(m_lastDataset1Path))
+        {
+            restoredAny = true;
+        }
+    }
+
+    if (!m_lastDataset2Path.isEmpty() && QFileInfo::exists(m_lastDataset2Path))
+    {
+        if (loadDataset2(m_lastDataset2Path))
+        {
+            restoredAny = true;
+        }
+    }
+
+    if (!m_lastRawMetadataPath.isEmpty() && QFileInfo::exists(m_lastRawMetadataPath))
+    {
+        loadRawMetadata(m_lastRawMetadataPath);
+    }
+
+    if (!m_lastRawDataPath.isEmpty() && QFileInfo::exists(m_lastRawDataPath))
+    {
+        loadRawDataFile(m_lastRawDataPath);
+    }
+
+    emit lastSessionChanged();
+    return restoredAny;
+}
+
+bool AppController::loadRecentFileAsDataset(int datasetIndex, const QString &filePath)
+{
+    if (datasetIndex == 1)
+    {
+        return loadDataset1(filePath);
+    }
+    else if (datasetIndex == 2)
+    {
+        return loadDataset2(filePath);
+    }
+    return false;
+}
+
 // =========================================================
 // DATASET LOAD
 // =========================================================
@@ -234,6 +453,14 @@ bool AppController::loadDataset1(const QString &filePath)
     m_dataset1ColumnModel.setColumns(m_dataset1.columns());
 
     analyzeDataset1Quality();
+
+    m_lastDataset1Path = normalizedPath;
+    addRecentFile(normalizedPath, QStringLiteral("Dataset 1 (Excel/CSV)"), m_dataset1.rowCount(), m_dataset1.columnCount());
+    recordActivity(QStringLiteral("Veri Seti 1 Yüklendi"),
+                   QStringLiteral("%1 (%2 satır, %3 sütun)").arg(m_dataset1.name()).arg(m_dataset1.rowCount()).arg(m_dataset1.columnCount()),
+                   QStringLiteral("Yükleme"));
+    emit lastSessionChanged();
+    saveSettings();
 
     emit dataset1Changed();
 
@@ -297,6 +524,14 @@ bool AppController::loadDataset2(const QString &filePath)
 
     analyzeDataset2Quality();
 
+    m_lastDataset2Path = normalizedPath;
+    addRecentFile(normalizedPath, QStringLiteral("Dataset 2 (Excel/CSV)"), m_dataset2.rowCount(), m_dataset2.columnCount());
+    recordActivity(QStringLiteral("Veri Seti 2 Yüklendi"),
+                   QStringLiteral("%1 (%2 satır, %3 sütun)").arg(m_dataset2.name()).arg(m_dataset2.rowCount()).arg(m_dataset2.columnCount()),
+                   QStringLiteral("Yükleme"));
+    emit lastSessionChanged();
+    saveSettings();
+
     emit dataset2Changed();
 
     clearAnalysis();
@@ -334,6 +569,7 @@ bool AppController::restoreDataset1()
     emit dataset1Changed();
 
     tryGenerateMappings();
+    recordActivity(QStringLiteral("Dataset 1 Sıfırlandı"), QStringLiteral("Orijinal veriye geri dönüldü"), QStringLiteral("Temizleme"));
 
     return true;
 }
@@ -363,6 +599,7 @@ bool AppController::restoreDataset2()
     emit dataset2Changed();
 
     tryGenerateMappings();
+    recordActivity(QStringLiteral("Dataset 2 Sıfırlandı"), QStringLiteral("Orijinal veriye geri dönüldü"), QStringLiteral("Temizleme"));
 
     return true;
 }
@@ -1224,6 +1461,10 @@ bool AppController::compareDatasets(const QVariantList &mappings)
 
     m_datasetComparisonResult = summaryMap;
     m_datasetComparisonAvailable = true;
+
+    recordActivity(QStringLiteral("Veri Seti Karşılaştırması"),
+                   QStringLiteral("%1 eşleştirilmiş sütun, %2 satır karşılaştırıldı").arg(matchedColumnCount).arg(totalComparedRecords),
+                   QStringLiteral("Karşılaştırma"));
 
     emit datasetComparisonChanged();
     return true;
@@ -2633,6 +2874,14 @@ bool AppController::loadRawMetadata(const QString &filePath)
     m_rawMetadataFilePath = normalizedPath;
     m_rawMetadataLoaded = true;
 
+    m_lastRawMetadataPath = normalizedPath;
+    addRecentFile(normalizedPath, QStringLiteral("Ham Veri Metadata (Excel)"));
+    recordActivity(QStringLiteral("Ham Veri Metadata Yüklendi"),
+                   QStringLiteral("%1 (%2 parametre)").arg(QFileInfo(normalizedPath).fileName()).arg(definitions.size()),
+                   QStringLiteral("Ham Veri"));
+    emit lastSessionChanged();
+    saveSettings();
+
     clearRawParse();
     emit rawMetadataChanged();
 
@@ -2682,6 +2931,14 @@ bool AppController::loadRawDataFile(const QString &filePath)
     m_rawData = result.data;
     m_rawDataFilePath = normalizedPath;
     m_rawDataLoaded = true;
+
+    m_lastRawDataPath = normalizedPath;
+    addRecentFile(normalizedPath, QStringLiteral("Ham Veri Dosyası (.bin)"));
+    recordActivity(QStringLiteral("Ham Veri Dosyası Yüklendi"),
+                   QStringLiteral("%1 (%2 KB)").arg(QFileInfo(normalizedPath).fileName()).arg(m_rawData.size() / 1024),
+                   QStringLiteral("Ham Veri"));
+    emit lastSessionChanged();
+    saveSettings();
 
     clearRawParse();
     emit rawDataChanged();
@@ -2801,6 +3058,9 @@ bool AppController::parseRawData()
     m_parameterModel.setParameters(allParsedParameters);
 
     m_rawParseAvailable = true;
+    recordActivity(QStringLiteral("Ham Veri Ayrıştırıldı"),
+                   QStringLiteral("%1 paket başarıyla işlendi").arg(parsedPackets.size()),
+                   QStringLiteral("Ham Veri"));
     emit rawParseChanged();
 
     const int ignoredByteCount =
@@ -3196,6 +3456,10 @@ bool AppController::importParsedRawDataAsDataset(
         tryGenerateMappings();
         analyzeDataset2Quality();
     }
+
+    recordActivity(QStringLiteral("Ham Veri -> Dataset %1 Aktarıldı").arg(datasetIndex),
+                   QStringLiteral("%1 satır, %2 sütun oluşturuldu").arg(dataSet.rowCount()).arg(dataSet.columnCount()),
+                   QStringLiteral("Ham Veri"));
 
     return true;
 }

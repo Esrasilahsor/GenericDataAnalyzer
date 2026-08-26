@@ -527,6 +527,337 @@ Item {
             }
 
             // =================================================
+            // RECENT SESSION & ACTIVITY HISTORY CARD
+            // =================================================
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 330
+                radius: 16
+                color: theme.surface
+                border.width: 1
+                border.color: theme.border
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    spacing: 12
+
+                    // Card Header & Actions
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            RowLayout {
+                                spacing: 8
+                                Label {
+                                    text: "🕒 Son İşlemler ve Oturum Kayıtları"
+                                    color: theme.text
+                                    font.pixelSize: 15
+                                    font.bold: true
+                                }
+
+                                Rectangle {
+                                    visible: page.appController && page.appController.autoRestoreEnabled
+                                    Layout.preferredHeight: 20
+                                    Layout.preferredWidth: 140
+                                    radius: 10
+                                    color: "#E6F6EE"
+                                    border.width: 1
+                                    border.color: theme.success
+
+                                    Label {
+                                        anchors.centerIn: parent
+                                        text: "✓ Oturum Hatırlandı"
+                                        color: theme.success
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                    }
+                                }
+                            }
+
+                            Label {
+                                text: "Önceki oturumunuzda çalıştığınız dosyalar ve son yapılan analiz / temizleme işlemleri."
+                                color: theme.textSecondary
+                                font.pixelSize: 12
+                            }
+                        }
+
+                        Button {
+                            visible: page.appController && page.appController.hasPreviousSession
+                            Layout.preferredHeight: 34
+                            Layout.preferredWidth: 180
+                            text: "🔄 Son Oturumu Yükle"
+                            onClicked: {
+                                if (page.appController) {
+                                    page.appController.restoreLastSession()
+                                }
+                            }
+                        }
+
+                        Button {
+                            visible: (page.appController && page.appController.recentActivities.length > 0) ||
+                                     (page.appController && page.appController.recentFiles.length > 0)
+                            Layout.preferredHeight: 34
+                            Layout.preferredWidth: 120
+                            text: "🗑 Geçmişi Sil"
+                            onClicked: {
+                                if (page.appController) {
+                                    page.appController.clearRecentActivities()
+                                    page.appController.clearRecentFiles()
+                                }
+                            }
+                        }
+                    }
+
+                    // Content Split: Left (Recent Files) & Right (Recent Activities Timeline)
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        spacing: 16
+
+                        // Left Column: Recent Files
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            radius: 12
+                            color: theme.background
+                            border.width: 1
+                            border.color: theme.border
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 8
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Label {
+                                        text: "📂 Son Kullanılan Dosyalar"
+                                        color: theme.text
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Label {
+                                        text: ((page.appController && page.appController.recentFiles) ? page.appController.recentFiles.length : 0) + " dosya"
+                                        color: theme.textSecondary
+                                        font.pixelSize: 11
+                                    }
+                                }
+
+                                ListView {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+                                    spacing: 6
+                                    model: page.appController ? page.appController.recentFiles : []
+
+                                    delegate: Rectangle {
+                                        width: parent.width
+                                        height: 52
+                                        radius: 8
+                                        color: theme.surface
+                                        border.width: 1
+                                        border.color: theme.border
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 8
+                                            spacing: 10
+
+                                            Rectangle {
+                                                width: 32
+                                                height: 32
+                                                radius: 6
+                                                color: modelData.type && modelData.type.indexOf("Bin") !== -1 ? "#EDE7F6" : "#E8F5E9"
+                                                Label {
+                                                    anchors.centerIn: parent
+                                                    text: modelData.name && modelData.name.indexOf(".bin") !== -1 ? "BIN" : (modelData.name && modelData.name.indexOf(".csv") !== -1 ? "CSV" : "XLS")
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: modelData.type && modelData.type.indexOf("Bin") !== -1 ? "#5E35B1" : "#2E7D32"
+                                                }
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 2
+                                                Label {
+                                                    text: modelData.name || ""
+                                                    color: theme.text
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                    elide: Text.ElideMiddle
+                                                    Layout.fillWidth: true
+                                                }
+                                                Label {
+                                                    text: (modelData.type || "") + " • " + (modelData.rowCount ? modelData.rowCount + " satır • " : "") + (modelData.timestamp || "")
+                                                    color: theme.textSecondary
+                                                    font.pixelSize: 10
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+                                            }
+
+                                            Button {
+                                                Layout.preferredHeight: 28
+                                                Layout.preferredWidth: 65
+                                                text: "D1 Yükle"
+                                                font.pixelSize: 10
+                                                onClicked: {
+                                                    if (page.appController && modelData.path) {
+                                                        page.appController.loadRecentFileAsDataset(1, modelData.path)
+                                                    }
+                                                }
+                                            }
+
+                                            Button {
+                                                Layout.preferredHeight: 28
+                                                Layout.preferredWidth: 65
+                                                text: "D2 Yükle"
+                                                font.pixelSize: 10
+                                                onClicked: {
+                                                    if (page.appController && modelData.path) {
+                                                        page.appController.loadRecentFileAsDataset(2, modelData.path)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Label {
+                                        anchors.centerIn: parent
+                                        visible: !page.appController || !page.appController.recentFiles || page.appController.recentFiles.length === 0
+                                        text: "Henüz açılan dosya geçmişi yok."
+                                        color: theme.textSecondary
+                                        font.pixelSize: 12
+                                    }
+                                }
+                            }
+                        }
+
+                        // Right Column: Activity History Timeline
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            radius: 12
+                            color: theme.background
+                            border.width: 1
+                            border.color: theme.border
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 8
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Label {
+                                        text: "⚡ Son Yapılan İşlemler"
+                                        color: theme.text
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Label {
+                                        text: ((page.appController && page.appController.recentActivities) ? page.appController.recentActivities.length : 0) + " kayıt"
+                                        color: theme.textSecondary
+                                        font.pixelSize: 11
+                                    }
+                                }
+
+                                ListView {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+                                    spacing: 6
+                                    model: page.appController ? page.appController.recentActivities : []
+
+                                    delegate: Rectangle {
+                                        width: parent.width
+                                        height: 48
+                                        radius: 8
+                                        color: theme.surface
+                                        border.width: 1
+                                        border.color: theme.border
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 8
+                                            spacing: 8
+
+                                            Rectangle {
+                                                Layout.preferredHeight: 22
+                                                Layout.preferredWidth: 68
+                                                radius: 4
+                                                color: modelData.category === "Yükleme" ? "#E3F2FD" :
+                                                       modelData.category === "Temizleme" ? "#FFF3E0" :
+                                                       modelData.category === "Karşılaştırma" ? "#FCE4EC" :
+                                                       modelData.category === "Görselleştirme" ? "#E8F5E9" :
+                                                       modelData.category === "Ham Veri" ? "#EDE7F6" : "#ECEFF1"
+                                                Label {
+                                                    anchors.centerIn: parent
+                                                    text: modelData.category || "İşlem"
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: modelData.category === "Yükleme" ? "#1565C0" :
+                                                           modelData.category === "Temizleme" ? "#E65100" :
+                                                           modelData.category === "Karşılaştırma" ? "#AD1457" :
+                                                           modelData.category === "Görselleştirme" ? "#2E7D32" :
+                                                           modelData.category === "Ham Veri" ? "#5E35B1" : "#455A64"
+                                                }
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 2
+                                                Label {
+                                                    text: modelData.title || ""
+                                                    color: theme.text
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+                                                Label {
+                                                    text: modelData.detail || ""
+                                                    color: theme.textSecondary
+                                                    font.pixelSize: 10
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+                                            }
+
+                                            Label {
+                                                text: modelData.timeShort || ""
+                                                color: theme.textSecondary
+                                                font.pixelSize: 10
+                                            }
+                                        }
+                                    }
+
+                                    Label {
+                                        anchors.centerIn: parent
+                                        visible: !page.appController || !page.appController.recentActivities || page.appController.recentActivities.length === 0
+                                        text: "Henüz işlem kaydı bulunmuyor."
+                                        color: theme.textSecondary
+                                        font.pixelSize: 12
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // =================================================
             // NEXT ACTION
             // =================================================
 

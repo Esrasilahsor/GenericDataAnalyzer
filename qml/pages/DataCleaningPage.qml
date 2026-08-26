@@ -254,8 +254,43 @@ Item {
         }
     }
 
-    Component.onCompleted: {
+    onVisibleChanged: {
+        if (visible) {
+            if (!isLoaded(1) && isLoaded(2)) {
+                page.activeDs = 2
+            }
+            refreshAnalysis()
+        }
+    }
+
+    StackLayout.onIsCurrentItemChanged: {
+        if (StackLayout.isCurrentItem) {
+            if (!isLoaded(1) && isLoaded(2)) {
+                page.activeDs = 2
+            }
+            refreshAnalysis()
+        }
+    }
+
+    onActiveDsChanged: {
         refreshAnalysis()
+    }
+
+    Component.onCompleted: {
+        if (!isLoaded(1) && isLoaded(2)) {
+            page.activeDs = 2
+        }
+        refreshAnalysis()
+    }
+
+    Connections {
+        target: appController
+        function onDataset1QualityChanged() { if (page.activeDs === 1) page.rebuildLists() }
+        function onDataset2QualityChanged() { if (page.activeDs === 2) page.rebuildLists() }
+        function onDataset1OutlierChanged() { if (page.activeDs === 1) page.rebuildLists() }
+        function onDataset2OutlierChanged() { if (page.activeDs === 2) page.rebuildLists() }
+        function onDataset1Changed() { if (page.activeDs === 1) page.refreshAnalysis() }
+        function onDataset2Changed() { if (page.activeDs === 2) page.refreshAnalysis() }
     }
 
     ScrollView {
