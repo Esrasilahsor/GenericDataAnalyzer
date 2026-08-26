@@ -86,3 +86,6 @@ release/
 debug/
 object_script*
 .qmake.stash
+output/
+~$*
+

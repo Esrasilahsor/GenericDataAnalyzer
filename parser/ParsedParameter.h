@@ -5,6 +5,7 @@
 #include <QStringList>
 #include <QVariant>
 
+#include "DataType.h"
 #include "ParseStatus.h"
 #include "ParameterDefinition.h"
 

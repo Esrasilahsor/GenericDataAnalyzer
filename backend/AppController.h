@@ -41,6 +41,7 @@ class AppController : public QObject
 
     Q_PROPERTY(bool dataset1Modified READ dataset1Modified NOTIFY dataset1Changed)
     Q_PROPERTY(bool dataset2Modified READ dataset2Modified NOTIFY dataset2Changed)
+    Q_PROPERTY(bool cleaningCompleted READ cleaningCompleted WRITE setCleaningCompleted NOTIFY cleaningCompletedChanged)
 
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
 
@@ -54,6 +55,8 @@ class AppController : public QObject
 
     Q_PROPERTY(QVariantMap datasetComparisonResult READ datasetComparisonResult NOTIFY datasetComparisonChanged)
     Q_PROPERTY(bool datasetComparisonAvailable READ datasetComparisonAvailable NOTIFY datasetComparisonChanged)
+
+    Q_PROPERTY(bool visualizationAvailable READ visualizationAvailable NOTIFY visualizationChanged)
 
     Q_PROPERTY(QVariantMap dataset1EdaResult READ dataset1EdaResult NOTIFY dataset1EdaChanged)
     Q_PROPERTY(QVariantMap dataset2EdaResult READ dataset2EdaResult NOTIFY dataset2EdaChanged)
@@ -111,6 +114,10 @@ public:
     bool dataset1Modified() const;
     bool dataset2Modified() const;
 
+    bool cleaningCompleted() const;
+    Q_INVOKABLE void setCleaningCompleted(bool completed);
+    Q_INVOKABLE void skipCleaning();
+
     QString lastError() const;
 
     ColumnModel *dataset1ColumnModel();
@@ -123,6 +130,9 @@ public:
 
     QVariantMap datasetComparisonResult() const;
     bool datasetComparisonAvailable() const;
+
+    bool visualizationAvailable() const;
+    Q_INVOKABLE void setVisualizationAvailable(bool available);
 
     QVariantMap dataset1EdaResult() const;
     QVariantMap dataset2EdaResult() const;
@@ -363,6 +373,7 @@ signals:
     void errorChanged();
     void analysisResultChanged();
     void datasetComparisonChanged();
+    void visualizationChanged();
 
     void dataset1EdaChanged();
     void dataset2EdaChanged();
@@ -378,6 +389,8 @@ signals:
 
     void dataset1OutlierCleaningChanged();
     void dataset2OutlierCleaningChanged();
+
+    void cleaningCompletedChanged();
 
     void rawMetadataChanged();
     void rawDataChanged();
@@ -398,6 +411,7 @@ private:
 
     bool m_dataset1Modified = false;
     bool m_dataset2Modified = false;
+    bool m_cleaningSkipped = false;
 
     ColumnModel m_dataset1ColumnModel;
     ColumnModel m_dataset2ColumnModel;
@@ -416,6 +430,8 @@ private:
 
     QVariantMap m_datasetComparisonResult;
     bool m_datasetComparisonAvailable = false;
+
+    bool m_visualizationAvailable = false;
 
     QVariantMap m_dataset1EdaResult;
     QVariantMap m_dataset2EdaResult;

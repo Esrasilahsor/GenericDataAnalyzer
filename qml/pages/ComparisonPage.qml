@@ -597,6 +597,9 @@ Item {
                                 }
 
                                 var dataItem = resList[page.selectedComparisonIndex]
+                                if (appController) {
+                                    appController.setVisualizationAvailable(true)
+                                }
                                 var padL = 70, padR = 40, padT = 30, padB = 60
                                 var plotW = width - padL - padR
                                 var plotH = height - padT - padB

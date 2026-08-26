@@ -1710,7 +1710,7 @@ Item {
                     }
 
                     Button {
-                        Layout.preferredWidth: 175
+                        Layout.preferredWidth: 165
                         Layout.preferredHeight: 38
                         text: "Veri Temizlemeye Git →"
 
@@ -1728,6 +1728,34 @@ Item {
                         background: Rectangle {
                             radius: 8
                             color: theme.primary
+                        }
+                    }
+
+                    Button {
+                        Layout.preferredWidth: 185
+                        Layout.preferredHeight: 38
+                        text: "Temizlemeyi Atla (Karşılaştır) →"
+
+                        onClicked: {
+                            if (appController)
+                                appController.skipCleaning()
+                            page.goToPage(4)
+                        }
+
+                        contentItem: Text {
+                            text: parent.text
+                            color: theme.text
+                            font.pixelSize: 12
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        background: Rectangle {
+                            radius: 8
+                            color: theme.surfaceAlt
+                            border.width: 1
+                            border.color: theme.border
                         }
                     }
                 }

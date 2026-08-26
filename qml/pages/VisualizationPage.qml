@@ -121,6 +121,9 @@ Item {
             }
 
             page.isRendering = false
+            if (appController) {
+                appController.setVisualizationAvailable(true)
+            }
             chartCanvas1.requestPaint()
             if (chartCanvas2) chartCanvas2.requestPaint()
         }

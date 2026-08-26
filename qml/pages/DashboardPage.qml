@@ -83,6 +83,13 @@ Item {
         if (!qualityAvailable(dataset))
             return "Analiz bekliyor"
 
+        var isModified = dataset === 1
+            ? (page.appController && page.appController.dataset1Modified)
+            : (page.appController && page.appController.dataset2Modified)
+
+        if (isModified)
+            return "✓ Temizlendi / Güncellendi"
+
         return problemCount(dataset) > 0
                 ? "⚠ İnceleme gerekli"
                 : "✓ Analize hazır"
@@ -91,6 +98,13 @@ Item {
     function datasetStatusColor(dataset) {
         if (!loaded(dataset) || !qualityAvailable(dataset))
             return theme.textSecondary
+
+        var isModified = dataset === 1
+            ? (page.appController && page.appController.dataset1Modified)
+            : (page.appController && page.appController.dataset2Modified)
+
+        if (isModified)
+            return theme.success
 
         return problemCount(dataset) > 0
                 ? theme.warning
@@ -103,18 +117,20 @@ Item {
 
         switch (stepIndex) {
         case 1:
-            return page.loaded(1) && page.loaded(2)
+            return page.loaded(1) || page.loaded(2)
         case 2:
-            return page.qualityAvailable(1) && page.qualityAvailable(2)
+            return (page.loaded(1) && page.qualityAvailable(1)) ||
+                   (page.loaded(2) && page.qualityAvailable(2))
         case 3:
             return (page.loaded(1) || page.loaded(2)) &&
-                   page.qualityAvailable(1) &&
-                   page.problemCount(1) === 0 &&
-                   (!page.loaded(2) || page.problemCount(2) === 0)
+                   (page.appController.cleaningCompleted ||
+                    page.appController.dataset1Modified ||
+                    page.appController.dataset2Modified ||
+                    (page.qualityAvailable(1) && page.problemCount(1) === 0 && (!page.loaded(2) || page.problemCount(2) === 0)))
         case 4:
             return page.appController.datasetComparisonAvailable
         case 5:
-            return page.loaded(1) || page.loaded(2)
+            return page.appController.visualizationAvailable
         default:
             return false
         }
@@ -292,17 +308,22 @@ Item {
                             }
 
                             Label {
+                                property bool isMod: datasetCard.dataset === 1
+                                    ? (page.appController && page.appController.dataset1Modified)
+                                    : (page.appController && page.appController.dataset2Modified)
+
                                 text:
                                     datasetCard.isLoaded && page.qualityAvailable(datasetCard.dataset)
-                                    ? (datasetCard.hasProblems
-                                       ? page.problemCount(datasetCard.dataset)
-                                         + " kalite problemi tespit edildi."
-                                       : "Kalite problemi tespit edilmedi.")
+                                    ? (isMod
+                                       ? ("Temizleme uygulandı (" + (datasetCard.hasProblems ? page.problemCount(datasetCard.dataset) + " kalan sorun)" : "tüm sorunlar giderildi)"))
+                                       : (datasetCard.hasProblems
+                                          ? page.problemCount(datasetCard.dataset) + " kalite problemi tespit edildi."
+                                          : "Kalite problemi tespit edilmedi."))
                                     : "Analiz sonucu henüz oluşturulmadı."
                                 color:
-                                    datasetCard.hasProblems
-                                    ? theme.warning
-                                    : theme.textSecondary
+                                    isMod
+                                    ? theme.success
+                                    : (datasetCard.hasProblems ? theme.warning : theme.textSecondary)
                                 font.pixelSize: 12
                             }
 
@@ -558,10 +579,11 @@ Item {
                                 : (!page.qualityAvailable(1) &&
                                    (!page.loaded(2) || !page.qualityAvailable(2)))
                                   ? "Veri Analizi ekranından veri kalitesini ve istatistikleri inceleyin."
-                                  : (page.problemCount(1) > 0 ||
-                                     page.problemCount(2) > 0)
+                                  : (!page.isStepCompleted(3) && (page.problemCount(1) > 0 || page.problemCount(2) > 0))
                                     ? "Tespit edilen problemleri Veri Temizleme ekranından yönetin."
-                                    : "Veri setlerinizi Karşılaştırma & Görselleştirme ekranında inceleyebilirsiniz."
+                                    : (!page.isStepCompleted(4) && page.loaded(1) && page.loaded(2))
+                                      ? "Veri setlerinizi Karşılaştırma ekranında eşleştirip karşılaştırın."
+                                      : "Görselleştirme sayfasında grafiklerinizi inceleyebilirsiniz."
                             color: theme.textSecondary
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -579,10 +601,11 @@ Item {
                             : (!page.qualityAvailable(1) &&
                                (!page.loaded(2) || !page.qualityAvailable(2)))
                               ? "Veri Analizi →"
-                              : (page.problemCount(1) > 0 ||
-                                 page.problemCount(2) > 0)
+                              : (!page.isStepCompleted(3) && (page.problemCount(1) > 0 || page.problemCount(2) > 0))
                                 ? "Veri Temizleme →"
-                                : "Karşılaştırma →"
+                                : (!page.isStepCompleted(4) && page.loaded(1) && page.loaded(2))
+                                  ? "Karşılaştırma →"
+                                  : "Görselleştirme →"
 
                         onClicked:
                             !page.loaded(1) && !page.loaded(2)
@@ -590,10 +613,11 @@ Item {
                             : (!page.qualityAvailable(1) &&
                                (!page.loaded(2) || !page.qualityAvailable(2)))
                               ? page.go(2)
-                              : (page.problemCount(1) > 0 ||
-                                 page.problemCount(2) > 0)
+                              : (!page.isStepCompleted(3) && (page.problemCount(1) > 0 || page.problemCount(2) > 0))
                                 ? page.go(3)
-                                : page.go(4)
+                                : (!page.isStepCompleted(4) && page.loaded(1) && page.loaded(2))
+                                  ? page.go(4)
+                                  : page.go(5)
 
                         contentItem: Text {
                             text: parent.text

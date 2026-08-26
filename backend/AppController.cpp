@@ -5,6 +5,7 @@
 #include <QVariantList>
 #include <QDateTime>
 #include <QImage>
+#include <QSet>
 #include <cmath>
 
 #include "../raw/FileRawDataSource.h"
@@ -69,6 +70,26 @@ QString AppController::dataset2SheetName() const { return m_dataset2.sheetName()
 bool AppController::dataset1Modified() const { return m_dataset1Modified; }
 bool AppController::dataset2Modified() const { return m_dataset2Modified; }
 
+bool AppController::cleaningCompleted() const
+{
+    return m_cleaningSkipped || m_dataset1Modified || m_dataset2Modified;
+}
+
+void AppController::setCleaningCompleted(bool completed)
+{
+    if (m_cleaningSkipped != completed)
+    {
+        m_cleaningSkipped = completed;
+        emit cleaningCompletedChanged();
+    }
+}
+
+void AppController::skipCleaning()
+{
+    m_cleaningSkipped = true;
+    emit cleaningCompletedChanged();
+}
+
 QString AppController::lastError() const { return m_lastError; }
 
 ColumnModel *AppController::dataset1ColumnModel() { return &m_dataset1ColumnModel; }
@@ -81,6 +102,17 @@ bool AppController::analysisAvailable() const { return m_analysisAvailable; }
 
 QVariantMap AppController::datasetComparisonResult() const { return m_datasetComparisonResult; }
 bool AppController::datasetComparisonAvailable() const { return m_datasetComparisonAvailable; }
+
+bool AppController::visualizationAvailable() const { return m_visualizationAvailable; }
+
+void AppController::setVisualizationAvailable(bool available)
+{
+    if (m_visualizationAvailable != available)
+    {
+        m_visualizationAvailable = available;
+        emit visualizationChanged();
+    }
+}
 
 QVariantMap AppController::dataset1EdaResult() const { return m_dataset1EdaResult; }
 QVariantMap AppController::dataset2EdaResult() const { return m_dataset2EdaResult; }
@@ -1147,8 +1179,8 @@ bool AppController::compareDatasets(const QVariantList &mappings)
 
         const double diffPct =
             pairCompared > 0
-            ? (static_cast<double>(pairDiff) / static_cast<double>(pairCompared) * 100.0)
-            : 0.0;
+                ? (static_cast<double>(pairDiff) / static_cast<double>(pairCompared) * 100.0)
+                : 0.0;
         pairResult.insert(QStringLiteral("differencePercentage"), diffPct);
 
         if (col1->isNumeric() && col2->isNumeric())
@@ -1184,8 +1216,8 @@ bool AppController::compareDatasets(const QVariantList &mappings)
 
     const double overallDiffPct =
         totalComparedRecords > 0
-        ? (static_cast<double>(totalDifferentRecords) / static_cast<double>(totalComparedRecords) * 100.0)
-        : 0.0;
+            ? (static_cast<double>(totalDifferentRecords) / static_cast<double>(totalComparedRecords) * 100.0)
+            : 0.0;
 
     summaryMap.insert(QStringLiteral("differencePercentage"), overallDiffPct);
     summaryMap.insert(QStringLiteral("results"), resultsList);
@@ -1402,7 +1434,14 @@ QVariantMap AppController::createDataset1Histogram(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return histogramToVariantMap(result);
 }
@@ -1422,7 +1461,14 @@ QVariantMap AppController::createDataset2Histogram(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return histogramToVariantMap(result);
 }
@@ -1442,7 +1488,14 @@ QVariantMap AppController::createDataset1BoxPlot(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return boxPlotToVariantMap(result);
 }
@@ -1462,7 +1515,14 @@ QVariantMap AppController::createDataset2BoxPlot(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return boxPlotToVariantMap(result);
 }
@@ -1482,7 +1542,14 @@ QVariantMap AppController::createDataset1TimeSeries(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return timeSeriesToVariantMap(result);
 }
@@ -1502,7 +1569,14 @@ QVariantMap AppController::createDataset2TimeSeries(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return timeSeriesToVariantMap(result);
 }
@@ -1522,7 +1596,14 @@ QVariantMap AppController::createDataset1Distribution(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return distributionToVariantMap(result);
 }
@@ -1542,7 +1623,14 @@ QVariantMap AppController::createDataset2Distribution(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return distributionToVariantMap(result);
 }
@@ -1557,7 +1645,14 @@ QVariantMap AppController::createDataset1CorrelationMatrix()
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return correlationMatrixToVariantMap(result);
 }
@@ -1572,7 +1667,14 @@ QVariantMap AppController::createDataset2CorrelationMatrix()
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
 
     return correlationMatrixToVariantMap(result);
 }
@@ -1593,7 +1695,16 @@ QVariantMap AppController::createDatasetComparisonChart(
             );
 
     if (!result.success)
+    {
         setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        m_datasetComparisonAvailable = true;
+        emit visualizationChanged();
+        emit datasetComparisonChanged();
+    }
 
     return comparisonChartToVariantMap(result);
 }
@@ -1867,6 +1978,14 @@ QString AppController::saveChartImage(const QString &base64Data, const QString &
     {
         setError(QStringLiteral("Grafik dosyası kaydedilemedi: ") + fullPath);
         return QString();
+    }
+
+    m_visualizationAvailable = true;
+    emit visualizationChanged();
+    if (chartTypePrefix.contains(QStringLiteral("Karsilastirma"), Qt::CaseInsensitive))
+    {
+        m_datasetComparisonAvailable = true;
+        emit datasetComparisonChanged();
     }
 
     return fullPath;
@@ -2152,22 +2271,6 @@ bool AppController::analyzeDataset1OutliersAllColumns(
         columnResults.append(columnResult);
     }
 
-    if (numericColumnCount == 0)
-    {
-        setError(QStringLiteral(
-            "Dataset 1 does not contain numeric columns."
-            ));
-        return false;
-    }
-
-    if (successfulColumnCount == 0)
-    {
-        setError(QStringLiteral(
-            "No numeric column could be analyzed."
-            ));
-        return false;
-    }
-
     QVariantMap resultMap;
     resultMap.insert(
         QStringLiteral("method"),
@@ -2339,22 +2442,6 @@ bool AppController::analyzeDataset2OutliersAllColumns(
         }
 
         columnResults.append(columnResult);
-    }
-
-    if (numericColumnCount == 0)
-    {
-        setError(QStringLiteral(
-            "Dataset 2 does not contain numeric columns."
-            ));
-        return false;
-    }
-
-    if (successfulColumnCount == 0)
-    {
-        setError(QStringLiteral(
-            "No numeric column could be analyzed."
-            ));
-        return false;
     }
 
     QVariantMap resultMap;
@@ -2621,30 +2708,79 @@ bool AppController::parseRawData()
         return false;
     }
 
-    const QList<ParsedParameter> parsedParameters =
-        m_rawDataParser.parse(
-            m_rawData,
+    const int packetSize =
+        m_rawDataParser.calculateRequiredPacketSize(
             m_rawParameterDefinitions
             );
 
-    if (parsedParameters.isEmpty())
+    if (packetSize <= 0)
     {
-        setError(QStringLiteral("Raw data parser produced no results."));
+        setError(
+            QStringLiteral(
+                "Packet size could not be calculated from raw metadata."
+                )
+            );
         return false;
     }
 
-    m_parameterModel.setParameters(parsedParameters);
+    if (m_rawData.size() < packetSize)
+    {
+        setError(
+            QStringLiteral(
+                "Raw data is smaller than the required packet size."
+                )
+            );
+        return false;
+    }
+
+    const QList<QList<ParsedParameter>> parsedPackets =
+        m_rawDataParser.parsePackets(
+            m_rawData,
+            m_rawParameterDefinitions,
+            packetSize
+            );
+
+    if (parsedPackets.isEmpty())
+    {
+        setError(QStringLiteral("Raw data parser produced no packet results."));
+        return false;
+    }
+
+    /*
+     * ParameterModel düz bir liste tuttuğu için bütün
+     * packet'ların parametrelerini tek listede topluyoruz.
+     *
+     * Örnek:
+     * 50 packet x 5 parametre = 250 ParsedParameter
+     */
+    QList<ParsedParameter> allParsedParameters;
+
+    allParsedParameters.reserve(
+        parsedPackets.size() *
+        m_rawParameterDefinitions.size()
+        );
 
     bool hasSuccessfulParameter = false;
     bool hasErrorParameter = false;
 
-    for (const ParsedParameter &parameter : parsedParameters)
+    for (const QList<ParsedParameter> &packet : parsedPackets)
     {
-        if (parameter.parsedSuccessfully())
-            hasSuccessfulParameter = true;
+        for (const ParsedParameter &parameter : packet)
+        {
+            allParsedParameters.append(parameter);
 
-        if (parameter.hasError())
-            hasErrorParameter = true;
+            if (parameter.parsedSuccessfully())
+                hasSuccessfulParameter = true;
+
+            if (parameter.hasError())
+                hasErrorParameter = true;
+        }
+    }
+
+    if (allParsedParameters.isEmpty())
+    {
+        setError(QStringLiteral("Raw data parser produced no parameter results."));
+        return false;
     }
 
     if (!hasSuccessfulParameter)
@@ -2662,57 +2798,358 @@ bool AppController::parseRawData()
         return false;
     }
 
+    m_parameterModel.setParameters(allParsedParameters);
+
     m_rawParseAvailable = true;
     emit rawParseChanged();
 
-    if (hasErrorParameter)
+    const int ignoredByteCount =
+        m_rawData.size() % packetSize;
+
+    if (hasErrorParameter && ignoredByteCount > 0)
     {
         setError(
             QStringLiteral(
-                "Raw data was parsed, but one or more parameters contain errors."
+                "Raw data was parsed into %1 packets, but one or more "
+                "parameters contain errors and %2 trailing byte(s) were ignored."
                 )
+                .arg(parsedPackets.size())
+                .arg(ignoredByteCount)
+            );
+    }
+    else if (hasErrorParameter)
+    {
+        setError(
+            QStringLiteral(
+                "Raw data was parsed into %1 packets, but one or more "
+                "parameters contain errors."
+                )
+                .arg(parsedPackets.size())
+            );
+    }
+    else if (ignoredByteCount > 0)
+    {
+        setError(
+            QStringLiteral(
+                "Raw data was parsed into %1 packets. "
+                "%2 trailing byte(s) were ignored because they do not "
+                "form a complete packet."
+                )
+                .arg(parsedPackets.size())
+                .arg(ignoredByteCount)
             );
     }
 
     return true;
 }
 
-bool AppController::importParsedRawDataAsDataset(int datasetIndex, const QString &customName)
+bool AppController::importParsedRawDataAsDataset(
+    int datasetIndex,
+    const QString &customName
+    )
 {
     clearError();
 
-    if (!m_rawParseAvailable || m_parameterModel.isEmpty())
+    if (!m_rawParseAvailable)
     {
-        setError(QStringLiteral("Ayrıştırılmış ham veri bulunmuyor. Önce 'Parse Raw Data' çalıştırın."));
+        setError(
+            QStringLiteral(
+                "Ayrıştırılmış ham veri bulunmuyor. "
+                "Önce 'Parse Raw Data' çalıştırın."
+                )
+            );
+        return false;
+    }
+
+    if (!m_rawMetadataLoaded ||
+        m_rawParameterDefinitions.isEmpty())
+    {
+        setError(QStringLiteral("Raw metadata is not loaded."));
+        return false;
+    }
+
+    if (!m_rawDataLoaded ||
+        m_rawData.isEmpty())
+    {
+        setError(QStringLiteral("Raw data is not loaded."));
+        return false;
+    }
+
+    if (datasetIndex != 1 &&
+        datasetIndex != 2)
+    {
+        setError(QStringLiteral("Dataset index must be 1 or 2."));
+        return false;
+    }
+
+    const int packetSize =
+        m_rawDataParser.calculateRequiredPacketSize(
+            m_rawParameterDefinitions
+            );
+
+    if (packetSize <= 0)
+    {
+        setError(
+            QStringLiteral(
+                "Packet size could not be calculated from raw metadata."
+                )
+            );
+        return false;
+    }
+
+    const QList<QList<ParsedParameter>> parsedPackets =
+        m_rawDataParser.parsePackets(
+            m_rawData,
+            m_rawParameterDefinitions,
+            packetSize
+            );
+
+    if (parsedPackets.isEmpty())
+    {
+        setError(
+            QStringLiteral(
+                "Parsed raw packets are not available."
+                )
+            );
+        return false;
+    }
+
+    const QList<ParsedParameter> &firstPacket =
+        parsedPackets.first();
+
+    if (firstPacket.isEmpty())
+    {
+        setError(
+            QStringLiteral(
+                "The first parsed raw packet contains no parameters."
+                )
+            );
         return false;
     }
 
     DataSet dataSet;
-    const QString name = customName.isEmpty() ? QStringLiteral("Parsed_Raw_Packet") : customName;
+
+    const QString name =
+        customName.isEmpty()
+            ? QStringLiteral("Parsed_Raw_Data")
+            : customName;
+
     dataSet.setName(name);
     dataSet.setFilePath(m_rawDataFilePath);
-    dataSet.setSheetName(QStringLiteral("RawPacket"));
+    dataSet.setSheetName(QStringLiteral("RawPackets"));
 
-    for (int i = 0; i < m_parameterModel.parameterCount(); ++i)
+    /*
+     * Her metadata parametresi bir sütundur.
+     * Her packet ise bir satırdır.
+     *
+     * Örnek:
+     *
+     * Packet 1 -> satır 1
+     * Packet 2 -> satır 2
+     * ...
+     * Packet 50 -> satır 50
+     */
+    for (int parameterIndex = 0;
+         parameterIndex < firstPacket.size();
+         ++parameterIndex)
     {
-        const ParsedParameter *param = m_parameterModel.parameterAt(i);
-        if (!param) continue;
+        const ParsedParameter &schemaParameter =
+            firstPacket.at(parameterIndex);
 
         ColumnInfo col;
-        col.setName(param->dataName);
-        col.setOriginalName(param->dataName);
+
+        col.setName(schemaParameter.dataName);
+        col.setOriginalName(schemaParameter.dataName);
 
         QVector<QVariant> vals;
-        if (param->parsedSuccessfully())
+        vals.reserve(parsedPackets.size());
+
+        for (const QList<ParsedParameter> &packet : parsedPackets)
         {
-            vals.append(param->value);
+            if (parameterIndex >= packet.size())
+            {
+                vals.append(QVariant());
+                continue;
+            }
+
+            const ParsedParameter &parameter =
+                packet.at(parameterIndex);
+
+            if (parameter.parsedSuccessfully() &&
+                parameter.value.isValid() &&
+                !parameter.value.isNull())
+            {
+                vals.append(parameter.value);
+            }
+            else
+            {
+                vals.append(QVariant());
+            }
+        }
+
+        col.setValues(vals);
+
+        // -------------------------------------------------
+        // COLUMN DATA TYPE
+        // -------------------------------------------------
+
+        const QString typeStr =
+            schemaParameter.dataType
+                .trimmed()
+                .toLower();
+
+        if (typeStr == QStringLiteral("boolean") ||
+            typeStr == QStringLiteral("bool"))
+        {
+            col.setDataType(
+                ColumnInfo::DataType::Boolean
+                );
+        }
+        else if (
+            typeStr == QStringLiteral("float32") ||
+            typeStr == QStringLiteral("float64") ||
+            typeStr == QStringLiteral("float") ||
+            typeStr == QStringLiteral("double"))
+        {
+            col.setDataType(
+                ColumnInfo::DataType::Double
+                );
+        }
+        else if (
+            typeStr.startsWith(QStringLiteral("int")) ||
+            typeStr.startsWith(QStringLiteral("uint")))
+        {
+            bool containsDouble = false;
+
+            for (const QVariant &value : vals)
+            {
+                if (!value.isValid() ||
+                    value.isNull())
+                {
+                    continue;
+                }
+
+                if (value.type() == QVariant::Double)
+                {
+                    containsDouble = true;
+                    break;
+                }
+            }
+
+            col.setDataType(
+                containsDouble
+                    ? ColumnInfo::DataType::Double
+                    : ColumnInfo::DataType::Integer
+                );
         }
         else
         {
-            vals.append(QVariant());
+            bool hasInt = false;
+            bool hasDouble = false;
+            bool hasBool = false;
+
+            for (const QVariant &value : vals)
+            {
+                if (!value.isValid() ||
+                    value.isNull())
+                {
+                    continue;
+                }
+
+                if (value.type() == QVariant::Bool)
+                {
+                    hasBool = true;
+                }
+                else if (value.type() == QVariant::Double)
+                {
+                    hasDouble = true;
+                }
+                else if (value.canConvert<qint64>())
+                {
+                    hasInt = true;
+                }
+            }
+
+            if (hasDouble)
+            {
+                col.setDataType(
+                    ColumnInfo::DataType::Double
+                    );
+            }
+            else if (hasInt)
+            {
+                col.setDataType(
+                    ColumnInfo::DataType::Integer
+                    );
+            }
+            else if (hasBool)
+            {
+                col.setDataType(
+                    ColumnInfo::DataType::Boolean
+                    );
+            }
+            else
+            {
+                col.setDataType(
+                    ColumnInfo::DataType::Unknown
+                    );
+            }
         }
-        col.setValues(vals);
+
+        // -------------------------------------------------
+        // MISSING / UNIQUE STATISTICS
+        // -------------------------------------------------
+
+        int missingCount = 0;
+        QSet<QString> uniqueValues;
+
+        for (const QVariant &value : vals)
+        {
+            if (!value.isValid() ||
+                value.isNull() ||
+                (value.type() == QVariant::String &&
+                 value.toString().trimmed().isEmpty()))
+            {
+                ++missingCount;
+            }
+            else
+            {
+                uniqueValues.insert(
+                    value.toString()
+                    );
+            }
+        }
+
+        col.setMissingCount(
+            missingCount
+            );
+
+        const double missingPercentage =
+            vals.isEmpty()
+                ? 0.0
+                : static_cast<double>(missingCount)
+                      / static_cast<double>(vals.size())
+                      * 100.0;
+
+        col.setMissingPercentage(
+            missingPercentage
+            );
+
+        col.setUniqueCount(
+            uniqueValues.size()
+            );
+
         dataSet.addColumn(col);
+    }
+
+    if (dataSet.isEmpty())
+    {
+        setError(
+            QStringLiteral(
+                "Parsed raw data could not be converted to a dataset."
+                )
+            );
+        return false;
     }
 
     if (datasetIndex == 1)
@@ -2720,13 +3157,20 @@ bool AppController::importParsedRawDataAsDataset(int datasetIndex, const QString
         m_originalDataset1 = dataSet;
         m_dataset1 = dataSet;
         m_dataset1Modified = false;
-        m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+
+        m_dataset1ColumnModel.setColumns(
+            m_dataset1.columns()
+            );
+
         clearDataset1Quality();
         clearDataset1Outliers();
+        clearDataset1OutlierCleaning();
         clearDataset1Eda();
         clearDataset1Correlation();
         clearAnalysis();
+
         emit dataset1Changed();
+
         tryGenerateMappings();
         analyzeDataset1Quality();
     }
@@ -2735,13 +3179,20 @@ bool AppController::importParsedRawDataAsDataset(int datasetIndex, const QString
         m_originalDataset2 = dataSet;
         m_dataset2 = dataSet;
         m_dataset2Modified = false;
-        m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+
+        m_dataset2ColumnModel.setColumns(
+            m_dataset2.columns()
+            );
+
         clearDataset2Quality();
         clearDataset2Outliers();
+        clearDataset2OutlierCleaning();
         clearDataset2Eda();
         clearDataset2Correlation();
         clearAnalysis();
+
         emit dataset2Changed();
+
         tryGenerateMappings();
         analyzeDataset2Quality();
     }

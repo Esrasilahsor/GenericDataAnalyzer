@@ -55,13 +55,15 @@ Item {
 
     function refreshAnalysis() {
         if (!appController) return
-        if (page.isLoaded(1)) {
-            appController.analyzeDataset1Quality()
-            appController.analyzeDataset1OutliersAllColumns(page.outlierMethod, page.outlierParam)
-        }
-        if (page.isLoaded(2)) {
-            appController.analyzeDataset2Quality()
-            appController.analyzeDataset2OutliersAllColumns(page.outlierMethod, page.outlierParam)
+        var ds = page.activeDs
+        if (page.isLoaded(ds)) {
+            if (ds === 1) {
+                appController.analyzeDataset1Quality()
+                appController.analyzeDataset1OutliersAllColumns(page.outlierMethod, page.outlierParam)
+            } else {
+                appController.analyzeDataset2Quality()
+                appController.analyzeDataset2OutliersAllColumns(page.outlierMethod, page.outlierParam)
+            }
         }
         rebuildLists()
     }
@@ -297,7 +299,7 @@ Item {
                         enabled: page.isLoaded(1)
                         onClicked: {
                             page.activeDs = 1
-                            page.rebuildLists()
+                            page.refreshAnalysis()
                         }
                     }
 
@@ -309,7 +311,28 @@ Item {
                         enabled: page.isLoaded(2)
                         onClicked: {
                             page.activeDs = 2
-                            page.rebuildLists()
+                            page.refreshAnalysis()
+                        }
+                    }
+
+                    Rectangle {
+                        property bool isMod: page.activeDs === 1
+                            ? (page.appController && page.appController.dataset1Modified)
+                            : (page.appController && page.appController.dataset2Modified)
+                        visible: isMod
+                        Layout.preferredHeight: 28
+                        Layout.preferredWidth: 100
+                        radius: 14
+                        color: "#E6F6EE"
+                        border.width: 1
+                        border.color: theme.success
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: "✓ Temizlendi"
+                            color: theme.success
+                            font.pixelSize: 11
+                            font.bold: true
                         }
                     }
 
@@ -739,10 +762,14 @@ Item {
                         }
                     }
                     Button {
-                        Layout.preferredWidth: 170
+                        Layout.preferredWidth: 180
                         Layout.preferredHeight: 38
                         text: "Karşılaştırmaya Geç →"
-                        onClicked: page.goToPage(4)
+                        onClicked: {
+                            if (appController)
+                                appController.setCleaningCompleted(true)
+                            page.goToPage(4)
+                        }
                     }
                 }
             }
