@@ -263,15 +263,6 @@ Item {
         }
     }
 
-    StackLayout.onIsCurrentItemChanged: {
-        if (StackLayout.isCurrentItem) {
-            if (!isLoaded(1) && isLoaded(2)) {
-                page.activeDs = 2
-            }
-            refreshAnalysis()
-        }
-    }
-
     onActiveDsChanged: {
         refreshAnalysis()
     }
