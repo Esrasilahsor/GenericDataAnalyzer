@@ -26,6 +26,8 @@ public:
         ValidRole
     };
 
+    Q_PROPERTY(int count READ count NOTIFY countChanged)
+
     explicit ParameterModel(
         QObject *parent = nullptr);
 
@@ -41,7 +43,13 @@ public:
     QHash<int, QByteArray>
     roleNames() const override;
 
+    Q_INVOKABLE int count() const;
+    Q_INVOKABLE QVariantMap get(int index) const;
 
+signals:
+    void countChanged();
+
+public:
     // =====================================================
     // DATA MANAGEMENT
     // =====================================================

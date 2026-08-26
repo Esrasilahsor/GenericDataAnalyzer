@@ -166,6 +166,7 @@ void ParameterModel::setParameters(
 
 
     endResetModel();
+    emit countChanged();
 }
 
 
@@ -183,6 +184,7 @@ void ParameterModel::clear()
     m_parameters.clear();
 
     endResetModel();
+    emit countChanged();
 }
 
 
@@ -190,9 +192,35 @@ void ParameterModel::clear()
 // COUNT
 // =========================================================
 
+int ParameterModel::count() const
+{
+    return m_parameters.size();
+}
+
 int ParameterModel::parameterCount() const
 {
     return m_parameters.size();
+}
+
+QVariantMap ParameterModel::get(int index) const
+{
+    QVariantMap map;
+    if (index < 0 || index >= m_parameters.size())
+        return map;
+
+    const ParsedParameter &param = m_parameters.at(index);
+    map[QStringLiteral("dataName")] = param.dataName;
+    map[QStringLiteral("value")] = param.value;
+    map[QStringLiteral("rawValue")] = param.rawValue;
+    map[QStringLiteral("displayValue")] = param.displayValue;
+    map[QStringLiteral("dataType")] = param.dataType;
+    map[QStringLiteral("unit")] = param.unit;
+    map[QStringLiteral("info")] = param.info;
+    map[QStringLiteral("status")] = ParseStatusUtils::toString(param.status);
+    map[QStringLiteral("errorMessage")] = param.errorMessage;
+    map[QStringLiteral("warnings")] = param.warnings;
+    map[QStringLiteral("valid")] = param.parsedSuccessfully();
+    return map;
 }
 
 
