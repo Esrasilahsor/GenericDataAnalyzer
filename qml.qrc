@@ -13,6 +13,8 @@
         <file>qml/Theme.qml</file>
         <file>qml/assets/logo_dark.png</file>
         <file>qml/assets/logo_light.png</file>
+        <file>qml/assets/app_icon.ico</file>
+        <file>qml/assets/app_icon.png</file>
         <file>qml/components/DatasetDetails.qml</file>
         <file>qml/qmldir</file>
         <file>qml/pages/DataCleaningPage.qml</file>

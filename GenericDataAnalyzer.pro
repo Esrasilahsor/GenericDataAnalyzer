@@ -5,6 +5,8 @@ CONFIG += c++11
 TEMPLATE = app
 TARGET = GenericDataAnalyzer
 
+RC_ICONS = app_icon.ico
+
 
 # =========================================================
 # SOURCES

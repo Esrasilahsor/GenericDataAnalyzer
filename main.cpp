@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QCoreApplication>
@@ -27,6 +28,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 
     QApplication app(argc, argv);
+    app.setWindowIcon(QIcon(QStringLiteral(":/qml/assets/app_icon.ico")));
 
     QCoreApplication::setOrganizationName("GenericDataAnalyzer");
     QCoreApplication::setApplicationName("GenericDataAnalyzer");
