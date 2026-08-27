@@ -88,4 +88,6 @@ object_script*
 .qmake.stash
 output/
 ~$*
+dist/
+package.bat
 
