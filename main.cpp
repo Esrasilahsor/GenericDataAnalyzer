@@ -1,20 +1,32 @@
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QCoreApplication>
-
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
 
 #include "backend/AppController.h"
 
+void customLogHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+{
+    Q_UNUSED(type);
+    Q_UNUSED(context);
+    QFile file("debug_startup.log");
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append))
+    {
+        QTextStream stream(&file);
+        stream << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz ") << msg << "\n";
+    }
+}
+
 int main(int argc, char *argv[])
 {
+    qInstallMessageHandler(customLogHandler);
 
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 
-    QGuiApplication app(argc, argv);
-
-
-
+    QApplication app(argc, argv);
 
     QCoreApplication::setOrganizationName("GenericDataAnalyzer");
     QCoreApplication::setApplicationName("GenericDataAnalyzer");
@@ -37,7 +49,10 @@ int main(int argc, char *argv[])
         [url](QObject *object, const QUrl &objectUrl)
         {
             if (!object && url == objectUrl)
+            {
+                qWarning() << "Failed to create root object for URL:" << objectUrl;
                 QCoreApplication::exit(-1);
+            }
         },
         Qt::QueuedConnection
         );
