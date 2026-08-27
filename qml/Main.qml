@@ -25,6 +25,41 @@ ApplicationWindow {
     property var controller: appController
 
     // =========================================================
+    // GLOBAL ALERT / WARNING POPUP
+    // =========================================================
+
+    property string alertTitle: "Bildirim"
+    property string alertSubtitle: ""
+    property string alertMessage: ""
+    property string alertType: "warning" // "warning", "error", "info", "success"
+
+    function showAlert(title, message, subtitle, type) {
+        window.alertTitle = title || "Bildirim"
+        window.alertSubtitle = subtitle || ""
+        window.alertMessage = message || ""
+        window.alertType = type || "warning"
+        globalAlertPopup.open()
+    }
+
+    Connections {
+        target: window.controller
+        ignoreUnknownSignals: true
+
+        function onErrorChanged() {
+            if (window.controller &&
+                window.controller.lastError &&
+                window.controller.lastError !== "") {
+                window.showAlert(
+                    "İşlem / Analiz Bildirimi",
+                    window.controller.lastError,
+                    "İşlem sırasında bir bildirim veya uyarı oluştu.",
+                    "warning"
+                )
+            }
+        }
+    }
+
+    // =========================================================
     // SAYFA BAŞLIKLARI
     // =========================================================
 
@@ -249,6 +284,133 @@ ApplicationWindow {
                     appController: window.controller
                 }
             }
+        }
+    }
+
+    // =========================================================
+    // MERKEZİ MODAL BİLDİRİM / UYARI DİYALOĞU
+    // =========================================================
+
+    Popup {
+        id: globalAlertPopup
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: Math.min(520, window.width - 40)
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 0
+
+        Overlay.modal: Rectangle {
+            color: Qt.rgba(0, 0, 0, 0.45)
+        }
+
+        background: Rectangle {
+            radius: 16
+            color: AppTheme.Theme.surface
+            border.width: 1
+            border.color: AppTheme.Theme.border
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 16
+            anchors.margins: 22
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 14
+
+                Rectangle {
+                    Layout.preferredWidth: 44
+                    Layout.preferredHeight: 44
+                    radius: 22
+                    color: window.alertType === "error" ? "#FFEBEE" :
+                           window.alertType === "success" ? "#E8F5E9" :
+                           window.alertType === "info" ? "#E3F2FD" : "#FFF4E5"
+
+                    Label {
+                        anchors.centerIn: parent
+                        text: window.alertType === "error" ? "✕" :
+                              window.alertType === "success" ? "✓" :
+                              window.alertType === "info" ? "ℹ" : "⚠"
+                        color: window.alertType === "error" ? "#D32F2F" :
+                               window.alertType === "success" ? "#2E7D32" :
+                               window.alertType === "info" ? "#1976D2" : "#ED6C02"
+                        font.pixelSize: 22
+                        font.bold: true
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Label {
+                        text: window.alertTitle
+                        color: AppTheme.Theme.text
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+
+                    Label {
+                        visible: window.alertSubtitle !== ""
+                        text: window.alertSubtitle
+                        color: AppTheme.Theme.textSecondary
+                        font.pixelSize: 12
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: AppTheme.Theme.border
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: window.alertMessage
+                color: AppTheme.Theme.text
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+                lineHeight: 1.3
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    Layout.preferredWidth: 120
+                    Layout.preferredHeight: 38
+                    text: "Tamam"
+
+                    contentItem: Text {
+                        text: parent.text
+                        color: "#FFFFFF"
+                        font.pixelSize: 13
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    background: Rectangle {
+                        radius: 8
+                        color: parent.down ? AppTheme.Theme.primaryDark : AppTheme.Theme.primary
+                    }
+
+                    onClicked: {
+                        globalAlertPopup.close()
+                    }
+                }
+            }
+        }
+
+        onClosed: {
+            if (window.controller && window.controller.lastError !== "") {
+                window.controller.clearError()
+            }
+            window.alertMessage = ""
         }
     }
 }

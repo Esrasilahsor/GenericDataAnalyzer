@@ -342,99 +342,12 @@ Item {
         target: page.appController
         ignoreUnknownSignals: true
 
-        function onErrorChanged() {
-            if (page.appController &&
-                page.appController.lastError &&
-                page.appController.lastError !== "") {
-                page.setAnalysisError(page.appController.lastError)
-            }
-        }
-
         function onDataset1Changed() {
             page.runQualityAnalysis(1)
         }
 
         function onDataset2Changed() {
             page.runQualityAnalysis(2)
-        }
-    }
-
-    Popup {
-        id: errorPopup
-        anchors.centerIn: parent
-        width: Math.min(460, page.width - 40)
-        modal: true
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        padding: 0
-
-        background: Rectangle {
-            radius: 16
-            color: theme.surface
-            border.width: 1
-            border.color: theme.border
-        }
-
-        contentItem: ColumnLayout {
-            spacing: 16
-            anchors.margins: 20
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 12
-
-                Rectangle {
-                    Layout.preferredWidth: 40
-                    Layout.preferredHeight: 40
-                    radius: 20
-                    color: "#FFF4E5"
-                    Label {
-                        anchors.centerIn: parent
-                        text: "⚠"
-                        color: theme.warning
-                        font.pixelSize: 20
-                        font.bold: true
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    Label {
-                        text: "Analiz Uyarısı"
-                        color: theme.text
-                        font.pixelSize: 15
-                        font.bold: true
-                    }
-                    Label {
-                        text: "Sayısal olmayan sütun veya işlem hatası."
-                        color: theme.textSecondary
-                        font.pixelSize: 12
-                    }
-                }
-            }
-
-            Label {
-                Layout.fillWidth: true
-                text: page.analysisError
-                color: theme.text
-                font.pixelSize: 13
-                wrapMode: Text.WordWrap
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                Button {
-                    Layout.preferredWidth: 100
-                    Layout.preferredHeight: 36
-                    text: "Tamam"
-                    onClicked: {
-                        errorPopup.close()
-                        page.analysisError = ""
-                    }
-                }
-            }
         }
     }
 
