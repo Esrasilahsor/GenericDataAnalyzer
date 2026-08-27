@@ -386,6 +386,8 @@ public:
     Q_INVOKABLE void clearRawData();
     Q_INVOKABLE void clearRawParse();
 
+    Q_INVOKABLE void clearError();
+
 signals:
     void dataset1Changed();
     void dataset2Changed();
@@ -512,7 +514,6 @@ private:
     void tryGenerateMappings();
 
     void setError(const QString &message);
-    void clearError();
 
     QVariantMap statisticsToVariantMap(
         const StatisticsResult &statistics

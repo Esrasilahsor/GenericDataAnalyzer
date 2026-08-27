@@ -37,10 +37,13 @@ int main(int argc, char *argv[])
 
     AppController appController;
 
-    engine.rootContext()->setContextProperty(
-        "appController",
+    qmlRegisterSingletonInstance<AppController>(
+        "GenericDataAnalyzer",
+        1,
+        0,
+        "AppController",
         &appController
-        );
+    );
 
     const QUrl url(QStringLiteral("qrc:/qml/Main.qml"));
 

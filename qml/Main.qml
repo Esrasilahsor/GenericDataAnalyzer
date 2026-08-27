@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
+import GenericDataAnalyzer 1.0
 import "." as AppTheme
 import "components" as Components
 import "pages" as Pages
@@ -22,7 +23,7 @@ ApplicationWindow {
     color: AppTheme.Theme.background
 
     property int currentPage: 0
-    property var controller: appController
+    property var controller: AppController
 
     // =========================================================
     // GLOBAL ALERT / WARNING POPUP
