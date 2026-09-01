@@ -90,13 +90,14 @@ Rectangle {
 
         Repeater {
             model: [
-                { title: "Dashboard", icon: "⌂" },
-                { title: "Veri Setleri", icon: "▣" },
-                { title: "Veri Analizi", icon: "▥" },
-                { title: "Veri Temizleme", icon: "✦" },
-                { title: "Karşılaştırma", icon: "⇆" },
-                { title: "Görselleştirme", icon: "📈" },
-                { title: "Raw Data Ayrıştırma", icon: "⚡" }
+                { title: qsTr("Dashboard"), icon: "⌂" },
+                { title: qsTr("Datasets"), icon: "▣" },
+                { title: qsTr("Data Analysis"), icon: "▥" },
+                { title: qsTr("Data Cleaning"), icon: "✦" },
+                { title: qsTr("Comparison"), icon: "⇆" },
+                { title: qsTr("Visualization"), icon: "📈" },
+                { title: qsTr("Export"), icon: "📥" },
+                { title: qsTr("Raw Data Parsing"), icon: "⚡" }
             ]
 
             delegate: Rectangle {
@@ -206,7 +207,7 @@ Rectangle {
                 }
 
                 Label {
-                    text: AppTheme.Theme.darkMode ? "Koyu Tema" : "Açık Tema"
+                    text: AppTheme.Theme.darkMode ? qsTr("Dark Mode") : qsTr("Light Mode")
                     color: AppTheme.Theme.text
                     font.pixelSize: 12
                     font.bold: true
@@ -247,7 +248,7 @@ Rectangle {
         // =================================================
 
         Label {
-            text: "Generic Data Analyzer"
+            text: qsTr("Generic Data Analyzer")
 
             color: AppTheme.Theme.textSecondary
 

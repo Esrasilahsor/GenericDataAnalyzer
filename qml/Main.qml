@@ -18,7 +18,7 @@ ApplicationWindow {
     minimumWidth: 1100
     minimumHeight: 700
 
-    title: "Generic Data Analyzer"
+    title: qsTr("Generic Data Analyzer")
 
     color: AppTheme.Theme.background
 
@@ -29,17 +29,14 @@ ApplicationWindow {
     // GLOBAL ALERT / WARNING POPUP
     // =========================================================
 
-    property string alertTitle: "Bildirim"
-    property string alertSubtitle: ""
-    property string alertMessage: ""
-    property string alertType: "warning" // "warning", "error", "info", "success"
-
-    function showAlert(title, message, subtitle, type) {
-        window.alertTitle = title || "Bildirim"
-        window.alertSubtitle = subtitle || ""
-        window.alertMessage = message || ""
-        window.alertType = type || "warning"
-        globalAlertPopup.open()
+    function showAlert(title, message, subtitle, type, helpText) {
+        globalAlertPopup.showNotification(
+            title || qsTr("Operation / Analysis Notification"),
+            message || "",
+            subtitle || qsTr("A notification or warning occurred during the operation."),
+            type || "warning",
+            helpText || qsTr("You can review the documentation for information about the file format.")
+        )
     }
 
     Connections {
@@ -51,9 +48,9 @@ ApplicationWindow {
                 window.controller.lastError &&
                 window.controller.lastError !== "") {
                 window.showAlert(
-                    "İşlem / Analiz Bildirimi",
+                    qsTr("Operation / Analysis Notification"),
                     window.controller.lastError,
-                    "İşlem sırasında bir bildirim veya uyarı oluştu.",
+                    qsTr("A notification or warning occurred during the operation."),
                     "warning"
                 )
             }
@@ -67,28 +64,31 @@ ApplicationWindow {
     function pageTitle(index) {
         switch (index) {
         case 0:
-            return "Dashboard"
+            return qsTr("Dashboard")
 
         case 1:
-            return "Veri Setleri"
+            return qsTr("Datasets")
 
         case 2:
-            return "Veri Analizi"
+            return qsTr("Data Analysis")
 
         case 3:
-            return "Veri Temizleme"
+            return qsTr("Data Cleaning")
 
         case 4:
-            return "Karşılaştırma"
+            return qsTr("Comparison")
 
         case 5:
-            return "Görselleştirme"
+            return qsTr("Visualization")
 
         case 6:
-            return "Raw Data Parsing"
+            return qsTr("Export")
+
+        case 7:
+            return qsTr("Raw Data Parsing")
 
         default:
-            return "Dashboard"
+            return qsTr("Dashboard")
         }
     }
 
@@ -99,25 +99,28 @@ ApplicationWindow {
     function pageSubtitle(index) {
         switch (index) {
         case 0:
-            return "Sistem genel durumu, yüklü veri setleri ve hızlı analiz özeti."
+            return qsTr("System status overview, loaded datasets and quick summary.")
 
         case 1:
-            return "Excel, CSV veya JSON formatındaki veri setlerinizi yükleyin ve yönetin."
+            return qsTr("Load, inspect and manage your Excel, CSV or text datasets.")
 
         case 2:
-            return "Sütun bazlı istatistikler, dağılımlar ve korelasyon analizi gerçekleştirin."
+            return qsTr("Perform column-based statistics, exploratory analysis and correlations.")
 
         case 3:
-            return "Eksik verileri doldurun, aykırı değerleri temizleyin ve tekrarları kaldırın."
+            return qsTr("Handle missing values, clean outliers and eliminate duplicates.")
 
         case 4:
-            return "İki farklı veri seti arasındaki benzerlik ve istatistiksel farkları inceleyin."
+            return qsTr("Map columns and compare differences between two datasets.")
 
         case 5:
-            return "Temizlenmiş veya orijinal verilerin grafiklerini inceleyin ve Excel/CSV/JSON olarak dışa aktarın."
+            return qsTr("Generate interactive charts, inspect trends and save chart visualizations.")
 
         case 6:
-            return "Protokol parametre tablosu (Excel) ile binary/metin paket verilerini ayrıştırın."
+            return qsTr("Export cleaned and analyzed dataset records to Excel, CSV or JSON formats.")
+
+        case 7:
+            return qsTr("Parse binary/text raw packet streams using protocol parameter definitions.")
 
         default:
             return ""
@@ -280,6 +283,11 @@ ApplicationWindow {
                     appController: window.controller
                 }
 
+                Pages.ExportPage {
+                    mainWindow: window
+                    appController: window.controller
+                }
+
                 Pages.RawDataPage {
                     mainWindow: window
                     appController: window.controller
@@ -292,126 +300,15 @@ ApplicationWindow {
     // MERKEZİ MODAL BİLDİRİM / UYARI DİYALOĞU
     // =========================================================
 
-    Popup {
+    Components.AnalysisNotificationDialog {
         id: globalAlertPopup
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
-        width: Math.min(520, window.width - 40)
-        modal: true
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        padding: 0
-
-        Overlay.modal: Rectangle {
-            color: Qt.rgba(0, 0, 0, 0.45)
-        }
-
-        background: Rectangle {
-            radius: 16
-            color: AppTheme.Theme.surface
-            border.width: 1
-            border.color: AppTheme.Theme.border
-        }
-
-        contentItem: ColumnLayout {
-            spacing: 16
-            anchors.margins: 22
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 14
-
-                Rectangle {
-                    Layout.preferredWidth: 44
-                    Layout.preferredHeight: 44
-                    radius: 22
-                    color: window.alertType === "error" ? "#FFEBEE" :
-                           window.alertType === "success" ? "#E8F5E9" :
-                           window.alertType === "info" ? "#E3F2FD" : "#FFF4E5"
-
-                    Label {
-                        anchors.centerIn: parent
-                        text: window.alertType === "error" ? "✕" :
-                              window.alertType === "success" ? "✓" :
-                              window.alertType === "info" ? "ℹ" : "⚠"
-                        color: window.alertType === "error" ? "#D32F2F" :
-                               window.alertType === "success" ? "#2E7D32" :
-                               window.alertType === "info" ? "#1976D2" : "#ED6C02"
-                        font.pixelSize: 22
-                        font.bold: true
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-
-                    Label {
-                        text: window.alertTitle
-                        color: AppTheme.Theme.text
-                        font.pixelSize: 16
-                        font.bold: true
-                    }
-
-                    Label {
-                        visible: window.alertSubtitle !== ""
-                        text: window.alertSubtitle
-                        color: AppTheme.Theme.textSecondary
-                        font.pixelSize: 12
-                    }
-                }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 1
-                color: AppTheme.Theme.border
-            }
-
-            Label {
-                Layout.fillWidth: true
-                text: window.alertMessage
-                color: AppTheme.Theme.text
-                font.pixelSize: 13
-                wrapMode: Text.WordWrap
-                lineHeight: 1.3
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-
-                Button {
-                    Layout.preferredWidth: 120
-                    Layout.preferredHeight: 38
-                    text: "Tamam"
-
-                    contentItem: Text {
-                        text: parent.text
-                        color: "#FFFFFF"
-                        font.pixelSize: 13
-                        font.bold: true
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-
-                    background: Rectangle {
-                        radius: 8
-                        color: parent.down ? AppTheme.Theme.primaryDark : AppTheme.Theme.primary
-                    }
-
-                    onClicked: {
-                        globalAlertPopup.close()
-                    }
-                }
-            }
-        }
 
         onClosed: {
             if (window.controller && window.controller.lastError !== "") {
                 window.controller.clearError()
             }
-            window.alertMessage = ""
         }
     }
 }

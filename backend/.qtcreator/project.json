@@ -1,0 +1,8 @@
+{
+    "$schema": "https://download.qt.io/official_releases/qtcreator/latest/installer_source/jsonschemas/project.json",
+    "files.exclude": [
+        ".qtcreator/project.json.user",
+        "build/Desktop_Qt_5_15_19_MinGW_64_bit_Debug",
+        ".gitignore"
+    ]
+}

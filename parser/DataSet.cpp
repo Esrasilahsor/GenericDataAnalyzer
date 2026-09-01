@@ -229,16 +229,19 @@ const ColumnInfo *DataSet::findColumn(
     const QString &columnName
     ) const
 {
-    for (const ColumnInfo &column :
-         m_columns)
+    const QString trimmed = columnName.trimmed();
+    if (trimmed.isEmpty())
+        return nullptr;
+
+    for (const ColumnInfo &column : m_columns)
     {
-        if (column.name() ==
-            columnName)
+        if (column.name() == trimmed ||
+            column.name().compare(trimmed, Qt::CaseInsensitive) == 0 ||
+            column.originalName().compare(trimmed, Qt::CaseInsensitive) == 0)
         {
             return &column;
         }
     }
-
 
     return nullptr;
 }
@@ -487,9 +490,14 @@ void DataSet::refreshColumnMetadata(
 
 bool DataSet::removeColumn(const QString &columnName)
 {
+    const QString target = columnName.trimmed();
+    if (target.isEmpty())
+        return false;
+
     for (int i = 0; i < m_columns.size(); ++i)
     {
-        if (m_columns.at(i).name().compare(columnName, Qt::CaseInsensitive) == 0)
+        if (m_columns.at(i).name().trimmed().compare(target, Qt::CaseInsensitive) == 0 ||
+            m_columns.at(i).originalName().trimmed().compare(target, Qt::CaseInsensitive) == 0)
         {
             m_columns.removeAt(i);
             return true;

@@ -1,6 +1,8 @@
 #include "ExportEngine.h"
 
 #include <QFile>
+#include <QDir>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -34,6 +36,13 @@ ExportResult ExportEngine::exportDataSetToCsv(
         return result;
     }
 
+    const QFileInfo fileInfo(filePath);
+    QDir parentDir = fileInfo.dir();
+    if (!parentDir.exists())
+    {
+        parentDir.mkpath(QStringLiteral("."));
+    }
+
     QFile file(filePath);
 
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -58,10 +67,10 @@ ExportResult ExportEngine::exportDataSetToCsv(
 
     for (int columnIndex = 0; columnIndex < columns.size(); ++columnIndex)
     {
-        if (columnIndex > 0)
-            stream << ",";
-
         stream << normalizeCsvValue(columns.at(columnIndex).name());
+
+        if (columnIndex < columns.size() - 1)
+            stream << ",";
     }
 
     stream << "\n";
@@ -70,23 +79,23 @@ ExportResult ExportEngine::exportDataSetToCsv(
     {
         for (int columnIndex = 0; columnIndex < columns.size(); ++columnIndex)
         {
-            if (columnIndex > 0)
-                stream << ",";
-
             const QVector<QVariant> values =
                 columns.at(columnIndex).values();
 
-            QString value;
+            QString stringValue;
 
             if (row < values.size())
             {
-                const QVariant &variant = values.at(row);
+                const QVariant value = values.at(row);
 
-                if (variant.isValid() && !variant.isNull())
-                    value = variant.toString();
+                if (!value.isNull() && value.isValid())
+                    stringValue = value.toString();
             }
 
-            stream << normalizeCsvValue(value);
+            stream << normalizeCsvValue(stringValue);
+
+            if (columnIndex < columns.size() - 1)
+                stream << ",";
         }
 
         stream << "\n";
@@ -118,6 +127,13 @@ ExportResult ExportEngine::exportDataSetToJson(
         return result;
     }
 
+    const QFileInfo fileInfo(filePath);
+    QDir parentDir = fileInfo.dir();
+    if (!parentDir.exists())
+    {
+        parentDir.mkpath(QStringLiteral("."));
+    }
+
     const QVector<ColumnInfo> columns = dataSet.columns();
 
     if (columns.isEmpty())
@@ -133,40 +149,30 @@ ExportResult ExportEngine::exportDataSetToJson(
     {
         QJsonObject rowObject;
 
-        for (const ColumnInfo &column : columns)
+        for (int columnIndex = 0; columnIndex < columns.size(); ++columnIndex)
         {
+            const ColumnInfo &column = columns.at(columnIndex);
             const QVector<QVariant> values = column.values();
 
-            if (row >= values.size())
+            QVariant value;
+
+            if (row < values.size())
+                value = values.at(row);
+
+            if (!value.isNull() && value.isValid())
             {
-                rowObject.insert(column.name(), QJsonValue::Null);
-                continue;
+                rowObject.insert(
+                    column.name(),
+                    QJsonValue::fromVariant(value)
+                    );
             }
-
-            const QVariant &value = values.at(row);
-
-            if (!value.isValid() || value.isNull())
+            else
             {
-                rowObject.insert(column.name(), QJsonValue::Null);
-                continue;
+                rowObject.insert(
+                    column.name(),
+                    QJsonValue::Null
+                    );
             }
-
-            if (value.type() == QVariant::Bool)
-            {
-                rowObject.insert(column.name(), value.toBool());
-                continue;
-            }
-
-            bool numericOk = false;
-            const double numericValue = value.toDouble(&numericOk);
-
-            if (numericOk)
-            {
-                rowObject.insert(column.name(), numericValue);
-                continue;
-            }
-
-            rowObject.insert(column.name(), value.toString());
         }
 
         rowsArray.append(rowObject);
@@ -239,6 +245,13 @@ ExportResult ExportEngine::exportDataSetToXlsx(
     }
 
     result.filePath = normalizedPath;
+
+    const QFileInfo fileInfo(normalizedPath);
+    QDir parentDir = fileInfo.dir();
+    if (!parentDir.exists())
+    {
+        parentDir.mkpath(QStringLiteral("."));
+    }
 
     Document document;
 

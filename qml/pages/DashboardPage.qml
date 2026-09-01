@@ -27,13 +27,13 @@ Item {
 
     function name(dataset) {
         if (!page.appController)
-            return "Yüklenmedi"
+            return qsTr("Not loaded")
 
         var value = dataset === 1
                 ? page.appController.dataset1Name
                 : page.appController.dataset2Name
 
-        return value !== "" ? value : "Yüklenmedi"
+        return value !== "" ? value : qsTr("Not loaded")
     }
 
     function rows(dataset) {
@@ -71,40 +71,48 @@ Item {
                 ? page.appController.dataset1QualityResult
                 : page.appController.dataset2QualityResult
 
-        return Number(result.columnsWithMissingValues || 0)
-                + (Number(result.duplicateRowCount || 0) > 0 ? 1 : 0)
-                + Number(result.constantColumnCount || 0)
+        var hasMissing = (Number(result.totalMissingValues || 0) > 0 || Number(result.columnsWithMissingValues || 0) > 0) ? 1 : 0
+        var hasDuplicates = Number(result.duplicateRowCount || 0) > 0 ? 1 : 0
+        var hasConstants = Number(result.constantColumnCount || 0) > 0 ? 1 : 0
+
+        var isOutlierAvail = dataset === 1
+                ? (page.appController && page.appController.dataset1OutlierAvailable)
+                : (page.appController && page.appController.dataset2OutlierAvailable)
+        var outResult = dataset === 1
+                ? (page.appController ? page.appController.dataset1OutlierResult : null)
+                : (page.appController ? page.appController.dataset2OutlierResult : null)
+        var hasOutliers = 0
+        if (isOutlierAvail && outResult) {
+            hasOutliers = Number(outResult.outlierCount || 0) > 0 ? 1 : 0
+        } else if (result && (result.hasOutliers === true || Number(result.outlierCount || 0) > 0)) {
+            hasOutliers = 1
+        }
+
+        return hasMissing + hasDuplicates + hasConstants + hasOutliers
     }
 
     function datasetStatus(dataset) {
         if (!loaded(dataset))
-            return "Dosya yüklenmedi"
+            return qsTr("No file loaded")
 
         if (!qualityAvailable(dataset))
-            return "Analiz bekliyor"
+            return qsTr("Pending analysis")
+
+        if (problemCount(dataset) > 0)
+            return qsTr("⚠ Review required")
 
         var isModified = dataset === 1
             ? (page.appController && page.appController.dataset1Modified)
             : (page.appController && page.appController.dataset2Modified)
 
-        if (isModified)
-            return "✓ Temizlendi / Güncellendi"
-
-        return problemCount(dataset) > 0
-                ? "⚠ İnceleme gerekli"
-                : "✓ Analize hazır"
+        return isModified
+                ? qsTr("✓ Cleaned / Updated")
+                : qsTr("✓ Ready for analysis")
     }
 
     function datasetStatusColor(dataset) {
         if (!loaded(dataset) || !qualityAvailable(dataset))
             return theme.textSecondary
-
-        var isModified = dataset === 1
-            ? (page.appController && page.appController.dataset1Modified)
-            : (page.appController && page.appController.dataset2Modified)
-
-        if (isModified)
-            return theme.success
 
         return problemCount(dataset) > 0
                 ? theme.warning
@@ -137,11 +145,15 @@ Item {
     }
 
     ScrollView {
+        id: pageScrollView
         anchors.fill: parent
         clip: true
+        contentWidth: availableWidth
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
-            width: page.width
+            width: pageScrollView.availableWidth
             spacing: 18
 
             // =================================================
@@ -196,14 +208,14 @@ Item {
                         spacing: 4
 
                         Label {
-                            text: "Analiz sürecine başlayın"
+                            text: qsTr("Start the analysis workflow")
                             color: theme.text
                             font.pixelSize: 16
                             font.bold: true
                         }
 
                         Label {
-                            text: "İki veri setini yükleyerek kalite, istatistik, aykırı değer ve karşılaştırma adımlarını tek akışta tamamlayabilirsiniz."
+                            text: qsTr("Load your datasets to complete data quality, statistics, outlier cleaning and comparison in one smooth workflow.")
                             color: theme.textSecondary
                             font.pixelSize: 12
                             wrapMode: Text.WordWrap
@@ -214,7 +226,7 @@ Item {
                     Button {
                         Layout.preferredWidth: 175
                         Layout.preferredHeight: 42
-                        text: "Veri Setlerine Git →"
+                        text: qsTr("Go to Datasets →")
                         onClicked: page.go(1)
 
                         contentItem: Text {
@@ -271,7 +283,7 @@ Item {
                                 Layout.fillWidth: true
 
                                 Label {
-                                    text: "DATASET " + datasetCard.dataset
+                                    text: qsTr("DATASET %1").arg(datasetCard.dataset)
                                     color: theme.primary
                                     font.pixelSize: 12
                                     font.bold: true
@@ -298,11 +310,8 @@ Item {
                             Label {
                                 text:
                                     datasetCard.isLoaded
-                                    ? page.rows(datasetCard.dataset)
-                                      + " satır  •  "
-                                      + page.columns(datasetCard.dataset)
-                                      + " sütun"
-                                    : "Dosya yüklenmedi"
+                                    ? qsTr("%1 records  •  %2 columns").arg(page.rows(datasetCard.dataset)).arg(page.columns(datasetCard.dataset))
+                                    : qsTr("No file loaded")
                                 color: theme.textSecondary
                                 font.pixelSize: 12
                             }
@@ -314,16 +323,16 @@ Item {
 
                                 text:
                                     datasetCard.isLoaded && page.qualityAvailable(datasetCard.dataset)
-                                    ? (isMod
-                                       ? ("Temizleme uygulandı (" + (datasetCard.hasProblems ? page.problemCount(datasetCard.dataset) + " kalan sorun)" : "tüm sorunlar giderildi)"))
-                                       : (datasetCard.hasProblems
-                                          ? page.problemCount(datasetCard.dataset) + " kalite problemi tespit edildi."
-                                          : "Kalite problemi tespit edilmedi."))
-                                    : "Analiz sonucu henüz oluşturulmadı."
+                                    ? (datasetCard.hasProblems
+                                       ? (page.problemCount(datasetCard.dataset) === 1
+                                          ? qsTr("1 data quality issue detected.")
+                                          : qsTr("%1 data quality issues detected.").arg(page.problemCount(datasetCard.dataset)))
+                                       : (isMod
+                                          ? qsTr("Cleaning applied (all issues resolved)")
+                                          : qsTr("No data quality issues detected.")))
+                                    : qsTr("Analysis result not yet generated.")
                                 color:
-                                    isMod
-                                    ? theme.success
-                                    : (datasetCard.hasProblems ? theme.warning : theme.textSecondary)
+                                    datasetCard.hasProblems ? theme.warning : (isMod ? theme.success : theme.textSecondary)
                                 font.pixelSize: 12
                             }
 
@@ -337,8 +346,8 @@ Item {
 
                                 text:
                                     !datasetCard.isLoaded
-                                    ? "Veri Setlerine Git"
-                                    : "Veri Analizine Git →"
+                                    ? qsTr("Go to Datasets")
+                                    : qsTr("Go to Data Analysis →")
 
                                 onClicked:
                                     page.go(
@@ -385,14 +394,14 @@ Item {
                     spacing: 10
 
                     Label {
-                        text: "Analiz İş Akışı"
+                        text: qsTr("Analysis Workflow")
                         color: theme.text
                         font.pixelSize: 16
                         font.bold: true
                     }
 
                     Label {
-                        text: "Her adım bir sonraki aşamaya yönlendirir."
+                        text: qsTr("Each step guides you through the full data pipeline.")
                         color: theme.textSecondary
                         font.pixelSize: 12
                     }
@@ -406,32 +415,32 @@ Item {
                             model: [
                                 {
                                     number: "01",
-                                    title: "Veri Setleri",
-                                    description: "Excel / CSV yükle ve önizle",
+                                    title: qsTr("Datasets"),
+                                    description: qsTr("Load and preview Excel / CSV / Text"),
                                     pageIndex: 1
                                 },
                                 {
                                     number: "02",
-                                    title: "Veri Analizi",
-                                    description: "Kalite, istatistik ve outlier",
+                                    title: qsTr("Data Analysis"),
+                                    description: qsTr("Quality, statistics and outlier inspection"),
                                     pageIndex: 2
                                 },
                                 {
                                     number: "03",
-                                    title: "Veri Temizleme",
-                                    description: "Sorunları seç ve uygula",
+                                    title: qsTr("Data Cleaning"),
+                                    description: qsTr("Resolve issues and clean data"),
                                     pageIndex: 3
                                 },
                                 {
                                     number: "04",
-                                    title: "Karşılaştırma",
-                                    description: "Eşleştir ve karşılaştır",
+                                    title: qsTr("Comparison"),
+                                    description: qsTr("Map columns and compare differences"),
                                     pageIndex: 4
                                 },
                                 {
                                     number: "05",
-                                    title: "Görselleştirme",
-                                    description: "Grafik çiz ve dışa aktar",
+                                    title: qsTr("Visualization"),
+                                    description: qsTr("Generate charts and export results"),
                                     pageIndex: 5
                                 }
                             ]
@@ -471,7 +480,7 @@ Item {
                                         Rectangle {
                                             visible: page.isStepCompleted(modelData.pageIndex)
                                             Layout.preferredHeight: 20
-                                            Layout.preferredWidth: 80
+                                            Layout.preferredWidth: 85
                                             radius: 10
                                             color: "#E6F6EE"
                                             border.width: 1
@@ -479,7 +488,7 @@ Item {
 
                                             Label {
                                                 anchors.centerIn: parent
-                                                text: "✓ Tamamlandı"
+                                                text: qsTr("✓ Completed")
                                                 color: theme.success
                                                 font.pixelSize: 9
                                                 font.bold: true
@@ -504,7 +513,7 @@ Item {
                                     }
 
                                     Label {
-                                        text: page.isStepCompleted(modelData.pageIndex) ? "Görüntüle →" : "Aç →"
+                                        text: page.isStepCompleted(modelData.pageIndex) ? qsTr("View →") : qsTr("Open →")
                                         color: page.isStepCompleted(modelData.pageIndex) ? theme.success : theme.primary
                                         font.pixelSize: 12
                                         font.bold: true
@@ -557,14 +566,14 @@ Item {
                             RowLayout {
                                 spacing: 8
                                 Label {
-                                    text: "🕒 Son İşlemler ve Oturum Kayıtları"
+                                    text: qsTr("🕒 Recent Operations & Session History")
                                     color: theme.text
                                     font.pixelSize: 15
                                     font.bold: true
                                 }
 
                                 Rectangle {
-                                    visible: page.appController && page.appController.autoRestoreEnabled
+                                    visible: page.appController && page.appController.sessionRestored
                                     Layout.preferredHeight: 20
                                     Layout.preferredWidth: 140
                                     radius: 10
@@ -574,7 +583,7 @@ Item {
 
                                     Label {
                                         anchors.centerIn: parent
-                                        text: "✓ Oturum Hatırlandı"
+                                        text: qsTr("✓ Session Restored")
                                         color: theme.success
                                         font.pixelSize: 10
                                         font.bold: true
@@ -583,18 +592,41 @@ Item {
                             }
 
                             Label {
-                                text: "Önceki oturumunuzda çalıştığınız dosyalar ve son yapılan analiz / temizleme işlemleri."
+                                text: qsTr("Files from your previous session and recent analysis / cleaning activities.")
                                 color: theme.textSecondary
                                 font.pixelSize: 12
                             }
                         }
 
                         Button {
-                            visible: page.appController && page.appController.hasPreviousSession
+                            id: restoreSessionBtn
+                            visible: page.appController && page.appController.hasPreviousSession && !page.appController.sessionRestored
                             Layout.preferredHeight: 34
                             Layout.preferredWidth: 180
-                            text: "🔄 Son Oturumu Yükle"
+                            text: qsTr("🔄 Restore Last Session")
+                            property bool clickFeedback: false
+                            Timer {
+                                id: restoreSessionTimer
+                                interval: 450
+                                onTriggered: restoreSessionBtn.clickFeedback = false
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: theme.text
+                                font.pixelSize: 11
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: restoreSessionBtn.down ? theme.surfaceAlt : (restoreSessionBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: restoreSessionBtn.clickFeedback ? theme.success : theme.border
+                                border.width: 1
+                            }
                             onClicked: {
+                                clickFeedback = true
+                                restoreSessionTimer.restart()
                                 if (page.appController) {
                                     page.appController.restoreLastSession()
                                 }
@@ -602,12 +634,35 @@ Item {
                         }
 
                         Button {
+                            id: clearHistoryBtn
                             visible: (page.appController && page.appController.recentActivities.length > 0) ||
                                      (page.appController && page.appController.recentFiles.length > 0)
                             Layout.preferredHeight: 34
                             Layout.preferredWidth: 120
-                            text: "🗑 Geçmişi Sil"
+                            text: qsTr("🗑 Clear History")
+                            property bool clickFeedback: false
+                            Timer {
+                                id: clearHistoryTimer
+                                interval: 450
+                                onTriggered: clearHistoryBtn.clickFeedback = false
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: theme.text
+                                font.pixelSize: 11
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: clearHistoryBtn.down ? theme.surfaceAlt : (clearHistoryBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: clearHistoryBtn.clickFeedback ? theme.success : theme.border
+                                border.width: 1
+                            }
                             onClicked: {
+                                clickFeedback = true
+                                clearHistoryTimer.restart()
                                 if (page.appController) {
                                     page.appController.clearRecentActivities()
                                     page.appController.clearRecentFiles()
@@ -639,14 +694,14 @@ Item {
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Label {
-                                        text: "📂 Son Kullanılan Dosyalar"
+                                        text: qsTr("📂 Recent Files")
                                         color: theme.text
                                         font.pixelSize: 13
                                         font.bold: true
                                     }
                                     Item { Layout.fillWidth: true }
                                     Label {
-                                        text: ((page.appController && page.appController.recentFiles) ? page.appController.recentFiles.length : 0) + " dosya"
+                                        text: qsTr("%1 files").arg((page.appController && page.appController.recentFiles) ? page.appController.recentFiles.length : 0)
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                     }
@@ -656,6 +711,7 @@ Item {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
                                     clip: true
+                                    boundsBehavior: Flickable.StopAtBounds
                                     spacing: 6
                                     model: page.appController ? page.appController.recentFiles : []
 
@@ -698,7 +754,7 @@ Item {
                                                     Layout.fillWidth: true
                                                 }
                                                 Label {
-                                                    text: (modelData.type || "") + " • " + (modelData.rowCount ? modelData.rowCount + " satır • " : "") + (modelData.timestamp || "")
+                                                    text: (modelData.type || "") + " • " + (modelData.rowCount ? qsTr("%1 records • ").arg(modelData.rowCount) : "") + (modelData.timestamp || "")
                                                     color: theme.textSecondary
                                                     font.pixelSize: 10
                                                     elide: Text.ElideRight
@@ -707,11 +763,26 @@ Item {
                                             }
 
                                             Button {
+                                                id: loadD1Btn
                                                 Layout.preferredHeight: 28
-                                                Layout.preferredWidth: 65
-                                                text: "D1 Yükle"
+                                                Layout.preferredWidth: 68
+                                                text: qsTr("Load D1")
                                                 font.pixelSize: 10
+                                                property bool clickFeedback: false
+                                                Timer {
+                                                    id: loadD1Timer
+                                                    interval: 450
+                                                    onTriggered: loadD1Btn.clickFeedback = false
+                                                }
+                                                background: Rectangle {
+                                                    radius: 6
+                                                    color: loadD1Btn.down ? theme.surfaceAlt : (loadD1Btn.hovered ? theme.surfaceAlt : theme.surface)
+                                                    border.color: loadD1Btn.clickFeedback ? theme.success : theme.border
+                                                    border.width: 1
+                                                }
                                                 onClicked: {
+                                                    clickFeedback = true
+                                                    loadD1Timer.restart()
                                                     if (page.appController && modelData.path) {
                                                         page.appController.loadRecentFileAsDataset(1, modelData.path)
                                                     }
@@ -719,11 +790,26 @@ Item {
                                             }
 
                                             Button {
+                                                id: loadD2Btn
                                                 Layout.preferredHeight: 28
-                                                Layout.preferredWidth: 65
-                                                text: "D2 Yükle"
+                                                Layout.preferredWidth: 68
+                                                text: qsTr("Load D2")
                                                 font.pixelSize: 10
+                                                property bool clickFeedback: false
+                                                Timer {
+                                                    id: loadD2Timer
+                                                    interval: 450
+                                                    onTriggered: loadD2Btn.clickFeedback = false
+                                                }
+                                                background: Rectangle {
+                                                    radius: 6
+                                                    color: loadD2Btn.down ? theme.surfaceAlt : (loadD2Btn.hovered ? theme.surfaceAlt : theme.surface)
+                                                    border.color: loadD2Btn.clickFeedback ? theme.success : theme.border
+                                                    border.width: 1
+                                                }
                                                 onClicked: {
+                                                    clickFeedback = true
+                                                    loadD2Timer.restart()
                                                     if (page.appController && modelData.path) {
                                                         page.appController.loadRecentFileAsDataset(2, modelData.path)
                                                     }
@@ -735,7 +821,7 @@ Item {
                                     Label {
                                         anchors.centerIn: parent
                                         visible: !page.appController || !page.appController.recentFiles || page.appController.recentFiles.length === 0
-                                        text: "Henüz açılan dosya geçmişi yok."
+                                        text: qsTr("No recent file history.")
                                         color: theme.textSecondary
                                         font.pixelSize: 12
                                     }
@@ -760,14 +846,14 @@ Item {
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Label {
-                                        text: "⚡ Son Yapılan İşlemler"
+                                        text: qsTr("⚡ Recent Activities")
                                         color: theme.text
                                         font.pixelSize: 13
                                         font.bold: true
                                     }
                                     Item { Layout.fillWidth: true }
                                     Label {
-                                        text: ((page.appController && page.appController.recentActivities) ? page.appController.recentActivities.length : 0) + " kayıt"
+                                        text: qsTr("%1 records").arg((page.appController && page.appController.recentActivities) ? page.appController.recentActivities.length : 0)
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                     }
@@ -777,6 +863,7 @@ Item {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
                                     clip: true
+                                    boundsBehavior: Flickable.StopAtBounds
                                     spacing: 6
                                     model: page.appController ? page.appController.recentActivities : []
 
@@ -797,21 +884,21 @@ Item {
                                                 Layout.preferredHeight: 22
                                                 Layout.preferredWidth: 68
                                                 radius: 4
-                                                color: modelData.category === "Yükleme" ? "#E3F2FD" :
-                                                       modelData.category === "Temizleme" ? "#FFF3E0" :
-                                                       modelData.category === "Karşılaştırma" ? "#FCE4EC" :
-                                                       modelData.category === "Görselleştirme" ? "#E8F5E9" :
-                                                       modelData.category === "Ham Veri" ? "#EDE7F6" : "#ECEFF1"
+                                                color: modelData.category === "Yükleme" || modelData.category === "Load" ? "#E3F2FD" :
+                                                       modelData.category === "Temizleme" || modelData.category === "Cleaning" ? "#FFF3E0" :
+                                                       modelData.category === "Karşılaştırma" || modelData.category === "Comparison" ? "#FCE4EC" :
+                                                       modelData.category === "Görselleştirme" || modelData.category === "Visualization" ? "#E8F5E9" :
+                                                       modelData.category === "Ham Veri" || modelData.category === "Raw Data" ? "#EDE7F6" : "#ECEFF1"
                                                 Label {
                                                     anchors.centerIn: parent
-                                                    text: modelData.category || "İşlem"
+                                                    text: modelData.category || qsTr("Action")
                                                     font.pixelSize: 9
                                                     font.bold: true
-                                                    color: modelData.category === "Yükleme" ? "#1565C0" :
-                                                           modelData.category === "Temizleme" ? "#E65100" :
-                                                           modelData.category === "Karşılaştırma" ? "#AD1457" :
-                                                           modelData.category === "Görselleştirme" ? "#2E7D32" :
-                                                           modelData.category === "Ham Veri" ? "#5E35B1" : "#455A64"
+                                                    color: modelData.category === "Yükleme" || modelData.category === "Load" ? "#1565C0" :
+                                                           modelData.category === "Temizleme" || modelData.category === "Cleaning" ? "#E65100" :
+                                                           modelData.category === "Karşılaştırma" || modelData.category === "Comparison" ? "#AD1457" :
+                                                           modelData.category === "Görselleştirme" || modelData.category === "Visualization" ? "#2E7D32" :
+                                                           modelData.category === "Ham Veri" || modelData.category === "Raw Data" ? "#5E35B1" : "#455A64"
                                                 }
                                             }
 
@@ -846,7 +933,7 @@ Item {
                                     Label {
                                         anchors.centerIn: parent
                                         visible: !page.appController || !page.appController.recentActivities || page.appController.recentActivities.length === 0
-                                        text: "Henüz işlem kaydı bulunmuyor."
+                                        text: qsTr("No activity records yet.")
                                         color: theme.textSecondary
                                         font.pixelSize: 12
                                     }
@@ -897,7 +984,7 @@ Item {
                         spacing: 2
 
                         Label {
-                            text: "Önerilen sonraki adım"
+                            text: qsTr("Recommended next step")
                             color: theme.text
                             font.pixelSize: 13
                             font.bold: true
@@ -906,15 +993,15 @@ Item {
                         Label {
                             text:
                                 !page.loaded(1) && !page.loaded(2)
-                                ? "Önce veri setlerinizi yükleyin."
+                                ? qsTr("First, load your datasets.")
                                 : (!page.qualityAvailable(1) &&
                                    (!page.loaded(2) || !page.qualityAvailable(2)))
-                                  ? "Veri Analizi ekranından veri kalitesini ve istatistikleri inceleyin."
+                                  ? qsTr("Inspect data quality and statistics in the Data Analysis page.")
                                   : (!page.isStepCompleted(3) && (page.problemCount(1) > 0 || page.problemCount(2) > 0))
-                                    ? "Tespit edilen problemleri Veri Temizleme ekranından yönetin."
+                                    ? qsTr("Manage and resolve detected problems in the Data Cleaning page.")
                                     : (!page.isStepCompleted(4) && page.loaded(1) && page.loaded(2))
-                                      ? "Veri setlerinizi Karşılaştırma ekranında eşleştirip karşılaştırın."
-                                      : "Görselleştirme sayfasında grafiklerinizi inceleyebilirsiniz."
+                                      ? qsTr("Map and compare your datasets in the Comparison page.")
+                                      : qsTr("Explore charts and trends in the Visualization page.")
                             color: theme.textSecondary
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -928,15 +1015,15 @@ Item {
 
                         text:
                             !page.loaded(1) && !page.loaded(2)
-                            ? "Veri Setlerine Git →"
+                            ? qsTr("Go to Datasets →")
                             : (!page.qualityAvailable(1) &&
                                (!page.loaded(2) || !page.qualityAvailable(2)))
-                              ? "Veri Analizi →"
+                              ? qsTr("Data Analysis →")
                               : (!page.isStepCompleted(3) && (page.problemCount(1) > 0 || page.problemCount(2) > 0))
-                                ? "Veri Temizleme →"
+                                ? qsTr("Data Cleaning →")
                                 : (!page.isStepCompleted(4) && page.loaded(1) && page.loaded(2))
-                                  ? "Karşılaştırma →"
-                                  : "Görselleştirme →"
+                                  ? qsTr("Comparison →")
+                                  : qsTr("Visualization →")
 
                         onClicked:
                             !page.loaded(1) && !page.loaded(2)

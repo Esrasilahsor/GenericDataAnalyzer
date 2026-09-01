@@ -57,7 +57,7 @@ Rectangle {
 
                     text:
                         root.datasetName === ""
-                        ? "Henüz veri seti yüklenmedi."
+                        ? qsTr("No dataset loaded yet.")
                         : root.datasetName
 
                     color: AppTheme.Theme.textSecondary
@@ -75,7 +75,7 @@ Rectangle {
                 text:
                     root.sheetName === ""
                     ? ""
-                    : "Sheet: " + root.sheetName
+                    : qsTr("Sheet: ") + root.sheetName
 
                 color: AppTheme.Theme.textSecondary
 
@@ -90,7 +90,7 @@ Rectangle {
 
             Label {
                 text:
-                    "Satır: " + root.rowCount
+                    qsTr("Rows: %1").arg(root.rowCount)
 
                 color: AppTheme.Theme.textSecondary
 
@@ -99,7 +99,7 @@ Rectangle {
 
             Label {
                 text:
-                    "Sütun: " + root.columnCount
+                    qsTr("Columns: %1").arg(root.columnCount)
 
                 color: AppTheme.Theme.textSecondary
 
@@ -131,7 +131,7 @@ Rectangle {
                 Label {
                     Layout.preferredWidth: 250
 
-                    text: "Sütun"
+                    text: qsTr("Column")
 
                     color: AppTheme.Theme.text
 
@@ -142,7 +142,7 @@ Rectangle {
                 Label {
                     Layout.preferredWidth: 130
 
-                    text: "Veri Tipi"
+                    text: qsTr("Data Type")
 
                     color: AppTheme.Theme.text
 
@@ -153,7 +153,7 @@ Rectangle {
                 Label {
                     Layout.preferredWidth: 100
 
-                    text: "Eksik"
+                    text: qsTr("Missing")
 
                     color: AppTheme.Theme.text
 
@@ -164,7 +164,7 @@ Rectangle {
                 Label {
                     Layout.preferredWidth: 100
 
-                    text: "Eksik %"
+                    text: qsTr("Missing %")
 
                     color: AppTheme.Theme.text
 
@@ -175,7 +175,7 @@ Rectangle {
                 Label {
                     Layout.preferredWidth: 100
 
-                    text: "Unique"
+                    text: qsTr("Unique")
 
                     color: AppTheme.Theme.text
 
@@ -186,7 +186,7 @@ Rectangle {
                 Label {
                     Layout.fillWidth: true
 
-                    text: "Numeric"
+                    text: qsTr("Numeric")
 
                     color: AppTheme.Theme.text
 
@@ -213,6 +213,8 @@ Rectangle {
                 anchors.fill: parent
 
                 clip: true
+
+                boundsBehavior: Flickable.StopAtBounds
 
                 model: root.model
 
@@ -301,8 +303,8 @@ Rectangle {
 
                             text:
                                 isNumeric
-                                ? "Evet"
-                                : "Hayır"
+                                ? qsTr("Yes")
+                                : qsTr("No")
 
                             color:
                                 isNumeric
@@ -328,8 +330,8 @@ Rectangle {
 
                 text:
                     root.datasetName === ""
-                    ? "Veri setini görüntülemek için dosya yükleyin."
-                    : "Sütun bilgisi bulunamadı."
+                    ? qsTr("Load a file to preview the dataset.")
+                    : qsTr("No column information found.")
 
                 color: AppTheme.Theme.textSecondary
 

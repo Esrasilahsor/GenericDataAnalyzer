@@ -7,8 +7,8 @@ import "../" as AppTheme
 Rectangle {
     id: card
 
-    property string datasetTitle: "Dataset"
-    property string fileName: "Henüz dosya seçilmedi"
+    property string datasetTitle: qsTr("Dataset")
+    property string fileName: qsTr("No file selected yet")
     property string rows: "—"
     property string columns: "—"
     property bool loaded: false
@@ -49,8 +49,8 @@ Rectangle {
             Label {
                 text:
                     card.loaded
-                    ? "Loaded"
-                    : "Empty"
+                    ? qsTr("Loaded")
+                    : qsTr("Empty")
 
                 color:
                     card.loaded
@@ -83,7 +83,7 @@ Rectangle {
                 spacing: 2
 
                 Label {
-                    text: "Records"
+                    text: qsTr("Records")
 
                     color: AppTheme.Theme.textSecondary
 
@@ -103,7 +103,7 @@ Rectangle {
                 spacing: 2
 
                 Label {
-                    text: "Columns"
+                    text: qsTr("Columns")
 
                     color: AppTheme.Theme.textSecondary
 
@@ -124,14 +124,23 @@ Rectangle {
             }
 
             Button {
-                text: "Dosya Seç"
+                id: selectFileBtn
+                text: qsTr("Select File")
+                property bool clickFeedback: false
+                Timer {
+                    id: selectFileTimer
+                    interval: 450
+                    onTriggered: selectFileBtn.clickFeedback = false
+                }
 
                 onClicked: {
+                    clickFeedback = true
+                    selectFileTimer.restart()
                     card.browseRequested()
                 }
 
                 contentItem: Text {
-                    text: "Dosya Seç"
+                    text: parent.text
 
                     color: "white"
 
@@ -147,10 +156,11 @@ Rectangle {
 
                 background: Rectangle {
                     radius: 10
-
-                    color: AppTheme.Theme.primary
+                    color: parent.down ? AppTheme.Theme.primaryDark : AppTheme.Theme.primary
+                    border.color: selectFileBtn.clickFeedback ? AppTheme.Theme.success : "transparent"
+                    border.width: 1
                 }
             }
-        }
     }
-}
+
+}}

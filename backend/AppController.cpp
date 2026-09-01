@@ -11,6 +11,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QFileInfo>
+#include <QElapsedTimer>
+#include <QDebug>
 #include <cmath>
 
 #include "../raw/FileRawDataSource.h"
@@ -22,12 +24,49 @@ AppController::AppController(QObject *parent)
     m_mappingModel(this),
     m_parameterModel(this)
 {
+    QElapsedTimer constructorTimer;
+    constructorTimer.start();
+
+    qRegisterMetaType<DataSet>("DataSet");
+    qRegisterMetaType<CleaningResult>("CleaningResult");
+    qRegisterMetaType<CleaningTask>("CleaningTask");
+    qRegisterMetaType<QList<QList<ParsedParameter>>>("QList<QList<ParsedParameter>>");
+    qRegisterMetaType<QList<ParsedParameter>>("QList<ParsedParameter>");
+
     loadSettings();
 
-    if (m_autoRestoreEnabled)
+    qInfo() << "[STARTUP] AppController constructor total:" << constructorTimer.elapsed() << "ms";
+}
+
+AppController::~AppController()
+{
+    if (m_rawParserThread)
     {
-        restoreLastSession();
+        if (m_rawParserWorker)
+        {
+            m_rawParserWorker->cancel();
+        }
+        if (m_rawParserThread->isRunning())
+        {
+            m_rawParserThread->quit();
+            m_rawParserThread->wait(3000);
+        }
     }
+
+    if (m_cleaningThread)
+    {
+        if (m_cleaningWorker)
+        {
+            m_cleaningWorker->cancel();
+        }
+        if (m_cleaningThread->isRunning())
+        {
+            m_cleaningThread->quit();
+            m_cleaningThread->wait(3000);
+        }
+    }
+
+    saveCurrentSession();
 }
 
 // =========================================================
@@ -38,14 +77,6 @@ QString AppController::dataset1Name() const { return m_dataset1.name(); }
 QString AppController::dataset2Name() const { return m_dataset2.name(); }
 QString AppController::dataDirectory() const
 {
-    // 1. Direct project path check
-    const QString knownProjectPath = QStringLiteral("C:/Users/aybuk/Desktop/GenericDataAnalyzer/data");
-    if (QDir(knownProjectPath).exists())
-    {
-        return QDir(knownProjectPath).absolutePath();
-    }
-
-    // 2. Search relative candidates
     const QString current = QDir::currentPath();
     const QStringList candidatePaths = {
         current + QStringLiteral("/data"),
@@ -173,6 +204,70 @@ int AppController::rawDataByteCount() const
     return m_rawData.size();
 }
 
+static QVariantMap cleaningTaskToMap(const CleaningTask &task)
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("operation"), static_cast<int>(task.operation));
+    m.insert(QStringLiteral("datasetIndex"), task.datasetIndex);
+    m.insert(QStringLiteral("columnName"), task.columnName);
+    m.insert(QStringLiteral("method"), task.method);
+    m.insert(QStringLiteral("action"), task.action);
+    m.insert(QStringLiteral("parameter"), task.parameter);
+    m.insert(QStringLiteral("targetColumns"), task.targetColumns);
+    QVariantList flags;
+    for (bool f : task.numericFlags) flags.append(f);
+    m.insert(QStringLiteral("numericFlags"), flags);
+    m.insert(QStringLiteral("bulkAction"), task.bulkAction);
+    return m;
+}
+
+static CleaningTask mapToCleaningTask(const QVariantMap &m)
+{
+    CleaningTask task;
+    task.operation = static_cast<CleaningTask::OperationType>(m.value(QStringLiteral("operation")).toInt());
+    task.datasetIndex = m.value(QStringLiteral("datasetIndex")).toInt();
+    task.columnName = m.value(QStringLiteral("columnName")).toString();
+    task.method = m.value(QStringLiteral("method")).toString();
+    task.action = m.value(QStringLiteral("action")).toString();
+    task.parameter = m.value(QStringLiteral("parameter")).toDouble();
+    task.targetColumns = m.value(QStringLiteral("targetColumns")).toStringList();
+    const QVariantList flags = m.value(QStringLiteral("numericFlags")).toList();
+    for (const QVariant &f : flags) task.numericFlags.append(f.toBool());
+    task.bulkAction = m.value(QStringLiteral("bulkAction")).toString();
+    return task;
+}
+
+static QVariantList tasksToVariantList(const QList<CleaningTask> &tasks)
+{
+    QVariantList list;
+    for (const CleaningTask &t : tasks)
+    {
+        list.append(cleaningTaskToMap(t));
+    }
+    return list;
+}
+
+static QList<CleaningTask> variantListToTasks(const QVariantList &list)
+{
+    QList<CleaningTask> tasks;
+    for (const QVariant &v : list)
+    {
+        tasks.append(mapToCleaningTask(v.toMap()));
+    }
+    return tasks;
+}
+
+bool AppController::dataset1HasMissingCleaning() const { return !m_dataset1MissingTasks.isEmpty(); }
+bool AppController::dataset2HasMissingCleaning() const { return !m_dataset2MissingTasks.isEmpty(); }
+bool AppController::dataset1HasOutlierCleaning() const { return !m_dataset1OutlierTasks.isEmpty(); }
+bool AppController::dataset2HasOutlierCleaning() const { return !m_dataset2OutlierTasks.isEmpty(); }
+
+bool AppController::rawParsing() const { return m_rawParsing; }
+int AppController::rawParseProgress() const { return m_rawParseProgress; }
+bool AppController::cleaningBusy() const { return m_cleaningBusy; }
+int AppController::cleaningProgress() const { return m_cleaningProgress; }
+QString AppController::cleaningStatusText() const { return m_cleaningStatusText; }
+
 QString AppController::rawMetadataFilePath() const
 {
     return m_rawMetadataFilePath;
@@ -210,8 +305,14 @@ QString AppController::lastDataset2Path() const
 
 bool AppController::hasPreviousSession() const
 {
-    return (!m_lastDataset1Path.isEmpty() && QFileInfo::exists(m_lastDataset1Path)) ||
+    return hasRestorableSession() ||
+           (!m_lastDataset1Path.isEmpty() && QFileInfo::exists(m_lastDataset1Path)) ||
            (!m_lastDataset2Path.isEmpty() && QFileInfo::exists(m_lastDataset2Path));
+}
+
+bool AppController::sessionRestored() const
+{
+    return m_sessionRestoreDecision == 1;
 }
 
 bool AppController::autoRestoreEnabled() const
@@ -231,6 +332,9 @@ void AppController::setAutoRestoreEnabled(bool enabled)
 
 void AppController::loadSettings()
 {
+    QElapsedTimer settingsTimer;
+    settingsTimer.start();
+
     QSettings settings;
 
     m_lastDataset1Path = settings.value(QStringLiteral("session/lastDataset1Path")).toString();
@@ -238,6 +342,17 @@ void AppController::loadSettings()
     m_lastRawMetadataPath = settings.value(QStringLiteral("session/lastRawMetadataPath")).toString();
     m_lastRawDataPath = settings.value(QStringLiteral("session/lastRawDataPath")).toString();
     m_autoRestoreEnabled = settings.value(QStringLiteral("session/autoRestoreEnabled"), true).toBool();
+
+    m_sessionManager.loadSession();
+
+    if (m_lastDataset1Path.isEmpty())
+        m_lastDataset1Path = m_sessionManager.dataset1FilePath();
+    if (m_lastDataset2Path.isEmpty())
+        m_lastDataset2Path = m_sessionManager.dataset2FilePath();
+    if (m_lastRawMetadataPath.isEmpty())
+        m_lastRawMetadataPath = m_sessionManager.rawMetadataPath();
+    if (m_lastRawDataPath.isEmpty())
+        m_lastRawDataPath = m_sessionManager.rawDataPath();
 
     const QString actsJson = settings.value(QStringLiteral("history/recentActivities")).toString();
     if (!actsJson.isEmpty())
@@ -258,6 +373,8 @@ void AppController::loadSettings()
             m_recentFiles = doc.array().toVariantList();
         }
     }
+
+    qInfo() << "[STARTUP] Settings & history loaded:" << settingsTimer.elapsed() << "ms";
 }
 
 void AppController::saveSettings()
@@ -349,38 +466,547 @@ void AppController::clearRecentFiles()
     saveSettings();
 }
 
-bool AppController::restoreLastSession()
+bool AppController::autoRestoreDatasets()
 {
+    m_restoringSession = true;
+
+    QElapsedTimer totalRestoreTimer;
+    totalRestoreTimer.start();
+
     bool restoredAny = false;
 
-    if (!m_lastDataset1Path.isEmpty() && QFileInfo::exists(m_lastDataset1Path))
+    m_sessionManager.loadSession();
+
+    // 1. Restore Dataset 1
+    QString ds1Path = m_lastDataset1Path.trimmed();
+    if (ds1Path.isEmpty())
+        ds1Path = m_sessionManager.dataset1FilePath().trimmed();
+
+    ds1Path = normalizeFilePath(ds1Path);
+    if (!ds1Path.isEmpty() && QFileInfo::exists(ds1Path))
     {
-        if (loadDataset1(m_lastDataset1Path))
+        QElapsedTimer ds1Timer;
+        ds1Timer.start();
+        if (loadDataset1(ds1Path))
         {
             restoredAny = true;
+            qInfo() << "[STARTUP][AutoRestore] Dataset 1 restored:" << ds1Path << "in" << ds1Timer.elapsed() << "ms";
         }
     }
 
-    if (!m_lastDataset2Path.isEmpty() && QFileInfo::exists(m_lastDataset2Path))
+    // 2. Restore Dataset 2
+    QString ds2Path = m_lastDataset2Path.trimmed();
+    if (ds2Path.isEmpty())
+        ds2Path = m_sessionManager.dataset2FilePath().trimmed();
+
+    ds2Path = normalizeFilePath(ds2Path);
+    if (!ds2Path.isEmpty() && QFileInfo::exists(ds2Path))
     {
-        if (loadDataset2(m_lastDataset2Path))
+        QElapsedTimer ds2Timer;
+        ds2Timer.start();
+        if (loadDataset2(ds2Path))
         {
             restoredAny = true;
+            qInfo() << "[STARTUP][AutoRestore] Dataset 2 restored:" << ds2Path << "in" << ds2Timer.elapsed() << "ms";
         }
     }
 
-    if (!m_lastRawMetadataPath.isEmpty() && QFileInfo::exists(m_lastRawMetadataPath))
+    // 3. Restore Raw Metadata
+    QString rawMetaPath = m_lastRawMetadataPath.trimmed();
+    if (rawMetaPath.isEmpty())
+        rawMetaPath = m_sessionManager.rawMetadataPath().trimmed();
+
+    rawMetaPath = normalizeFilePath(rawMetaPath);
+    if (!rawMetaPath.isEmpty() && QFileInfo::exists(rawMetaPath))
     {
-        loadRawMetadata(m_lastRawMetadataPath);
+        if (loadRawMetadata(rawMetaPath))
+        {
+            restoredAny = true;
+            qInfo() << "[STARTUP][AutoRestore] Raw Metadata restored:" << rawMetaPath;
+        }
     }
 
-    if (!m_lastRawDataPath.isEmpty() && QFileInfo::exists(m_lastRawDataPath))
+    // 4. Restore Raw Data
+    QString rawDataPath = m_lastRawDataPath.trimmed();
+    if (rawDataPath.isEmpty())
+        rawDataPath = m_sessionManager.rawDataPath().trimmed();
+
+    rawDataPath = normalizeFilePath(rawDataPath);
+    if (!rawDataPath.isEmpty() && QFileInfo::exists(rawDataPath))
     {
-        loadRawDataFile(m_lastRawDataPath);
+        if (loadRawDataFile(rawDataPath))
+        {
+            restoredAny = true;
+            qInfo() << "[STARTUP][AutoRestore] Raw Data restored:" << rawDataPath;
+        }
+    }
+
+    m_restoringSession = false;
+
+    // Do NOT automatically apply Analysis, Cleaning, Comparison states.
+    // They will remain preserved in m_sessionManager for the user to restore via "Restore Last Session".
+    m_sessionRestoreDecision = 0; // Unapplied/Ready
+
+    emit lastSessionChanged();
+    emit sessionAvailabilityChanged();
+    emit sessionRestoreDecisionChanged();
+
+    qInfo() << "[STARTUP][AutoRestore] Total autoRestoreDatasets:" << totalRestoreTimer.elapsed() << "ms";
+    return restoredAny;
+}
+
+bool AppController::restoreLastSession()
+{
+    m_restoringSession = true;
+
+    QElapsedTimer totalRestoreTimer;
+    totalRestoreTimer.start();
+
+    bool restoredAny = false;
+
+    m_sessionManager.loadSession();
+
+    // 1. Ensure Dataset 1 is loaded
+    if (m_dataset1.isEmpty())
+    {
+        QString ds1Path = m_lastDataset1Path.trimmed();
+        if (ds1Path.isEmpty())
+            ds1Path = m_sessionManager.dataset1FilePath().trimmed();
+
+        ds1Path = normalizeFilePath(ds1Path);
+        if (!ds1Path.isEmpty() && QFileInfo::exists(ds1Path))
+        {
+            if (loadDataset1(ds1Path))
+            {
+                restoredAny = true;
+            }
+        }
+    }
+
+    // 2. Ensure Dataset 2 is loaded
+    if (m_dataset2.isEmpty())
+    {
+        QString ds2Path = m_lastDataset2Path.trimmed();
+        if (ds2Path.isEmpty())
+            ds2Path = m_sessionManager.dataset2FilePath().trimmed();
+
+        ds2Path = normalizeFilePath(ds2Path);
+        if (!ds2Path.isEmpty() && QFileInfo::exists(ds2Path))
+        {
+            if (loadDataset2(ds2Path))
+            {
+                restoredAny = true;
+            }
+        }
+    }
+
+    // 3. Ensure Raw Metadata & Data are loaded
+    if (!m_rawMetadataLoaded)
+    {
+        QString rawMetaPath = m_lastRawMetadataPath.trimmed();
+        if (rawMetaPath.isEmpty())
+            rawMetaPath = m_sessionManager.rawMetadataPath().trimmed();
+
+        rawMetaPath = normalizeFilePath(rawMetaPath);
+        if (!rawMetaPath.isEmpty() && QFileInfo::exists(rawMetaPath))
+        {
+            if (loadRawMetadata(rawMetaPath))
+            {
+                restoredAny = true;
+            }
+        }
+    }
+
+    if (!m_rawDataLoaded)
+    {
+        QString rawDataPath = m_lastRawDataPath.trimmed();
+        if (rawDataPath.isEmpty())
+            rawDataPath = m_sessionManager.rawDataPath().trimmed();
+
+        rawDataPath = normalizeFilePath(rawDataPath);
+        if (!rawDataPath.isEmpty() && QFileInfo::exists(rawDataPath))
+        {
+            if (loadRawDataFile(rawDataPath))
+            {
+                restoredAny = true;
+            }
+        }
+    }
+    // 4. Restore operational session states: Cleaning first, then Analysis, then Comparison
+    bool cleaningRestored = restoreCleaningSession();
+    bool analysisRestored = restoreAnalysisSession();
+    bool comparisonRestored = restoreComparisonSession();
+
+    if (analysisRestored || cleaningRestored || comparisonRestored)
+    {
+        restoredAny = true;
+    }
+
+    m_restoringSession = false;
+
+    if (restoredAny)
+    {
+        m_sessionRestoreDecision = 1; // Restored
+        recordActivity(tr("Session Restored"),
+                       tr("Previous workspace state and dataset analysis restored"),
+                       tr("Session"));
     }
 
     emit lastSessionChanged();
+    emit sessionAvailabilityChanged();
+    emit sessionRestoreDecisionChanged();
+
+    qInfo() << "[Session] Total restoreLastSession:" << totalRestoreTimer.elapsed() << "ms, result:" << restoredAny;
     return restoredAny;
+}
+
+bool AppController::hasRestorableAnalysisSession() const
+{
+    return m_sessionManager.isAnalysisCompatible(m_lastDataset1Path, m_lastDataset2Path);
+}
+
+bool AppController::hasRestorableCleaningSession() const
+{
+    return m_sessionManager.isCleaningCompatible(m_lastDataset1Path, m_lastDataset2Path);
+}
+
+bool AppController::hasRestorableVisualizationSession() const
+{
+    return m_sessionManager.isVisualizationCompatible(m_lastDataset1Path, m_lastDataset2Path);
+}
+
+bool AppController::hasRestorableComparisonSession() const
+{
+    return m_sessionManager.isComparisonCompatible(m_lastDataset1Path, m_lastDataset2Path);
+}
+
+bool AppController::hasRestorableSession() const
+{
+    return hasRestorableAnalysisSession() ||
+           hasRestorableCleaningSession() ||
+           hasRestorableVisualizationSession() ||
+           hasRestorableComparisonSession();
+}
+
+int AppController::sessionRestoreDecision() const
+{
+    return m_sessionRestoreDecision;
+}
+
+void AppController::setSessionRestoreDecision(int decision)
+{
+    if (m_sessionRestoreDecision != decision)
+    {
+        m_sessionRestoreDecision = decision;
+        emit sessionRestoreDecisionChanged();
+    }
+}
+
+void AppController::applyGlobalRestoreDecision(bool restore)
+{
+    if (restore)
+    {
+        m_sessionRestoreDecision = 1; // Restore
+        restoreCleaningSession();
+        restoreAnalysisSession();
+        restoreComparisonSession();
+    }
+    else
+    {
+        m_sessionRestoreDecision = 2; // StartFresh
+        dismissAnalysisSession();
+        dismissCleaningSession();
+        dismissVisualizationSession();
+        dismissComparisonSession();
+    }
+
+    emit sessionRestoreDecisionChanged();
+    emit sessionAvailabilityChanged();
+}
+
+bool AppController::restoreAnalysisSession()
+{
+    if (!hasRestorableAnalysisSession())
+        return false;
+
+    const QVariantMap data = m_sessionManager.getAnalysisSession();
+
+    if (data.contains(QStringLiteral("dataset1EdaResult")))
+    {
+        m_dataset1EdaResult = data.value(QStringLiteral("dataset1EdaResult")).toMap();
+        m_dataset1EdaAvailable = !m_dataset1EdaResult.isEmpty();
+        emit dataset1EdaChanged();
+    }
+
+    if (data.contains(QStringLiteral("dataset2EdaResult")))
+    {
+        m_dataset2EdaResult = data.value(QStringLiteral("dataset2EdaResult")).toMap();
+        m_dataset2EdaAvailable = !m_dataset2EdaResult.isEmpty();
+        emit dataset2EdaChanged();
+    }
+
+    if (data.contains(QStringLiteral("dataset1CorrelationResult")))
+    {
+        m_dataset1CorrelationResult = data.value(QStringLiteral("dataset1CorrelationResult")).toMap();
+        m_dataset1CorrelationAvailable = !m_dataset1CorrelationResult.isEmpty();
+        emit dataset1CorrelationChanged();
+    }
+
+    if (data.contains(QStringLiteral("dataset2CorrelationResult")))
+    {
+        m_dataset2CorrelationResult = data.value(QStringLiteral("dataset2CorrelationResult")).toMap();
+        m_dataset2CorrelationAvailable = !m_dataset2CorrelationResult.isEmpty();
+        emit dataset2CorrelationChanged();
+    }
+
+    if (data.contains(QStringLiteral("dataset1OutlierResult")))
+    {
+        m_dataset1OutlierResult = data.value(QStringLiteral("dataset1OutlierResult")).toMap();
+        m_dataset1OutlierAvailable = !m_dataset1OutlierResult.isEmpty();
+        emit dataset1OutlierChanged();
+    }
+
+    if (data.contains(QStringLiteral("dataset2OutlierResult")))
+    {
+        m_dataset2OutlierResult = data.value(QStringLiteral("dataset2OutlierResult")).toMap();
+        m_dataset2OutlierAvailable = !m_dataset2OutlierResult.isEmpty();
+        emit dataset2OutlierChanged();
+    }
+
+    if (data.contains(QStringLiteral("comparisonResult")))
+    {
+        m_datasetComparisonResult = data.value(QStringLiteral("comparisonResult")).toMap();
+        m_datasetComparisonAvailable = !m_datasetComparisonResult.isEmpty();
+        emit datasetComparisonChanged();
+    }
+
+    emit sessionAvailabilityChanged();
+    return true;
+}
+
+bool AppController::restoreCleaningSession()
+{
+    if (!hasRestorableCleaningSession())
+        return false;
+
+    const QVariantMap data = m_sessionManager.getCleaningSession();
+
+    m_dataset1MissingTasks = variantListToTasks(data.value(QStringLiteral("dataset1MissingTasks")).toList());
+    m_dataset1OutlierTasks = variantListToTasks(data.value(QStringLiteral("dataset1OutlierTasks")).toList());
+    m_dataset1OtherTasks = variantListToTasks(data.value(QStringLiteral("dataset1OtherTasks")).toList());
+    m_dataset2MissingTasks = variantListToTasks(data.value(QStringLiteral("dataset2MissingTasks")).toList());
+    m_dataset2OutlierTasks = variantListToTasks(data.value(QStringLiteral("dataset2OutlierTasks")).toList());
+    m_dataset2OtherTasks = variantListToTasks(data.value(QStringLiteral("dataset2OtherTasks")).toList());
+
+    if (data.value(QStringLiteral("dataset1Modified")).toBool())
+    {
+        DataSet workingDs;
+        if (m_sessionManager.loadCleaningSnapshot(1, workingDs))
+        {
+            m_dataset1 = workingDs;
+            m_dataset1Modified = true;
+            m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+            m_dataset1OutlierCleaningResult = data.value(QStringLiteral("dataset1OutlierCleaningResult")).toMap();
+            analyzeDataset1Quality();
+            emit dataset1Changed();
+            emit dataset1OutlierCleaningChanged();
+            emit dataset1CleaningStateChanged();
+        }
+    }
+
+    if (data.value(QStringLiteral("dataset2Modified")).toBool())
+    {
+        DataSet workingDs;
+        if (m_sessionManager.loadCleaningSnapshot(2, workingDs))
+        {
+            m_dataset2 = workingDs;
+            m_dataset2Modified = true;
+            m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+            m_dataset2OutlierCleaningResult = data.value(QStringLiteral("dataset2OutlierCleaningResult")).toMap();
+            analyzeDataset2Quality();
+            emit dataset2Changed();
+            emit dataset2OutlierCleaningChanged();
+            emit dataset2CleaningStateChanged();
+        }
+    }
+
+    emit cleaningCompletedChanged();
+    emit sessionAvailabilityChanged();
+    return true;
+}
+
+QVariantMap AppController::getSavedVisualizationSession() const
+{
+    return m_sessionManager.getVisualizationSession();
+}
+
+void AppController::saveVisualizationSession(const QVariantMap &visData)
+{
+    m_sessionManager.setVisualizationSession(visData, m_lastDataset1Path, m_lastDataset2Path);
+    m_sessionManager.saveSession();
+    emit sessionAvailabilityChanged();
+}
+
+void AppController::dismissAnalysisSession()
+{
+    m_sessionManager.invalidateAnalysisSession();
+    m_sessionManager.saveSession();
+    emit sessionAvailabilityChanged();
+}
+
+void AppController::dismissCleaningSession()
+{
+    m_sessionManager.invalidateCleaningSession();
+    m_sessionManager.saveSession();
+    emit sessionAvailabilityChanged();
+}
+
+void AppController::dismissVisualizationSession()
+{
+    m_sessionManager.invalidateVisualizationSession();
+    m_sessionManager.saveSession();
+    emit sessionAvailabilityChanged();
+}
+
+bool AppController::restoreComparisonSession()
+{
+    if (!hasRestorableComparisonSession())
+        return false;
+
+    const QVariantMap data = m_sessionManager.getComparisonSession();
+    if (data.contains(QStringLiteral("comparisonResult")))
+    {
+        m_datasetComparisonResult = data.value(QStringLiteral("comparisonResult")).toMap();
+        m_datasetComparisonAvailable = !m_datasetComparisonResult.isEmpty();
+        emit datasetComparisonChanged();
+    }
+
+    emit sessionAvailabilityChanged();
+    return true;
+}
+
+QVariantMap AppController::getSavedComparisonSession() const
+{
+    return m_sessionManager.getComparisonSession();
+}
+
+void AppController::saveComparisonSession(const QVariantMap &compData)
+{
+    if (m_restoringSession)
+        return;
+
+    m_sessionManager.setComparisonSession(compData, m_lastDataset1Path, m_lastDataset2Path);
+    m_sessionManager.saveSession();
+    qInfo() << "[SESSION] Comparison state updated";
+    emit sessionAvailabilityChanged();
+}
+
+void AppController::dismissComparisonSession()
+{
+    m_sessionManager.invalidateComparisonSession();
+    m_sessionManager.saveSession();
+    emit sessionAvailabilityChanged();
+}
+
+void AppController::saveCurrentAnalysisSession()
+{
+    if (m_restoringSession)
+        return;
+
+    QVariantMap map;
+    if (m_dataset1EdaAvailable) map.insert(QStringLiteral("dataset1EdaResult"), m_dataset1EdaResult);
+    if (m_dataset2EdaAvailable) map.insert(QStringLiteral("dataset2EdaResult"), m_dataset2EdaResult);
+    if (m_dataset1CorrelationAvailable) map.insert(QStringLiteral("dataset1CorrelationResult"), m_dataset1CorrelationResult);
+    if (m_dataset2CorrelationAvailable) map.insert(QStringLiteral("dataset2CorrelationResult"), m_dataset2CorrelationResult);
+    if (m_dataset1OutlierAvailable) map.insert(QStringLiteral("dataset1OutlierResult"), m_dataset1OutlierResult);
+    if (m_dataset2OutlierAvailable) map.insert(QStringLiteral("dataset2OutlierResult"), m_dataset2OutlierResult);
+    if (m_datasetComparisonAvailable) map.insert(QStringLiteral("comparisonResult"), m_datasetComparisonResult);
+
+    if (!map.isEmpty())
+    {
+        m_sessionManager.setAnalysisSession(map, m_lastDataset1Path, m_lastDataset2Path);
+        m_sessionManager.saveSession();
+    }
+}
+
+void AppController::saveCurrentCleaningSession()
+{
+    if (m_restoringSession)
+        return;
+
+    QVariantMap map;
+    map.insert(QStringLiteral("dataset1Modified"), m_dataset1Modified);
+    map.insert(QStringLiteral("dataset2Modified"), m_dataset2Modified);
+    map.insert(QStringLiteral("dataset1OutlierCleaningResult"), m_dataset1OutlierCleaningResult);
+    map.insert(QStringLiteral("dataset2OutlierCleaningResult"), m_dataset2OutlierCleaningResult);
+
+    map.insert(QStringLiteral("dataset1MissingTasks"), tasksToVariantList(m_dataset1MissingTasks));
+    map.insert(QStringLiteral("dataset1OutlierTasks"), tasksToVariantList(m_dataset1OutlierTasks));
+    map.insert(QStringLiteral("dataset1OtherTasks"), tasksToVariantList(m_dataset1OtherTasks));
+    map.insert(QStringLiteral("dataset2MissingTasks"), tasksToVariantList(m_dataset2MissingTasks));
+    map.insert(QStringLiteral("dataset2OutlierTasks"), tasksToVariantList(m_dataset2OutlierTasks));
+    map.insert(QStringLiteral("dataset2OtherTasks"), tasksToVariantList(m_dataset2OtherTasks));
+
+    if (m_dataset1Modified)
+        m_sessionManager.saveCleaningSnapshot(1, m_dataset1);
+    else
+        m_sessionManager.removeCleaningSnapshot(1);
+
+    if (m_dataset2Modified)
+        m_sessionManager.saveCleaningSnapshot(2, m_dataset2);
+    else
+        m_sessionManager.removeCleaningSnapshot(2);
+
+    if (m_dataset1Modified || m_dataset2Modified)
+    {
+        m_sessionManager.setCleaningSession(map, m_lastDataset1Path, m_lastDataset2Path);
+        m_sessionManager.saveSession();
+    }
+    else
+    {
+        m_sessionManager.invalidateCleaningSession();
+        m_sessionManager.saveSession();
+    }
+}
+
+void AppController::saveCurrentSession()
+{
+    if (m_restoringSession)
+        return;
+
+    if (!m_dataset1.isEmpty())
+    {
+        m_sessionManager.setDataset1Info(true, m_lastDataset1Path, m_dataset1.name(), m_dataset1.rowCount(), m_dataset1.columnCount());
+    }
+    else if (!m_lastDataset1Path.isEmpty() && QFileInfo::exists(m_lastDataset1Path))
+    {
+        m_sessionManager.setDataset1Info(true, m_lastDataset1Path, QFileInfo(m_lastDataset1Path).fileName(), 0, 0);
+    }
+    else
+    {
+        m_sessionManager.clearDataset1Info();
+    }
+
+    if (!m_dataset2.isEmpty())
+    {
+        m_sessionManager.setDataset2Info(true, m_lastDataset2Path, m_dataset2.name(), m_dataset2.rowCount(), m_dataset2.columnCount());
+    }
+    else if (!m_lastDataset2Path.isEmpty() && QFileInfo::exists(m_lastDataset2Path))
+    {
+        m_sessionManager.setDataset2Info(true, m_lastDataset2Path, QFileInfo(m_lastDataset2Path).fileName(), 0, 0);
+    }
+    else
+    {
+        m_sessionManager.clearDataset2Info();
+    }
+
+    m_sessionManager.setRawPaths(m_lastRawMetadataPath, m_lastRawDataPath);
+
+    saveCurrentAnalysisSession();
+    saveCurrentCleaningSession();
+
+    m_sessionManager.saveSession();
+    saveSettings();
 }
 
 bool AppController::loadRecentFileAsDataset(int datasetIndex, const QString &filePath)
@@ -402,6 +1028,9 @@ bool AppController::loadRecentFileAsDataset(int datasetIndex, const QString &fil
 
 bool AppController::loadDataset1(const QString &filePath)
 {
+    QElapsedTimer ds1TotalTimer;
+    ds1TotalTimer.start();
+
     clearError();
 
     clearDataset1Quality();
@@ -414,64 +1043,69 @@ bool AppController::loadDataset1(const QString &filePath)
 
     if (normalizedPath.trimmed().isEmpty())
     {
-        m_dataset1.clear();
-        m_originalDataset1.clear();
-        m_dataset1Modified = false;
-        m_dataset1ColumnModel.clear();
-        m_mappingModel.clear();
-        clearAnalysis();
-
+        clearDataset1();
         setError(QStringLiteral("Dataset 1 file path is empty."));
-
-        emit dataset1Changed();
-        emit mappingsChanged();
-
         return false;
     }
 
+    QElapsedTimer parseTimer;
+    parseTimer.start();
     if (!m_parser1.loadFile(normalizedPath))
     {
-        m_dataset1.clear();
-        m_originalDataset1.clear();
-        m_dataset1Modified = false;
-        m_dataset1ColumnModel.clear();
-        m_mappingModel.clear();
-        clearAnalysis();
-
         setError(m_parser1.lastError());
-
-        emit dataset1Changed();
-        emit mappingsChanged();
-
         return false;
     }
+    qInfo() << "[STARTUP][Dataset1] File read & parse (Excel/CSV):" << parseTimer.elapsed() << "ms"
+            << QString("(Rows: %1, Cols: %2)").arg(m_parser1.dataSet().rowCount()).arg(m_parser1.dataSet().columnCount());
 
     m_dataset1 = m_parser1.dataSet();
     m_originalDataset1 = m_dataset1;
     m_dataset1Modified = false;
+    m_dataset1MissingTasks.clear();
+    m_dataset1OutlierTasks.clear();
+    m_dataset1OtherTasks.clear();
+    emit dataset1CleaningStateChanged();
 
+    QElapsedTimer colModelTimer;
+    colModelTimer.start();
     m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+    qInfo() << "[STARTUP][Dataset1] Column model setColumns:" << colModelTimer.elapsed() << "ms";
 
+    QElapsedTimer qualityTimer;
+    qualityTimer.start();
     analyzeDataset1Quality();
+    qInfo() << "[STARTUP][Dataset1] Quality & Outliers analysis total:" << qualityTimer.elapsed() << "ms";
 
     m_lastDataset1Path = normalizedPath;
-    addRecentFile(normalizedPath, QStringLiteral("Dataset 1 (Excel/CSV)"), m_dataset1.rowCount(), m_dataset1.columnCount());
-    recordActivity(QStringLiteral("Veri Seti 1 Yüklendi"),
-                   QStringLiteral("%1 (%2 satır, %3 sütun)").arg(m_dataset1.name()).arg(m_dataset1.rowCount()).arg(m_dataset1.columnCount()),
-                   QStringLiteral("Yükleme"));
+    addRecentFile(normalizedPath, tr("Dataset 1 (Excel/CSV)"), m_dataset1.rowCount(), m_dataset1.columnCount());
+    recordActivity(tr("Dataset 1 Loaded"),
+                   tr("%1 (%2 rows, %3 columns)").arg(m_dataset1.name()).arg(m_dataset1.rowCount()).arg(m_dataset1.columnCount()),
+                   tr("Import"));
     emit lastSessionChanged();
     saveSettings();
+
+    if (!m_restoringSession)
+    {
+        m_sessionManager.setDataset1Info(true, normalizedPath, m_dataset1.name(), m_dataset1.rowCount(), m_dataset1.columnCount());
+        m_sessionManager.saveSession();
+        qInfo() << "[SESSION] Dataset1 changed -> session updated";
+    }
+    emit sessionAvailabilityChanged();
 
     emit dataset1Changed();
 
     clearAnalysis();
     tryGenerateMappings();
 
+    qInfo() << "[STARTUP][Dataset1] Total loadDataset1:" << ds1TotalTimer.elapsed() << "ms";
     return true;
 }
 
 bool AppController::loadDataset2(const QString &filePath)
 {
+    QElapsedTimer ds2TotalTimer;
+    ds2TotalTimer.start();
+
     clearError();
 
     clearDataset2Quality();
@@ -484,60 +1118,130 @@ bool AppController::loadDataset2(const QString &filePath)
 
     if (normalizedPath.trimmed().isEmpty())
     {
-        m_dataset2.clear();
-        m_originalDataset2.clear();
-        m_dataset2Modified = false;
-        m_dataset2ColumnModel.clear();
-        m_mappingModel.clear();
-        clearAnalysis();
-
+        clearDataset2();
         setError(QStringLiteral("Dataset 2 file path is empty."));
-
-        emit dataset2Changed();
-        emit mappingsChanged();
-
         return false;
     }
 
+    QElapsedTimer parseTimer;
+    parseTimer.start();
     if (!m_parser2.loadFile(normalizedPath))
     {
-        m_dataset2.clear();
-        m_originalDataset2.clear();
-        m_dataset2Modified = false;
-        m_dataset2ColumnModel.clear();
-        m_mappingModel.clear();
-        clearAnalysis();
-
         setError(m_parser2.lastError());
-
-        emit dataset2Changed();
-        emit mappingsChanged();
-
         return false;
     }
+    qInfo() << "[STARTUP][Dataset2] File read & parse (Excel/CSV):" << parseTimer.elapsed() << "ms"
+            << QString("(Rows: %1, Cols: %2)").arg(m_parser2.dataSet().rowCount()).arg(m_parser2.dataSet().columnCount());
 
     m_dataset2 = m_parser2.dataSet();
     m_originalDataset2 = m_dataset2;
     m_dataset2Modified = false;
+    m_dataset2MissingTasks.clear();
+    m_dataset2OutlierTasks.clear();
+    m_dataset2OtherTasks.clear();
+    emit dataset2CleaningStateChanged();
 
+    QElapsedTimer colModelTimer;
+    colModelTimer.start();
     m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+    qInfo() << "[STARTUP][Dataset2] Column model setColumns:" << colModelTimer.elapsed() << "ms";
 
+    QElapsedTimer qualityTimer;
+    qualityTimer.start();
     analyzeDataset2Quality();
+    qInfo() << "[STARTUP][Dataset2] Quality & Outliers analysis total:" << qualityTimer.elapsed() << "ms";
 
     m_lastDataset2Path = normalizedPath;
-    addRecentFile(normalizedPath, QStringLiteral("Dataset 2 (Excel/CSV)"), m_dataset2.rowCount(), m_dataset2.columnCount());
-    recordActivity(QStringLiteral("Veri Seti 2 Yüklendi"),
-                   QStringLiteral("%1 (%2 satır, %3 sütun)").arg(m_dataset2.name()).arg(m_dataset2.rowCount()).arg(m_dataset2.columnCount()),
-                   QStringLiteral("Yükleme"));
+    addRecentFile(normalizedPath, tr("Dataset 2 (Excel/CSV)"), m_dataset2.rowCount(), m_dataset2.columnCount());
+    recordActivity(tr("Dataset 2 Loaded"),
+                   tr("%1 (%2 rows, %3 columns)").arg(m_dataset2.name()).arg(m_dataset2.rowCount()).arg(m_dataset2.columnCount()),
+                   tr("Import"));
     emit lastSessionChanged();
     saveSettings();
+
+    if (!m_restoringSession)
+    {
+        m_sessionManager.setDataset2Info(true, normalizedPath, m_dataset2.name(), m_dataset2.rowCount(), m_dataset2.columnCount());
+        m_sessionManager.saveSession();
+        qInfo() << "[SESSION] Dataset2 changed -> session updated";
+    }
+    emit sessionAvailabilityChanged();
 
     emit dataset2Changed();
 
     clearAnalysis();
     tryGenerateMappings();
 
+    qInfo() << "[STARTUP][Dataset2] Total loadDataset2:" << ds2TotalTimer.elapsed() << "ms";
     return true;
+}
+
+void AppController::clearDataset1()
+{
+    clearError();
+    m_dataset1.clear();
+    m_originalDataset1.clear();
+    m_dataset1Modified = false;
+    m_dataset1MissingTasks.clear();
+    m_dataset1OutlierTasks.clear();
+    m_dataset1OtherTasks.clear();
+    emit dataset1CleaningStateChanged();
+    m_dataset1ColumnModel.clear();
+    m_mappingModel.clear();
+    m_lastDataset1Path.clear();
+
+    clearDataset1Quality();
+    clearDataset1Outliers();
+    clearDataset1OutlierCleaning();
+    clearDataset1Eda();
+    clearDataset1Correlation();
+    clearAnalysis();
+
+    if (!m_restoringSession)
+    {
+        m_sessionManager.clearDataset1Info();
+        m_sessionManager.saveSession();
+        qInfo() << "[SESSION] Dataset1 cleared -> session updated";
+    }
+
+    emit lastSessionChanged();
+    emit sessionAvailabilityChanged();
+    emit dataset1Changed();
+    emit mappingsChanged();
+}
+
+void AppController::clearDataset2()
+{
+    clearError();
+    m_dataset2.clear();
+    m_originalDataset2.clear();
+    m_dataset2Modified = false;
+    m_dataset2MissingTasks.clear();
+    m_dataset2OutlierTasks.clear();
+    m_dataset2OtherTasks.clear();
+    emit dataset2CleaningStateChanged();
+    m_dataset2ColumnModel.clear();
+    m_mappingModel.clear();
+    m_lastDataset2Path.clear();
+
+    clearDataset2Quality();
+    clearDataset2Outliers();
+    clearDataset2OutlierCleaning();
+    clearDataset2Eda();
+    clearDataset2Correlation();
+    clearAnalysis();
+
+    if (!m_restoringSession)
+    {
+        m_sessionManager.clearDataset2Info();
+        m_sessionManager.saveSession();
+        qInfo() << "[SESSION] Dataset2 cleared -> session updated";
+    }
+
+    emit lastSessionChanged();
+    emit sessionAvailabilityChanged();
+    emit dataset2Changed();
+    emit mappingsChanged();
 }
 
 // =========================================================
@@ -556,6 +1260,9 @@ bool AppController::restoreDataset1()
 
     m_dataset1 = m_originalDataset1;
     m_dataset1Modified = false;
+    m_dataset1MissingTasks.clear();
+    m_dataset1OutlierTasks.clear();
+    m_dataset1OtherTasks.clear();
 
     m_dataset1ColumnModel.setColumns(m_dataset1.columns());
 
@@ -566,10 +1273,17 @@ bool AppController::restoreDataset1()
     clearDataset1Correlation();
     clearAnalysis();
 
+    analyzeDataset1Quality();
+
+    m_sessionManager.removeCleaningSnapshot(1);
+    saveCurrentCleaningSession();
+    emit sessionAvailabilityChanged();
+
     emit dataset1Changed();
+    emit dataset1CleaningStateChanged();
 
     tryGenerateMappings();
-    recordActivity(QStringLiteral("Dataset 1 Sıfırlandı"), QStringLiteral("Orijinal veriye geri dönüldü"), QStringLiteral("Temizleme"));
+    recordActivity(tr("Dataset 1 Reset"), tr("Reverted to original data"), tr("Cleaning"));
 
     return true;
 }
@@ -586,6 +1300,9 @@ bool AppController::restoreDataset2()
 
     m_dataset2 = m_originalDataset2;
     m_dataset2Modified = false;
+    m_dataset2MissingTasks.clear();
+    m_dataset2OutlierTasks.clear();
+    m_dataset2OtherTasks.clear();
 
     m_dataset2ColumnModel.setColumns(m_dataset2.columns());
 
@@ -596,12 +1313,284 @@ bool AppController::restoreDataset2()
     clearDataset2Correlation();
     clearAnalysis();
 
+    analyzeDataset2Quality();
+
+    m_sessionManager.removeCleaningSnapshot(2);
+    saveCurrentCleaningSession();
+    emit sessionAvailabilityChanged();
+
     emit dataset2Changed();
+    emit dataset2CleaningStateChanged();
 
     tryGenerateMappings();
-    recordActivity(QStringLiteral("Dataset 2 Sıfırlandı"), QStringLiteral("Orijinal veriye geri dönüldü"), QStringLiteral("Temizleme"));
+    recordActivity(tr("Dataset 2 Reset"), tr("Reverted to original data"), tr("Cleaning"));
 
     return true;
+}
+
+bool AppController::applyCleaningTaskSynchronous(DataSet &dataSet, const CleaningTask &task)
+{
+    if (dataSet.isEmpty())
+        return false;
+
+    switch (task.operation)
+    {
+    case CleaningTask::RemoveDuplicates:
+        m_cleaningEngine.removeDuplicateRows(dataSet);
+        return true;
+
+    case CleaningTask::RemoveMissingRows:
+        m_cleaningEngine.removeRowsWithMissingValues(dataSet);
+        return true;
+
+    case CleaningTask::FillMissingMean:
+        m_cleaningEngine.fillMissingWithMean(dataSet, task.columnName);
+        return true;
+
+    case CleaningTask::FillMissingMedian:
+        m_cleaningEngine.fillMissingWithMedian(dataSet, task.columnName);
+        return true;
+
+    case CleaningTask::FillMissingMode:
+        m_cleaningEngine.fillMissingWithMode(dataSet, task.columnName);
+        return true;
+
+    case CleaningTask::RemoveColumn:
+        dataSet.removeColumn(task.columnName);
+        return true;
+
+    case CleaningTask::ApplyOutlierAction:
+        m_cleaningEngine.applyOutlierAction(dataSet, task.columnName, task.method, task.action, task.parameter);
+        return true;
+
+    case CleaningTask::BulkMissing:
+    {
+        const QString act = task.bulkAction;
+        if (act == QLatin1String("Drop Rows") || act == QString::fromUtf8("Satırları Sil") || act == QLatin1String("Drop Missing Rows"))
+        {
+            m_cleaningEngine.removeRowsWithMissingValues(dataSet);
+        }
+        else if (act == QLatin1String("Drop Column") || act == QString::fromUtf8("Sütunu Sil") || act == QLatin1String("Remove Column") || act == QLatin1String("Delete Column"))
+        {
+            for (const QString &col : task.targetColumns)
+            {
+                dataSet.removeColumn(col);
+            }
+        }
+        else
+        {
+            const int total = task.targetColumns.size();
+            for (int i = 0; i < total; ++i)
+            {
+                const QString &col = task.targetColumns.at(i);
+                const bool isNum = (i < task.numericFlags.size()) ? task.numericFlags.at(i) : false;
+                if ((act.contains(QLatin1String("Mean")) || act.contains(QString::fromUtf8("Ortalama"))) && isNum)
+                {
+                    m_cleaningEngine.fillMissingWithMean(dataSet, col);
+                }
+                else if ((act.contains(QLatin1String("Median")) || act.contains(QString::fromUtf8("Medyan"))) && isNum)
+                {
+                    m_cleaningEngine.fillMissingWithMedian(dataSet, col);
+                }
+                else if (act.contains(QLatin1String("Mode")) || act.contains(QString::fromUtf8("Mod")))
+                {
+                    m_cleaningEngine.fillMissingWithMode(dataSet, col);
+                }
+            }
+        }
+        return true;
+    }
+
+    case CleaningTask::BulkOutliers:
+    {
+        for (const QString &col : task.targetColumns)
+        {
+            m_cleaningEngine.applyOutlierAction(dataSet, col, task.method, task.action, task.parameter);
+        }
+        return true;
+    }
+
+    default:
+        return false;
+    }
+}
+
+bool AppController::rebuildDataset1()
+{
+    clearError();
+    if (m_originalDataset1.isEmpty())
+        return false;
+
+    m_dataset1 = m_originalDataset1;
+
+    for (const CleaningTask &task : m_dataset1OtherTasks)
+    {
+        applyCleaningTaskSynchronous(m_dataset1, task);
+    }
+    for (const CleaningTask &task : m_dataset1MissingTasks)
+    {
+        applyCleaningTaskSynchronous(m_dataset1, task);
+    }
+    for (const CleaningTask &task : m_dataset1OutlierTasks)
+    {
+        applyCleaningTaskSynchronous(m_dataset1, task);
+    }
+
+    m_dataset1Modified = (!m_dataset1OtherTasks.isEmpty() ||
+                          !m_dataset1MissingTasks.isEmpty() ||
+                          !m_dataset1OutlierTasks.isEmpty());
+
+    m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+
+    clearDataset1Eda();
+    clearDataset1Correlation();
+    clearAnalysis();
+
+    analyzeDataset1Quality();
+
+    emit dataset1Changed();
+    emit dataset1CleaningStateChanged();
+
+    tryGenerateMappings();
+    saveCurrentCleaningSession();
+    emit sessionAvailabilityChanged();
+
+    return true;
+}
+
+bool AppController::rebuildDataset2()
+{
+    clearError();
+    if (m_originalDataset2.isEmpty())
+        return false;
+
+    m_dataset2 = m_originalDataset2;
+
+    for (const CleaningTask &task : m_dataset2OtherTasks)
+    {
+        applyCleaningTaskSynchronous(m_dataset2, task);
+    }
+    for (const CleaningTask &task : m_dataset2MissingTasks)
+    {
+        applyCleaningTaskSynchronous(m_dataset2, task);
+    }
+    for (const CleaningTask &task : m_dataset2OutlierTasks)
+    {
+        applyCleaningTaskSynchronous(m_dataset2, task);
+    }
+
+    m_dataset2Modified = (!m_dataset2OtherTasks.isEmpty() ||
+                          !m_dataset2MissingTasks.isEmpty() ||
+                          !m_dataset2OutlierTasks.isEmpty());
+
+    m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+
+    clearDataset2Eda();
+    clearDataset2Correlation();
+    clearAnalysis();
+
+    analyzeDataset2Quality();
+
+    emit dataset2Changed();
+    emit dataset2CleaningStateChanged();
+
+    tryGenerateMappings();
+    saveCurrentCleaningSession();
+    emit sessionAvailabilityChanged();
+
+    return true;
+}
+
+bool AppController::resetDataset1Missing()
+{
+    if (m_cleaningBusy)
+    {
+        setError(QStringLiteral("A cleaning task is currently running."));
+        return false;
+    }
+
+    if (m_dataset1MissingTasks.isEmpty())
+        return true;
+
+    m_dataset1MissingTasks.clear();
+    bool ok = rebuildDataset1();
+    if (ok)
+    {
+        recordActivity(tr("Dataset 1 Reset Missing"), tr("Missing value cleaning reverted"), tr("Cleaning"));
+    }
+    return ok;
+}
+
+bool AppController::resetDataset2Missing()
+{
+    if (m_cleaningBusy)
+    {
+        setError(QStringLiteral("A cleaning task is currently running."));
+        return false;
+    }
+
+    if (m_dataset2MissingTasks.isEmpty())
+        return true;
+
+    m_dataset2MissingTasks.clear();
+    bool ok = rebuildDataset2();
+    if (ok)
+    {
+        recordActivity(tr("Dataset 2 Reset Missing"), tr("Missing value cleaning reverted"), tr("Cleaning"));
+    }
+    return ok;
+}
+
+bool AppController::resetDataset1Outliers()
+{
+    if (m_cleaningBusy)
+    {
+        setError(QStringLiteral("A cleaning task is currently running."));
+        return false;
+    }
+
+    if (m_dataset1OutlierTasks.isEmpty())
+        return true;
+
+    m_dataset1OutlierTasks.clear();
+    clearDataset1OutlierCleaning();
+    bool ok = rebuildDataset1();
+    if (ok)
+    {
+        recordActivity(tr("Dataset 1 Reset Outliers"), tr("Outlier cleaning reverted"), tr("Cleaning"));
+    }
+    return ok;
+}
+
+bool AppController::resetDataset2Outliers()
+{
+    if (m_cleaningBusy)
+    {
+        setError(QStringLiteral("A cleaning task is currently running."));
+        return false;
+    }
+
+    if (m_dataset2OutlierTasks.isEmpty())
+        return true;
+
+    m_dataset2OutlierTasks.clear();
+    clearDataset2OutlierCleaning();
+    bool ok = rebuildDataset2();
+    if (ok)
+    {
+        recordActivity(tr("Dataset 2 Reset Outliers"), tr("Outlier cleaning reverted"), tr("Cleaning"));
+    }
+    return ok;
+}
+
+bool AppController::resetDatasetMissing(int datasetIndex)
+{
+    return datasetIndex == 1 ? resetDataset1Missing() : resetDataset2Missing();
+}
+
+bool AppController::resetDatasetOutliers(int datasetIndex)
+{
+    return datasetIndex == 1 ? resetDataset1Outliers() : resetDataset2Outliers();
 }
 
 // =========================================================
@@ -610,400 +1599,100 @@ bool AppController::restoreDataset2()
 
 bool AppController::removeDataset1Duplicates()
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.removeDuplicateRows(
-            m_dataset1
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset1Modified = true;
-
-    m_dataset1ColumnModel.setColumns(
-        m_dataset1.columns()
-        );
-
-    clearDataset1Quality();
-    clearDataset1Outliers();
-    clearDataset1OutlierCleaning();
-    clearDataset1Eda();
-    clearDataset1Correlation();
-    clearAnalysis();
-
-    emit dataset1Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::RemoveDuplicates;
+    task.datasetIndex = 1;
+    return startCleaningTask(task);
 }
 
 bool AppController::removeDataset2Duplicates()
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.removeDuplicateRows(
-            m_dataset2
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset2Modified = true;
-
-    m_dataset2ColumnModel.setColumns(
-        m_dataset2.columns()
-        );
-
-    clearDataset2Quality();
-    clearDataset2Outliers();
-    clearDataset2OutlierCleaning();
-    clearDataset2Eda();
-    clearDataset2Correlation();
-    clearAnalysis();
-
-    emit dataset2Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::RemoveDuplicates;
+    task.datasetIndex = 2;
+    return startCleaningTask(task);
 }
 
 bool AppController::removeDataset1MissingRows()
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.removeRowsWithMissingValues(
-            m_dataset1
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset1Modified = true;
-
-    m_dataset1ColumnModel.setColumns(
-        m_dataset1.columns()
-        );
-
-    clearDataset1Quality();
-    clearDataset1Outliers();
-    clearDataset1OutlierCleaning();
-    clearDataset1Eda();
-    clearDataset1Correlation();
-    clearAnalysis();
-
-    emit dataset1Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::RemoveMissingRows;
+    task.datasetIndex = 1;
+    return startCleaningTask(task);
 }
 
 bool AppController::removeDataset2MissingRows()
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.removeRowsWithMissingValues(
-            m_dataset2
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset2Modified = true;
-
-    m_dataset2ColumnModel.setColumns(
-        m_dataset2.columns()
-        );
-
-    clearDataset2Quality();
-    clearDataset2Outliers();
-    clearDataset2OutlierCleaning();
-    clearDataset2Eda();
-    clearDataset2Correlation();
-    clearAnalysis();
-
-    emit dataset2Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::RemoveMissingRows;
+    task.datasetIndex = 2;
+    return startCleaningTask(task);
 }
 
 bool AppController::fillDataset1MissingWithMean(
     const QString &columnName
     )
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.fillMissingWithMean(
-            m_dataset1,
-            columnName
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset1Modified = true;
-
-    m_dataset1ColumnModel.setColumns(
-        m_dataset1.columns()
-        );
-
-    clearDataset1Quality();
-    clearDataset1Outliers();
-    clearDataset1OutlierCleaning();
-    clearDataset1Eda();
-    clearDataset1Correlation();
-    clearAnalysis();
-
-    emit dataset1Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::FillMissingMean;
+    task.datasetIndex = 1;
+    task.columnName = columnName;
+    return startCleaningTask(task);
 }
 
 bool AppController::fillDataset2MissingWithMean(
     const QString &columnName
     )
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.fillMissingWithMean(
-            m_dataset2,
-            columnName
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset2Modified = true;
-
-    m_dataset2ColumnModel.setColumns(
-        m_dataset2.columns()
-        );
-
-    clearDataset2Quality();
-    clearDataset2Outliers();
-    clearDataset2OutlierCleaning();
-    clearDataset2Eda();
-    clearDataset2Correlation();
-    clearAnalysis();
-
-    emit dataset2Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::FillMissingMean;
+    task.datasetIndex = 2;
+    task.columnName = columnName;
+    return startCleaningTask(task);
 }
 
 bool AppController::fillDataset1MissingWithMedian(
     const QString &columnName
     )
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.fillMissingWithMedian(
-            m_dataset1,
-            columnName
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset1Modified = true;
-
-    m_dataset1ColumnModel.setColumns(
-        m_dataset1.columns()
-        );
-
-    clearDataset1Quality();
-    clearDataset1Outliers();
-    clearDataset1OutlierCleaning();
-    clearDataset1Eda();
-    clearDataset1Correlation();
-    clearAnalysis();
-
-    emit dataset1Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::FillMissingMedian;
+    task.datasetIndex = 1;
+    task.columnName = columnName;
+    return startCleaningTask(task);
 }
 
 bool AppController::fillDataset2MissingWithMedian(
     const QString &columnName
     )
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.fillMissingWithMedian(
-            m_dataset2,
-            columnName
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset2Modified = true;
-
-    m_dataset2ColumnModel.setColumns(
-        m_dataset2.columns()
-        );
-
-    clearDataset2Quality();
-    clearDataset2Outliers();
-    clearDataset2OutlierCleaning();
-    clearDataset2Eda();
-    clearDataset2Correlation();
-    clearAnalysis();
-
-    emit dataset2Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::FillMissingMedian;
+    task.datasetIndex = 2;
+    task.columnName = columnName;
+    return startCleaningTask(task);
 }
 
 bool AppController::fillDataset1MissingWithMode(
     const QString &columnName
     )
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.fillMissingWithMode(
-            m_dataset1,
-            columnName
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset1Modified = true;
-
-    m_dataset1ColumnModel.setColumns(
-        m_dataset1.columns()
-        );
-
-    clearDataset1Quality();
-    clearDataset1Outliers();
-    clearDataset1OutlierCleaning();
-    clearDataset1Eda();
-    clearDataset1Correlation();
-    clearAnalysis();
-
-    emit dataset1Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::FillMissingMode;
+    task.datasetIndex = 1;
+    task.columnName = columnName;
+    return startCleaningTask(task);
 }
 
 bool AppController::fillDataset2MissingWithMode(
     const QString &columnName
     )
 {
-    clearError();
-
-    const CleaningResult result =
-        m_cleaningEngine.fillMissingWithMode(
-            m_dataset2,
-            columnName
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset2Modified = true;
-
-    m_dataset2ColumnModel.setColumns(
-        m_dataset2.columns()
-        );
-
-    clearDataset2Quality();
-    clearDataset2Outliers();
-    clearDataset2OutlierCleaning();
-    clearDataset2Eda();
-    clearDataset2Correlation();
-    clearAnalysis();
-
-    emit dataset2Changed();
-
-    tryGenerateMappings();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::FillMissingMode;
+    task.datasetIndex = 2;
+    task.columnName = columnName;
+    return startCleaningTask(task);
 }
 
 bool AppController::removeDataset1Outliers(
@@ -1039,52 +1728,14 @@ bool AppController::applyDataset1OutlierAction(
     double parameter
     )
 {
-    clearError();
-    clearDataset1OutlierCleaning();
-
-    const CleaningResult result =
-        m_cleaningEngine.applyOutlierAction(
-            m_dataset1,
-            columnName,
-            method,
-            action,
-            parameter
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset1OutlierCleaningResult =
-        result.details;
-
-    if (result.modified)
-    {
-        m_dataset1Modified = true;
-
-        m_dataset1ColumnModel.setColumns(
-            m_dataset1.columns()
-            );
-
-        clearDataset1Quality();
-        clearDataset1Outliers();
-        clearDataset1Eda();
-        clearDataset1Correlation();
-        clearAnalysis();
-
-        emit dataset1Changed();
-
-        tryGenerateMappings();
-    }
-
-    emit dataset1OutlierCleaningChanged();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::ApplyOutlierAction;
+    task.datasetIndex = 1;
+    task.columnName = columnName;
+    task.method = method;
+    task.action = action;
+    task.parameter = parameter;
+    return startCleaningTask(task);
 }
 
 bool AppController::applyDataset2OutlierAction(
@@ -1094,52 +1745,14 @@ bool AppController::applyDataset2OutlierAction(
     double parameter
     )
 {
-    clearError();
-    clearDataset2OutlierCleaning();
-
-    const CleaningResult result =
-        m_cleaningEngine.applyOutlierAction(
-            m_dataset2,
-            columnName,
-            method,
-            action,
-            parameter
-            );
-
-    if (!result.success)
-    {
-        setError(
-            result.errorMessage
-            );
-
-        return false;
-    }
-
-    m_dataset2OutlierCleaningResult =
-        result.details;
-
-    if (result.modified)
-    {
-        m_dataset2Modified = true;
-
-        m_dataset2ColumnModel.setColumns(
-            m_dataset2.columns()
-            );
-
-        clearDataset2Quality();
-        clearDataset2Outliers();
-        clearDataset2Eda();
-        clearDataset2Correlation();
-        clearAnalysis();
-
-        emit dataset2Changed();
-
-        tryGenerateMappings();
-    }
-
-    emit dataset2OutlierCleaningChanged();
-
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::ApplyOutlierAction;
+    task.datasetIndex = 2;
+    task.columnName = columnName;
+    task.method = method;
+    task.action = action;
+    task.parameter = parameter;
+    return startCleaningTask(task);
 }
 
 void AppController::clearDataset1OutlierCleaning()
@@ -1317,19 +1930,19 @@ bool AppController::compareDatasets(const QVariantList &mappings)
 
     if (m_dataset1.isEmpty())
     {
-        setError(QStringLiteral("Dataset 1 yüklü değil."));
+        setError(tr("Dataset 1 is not loaded."));
         return false;
     }
 
     if (m_dataset2.isEmpty())
     {
-        setError(QStringLiteral("Dataset 2 yüklü değil."));
+        setError(tr("Dataset 2 is not loaded."));
         return false;
     }
 
     if (mappings.isEmpty())
     {
-        setError(QStringLiteral("En az bir geçerli sütun eşleştirmesi seçilmelidir."));
+        setError(tr("At least one valid column mapping must be selected."));
         return false;
     }
 
@@ -1442,7 +2055,7 @@ bool AppController::compareDatasets(const QVariantList &mappings)
 
     if (matchedColumnCount == 0)
     {
-        setError(QStringLiteral("Geçerli sütun eşleştirmesi bulunamadı."));
+        setError(tr("No valid column mapping found."));
         return false;
     }
 
@@ -1462,11 +2075,13 @@ bool AppController::compareDatasets(const QVariantList &mappings)
     m_datasetComparisonResult = summaryMap;
     m_datasetComparisonAvailable = true;
 
-    recordActivity(QStringLiteral("Veri Seti Karşılaştırması"),
-                   QStringLiteral("%1 eşleştirilmiş sütun, %2 satır karşılaştırıldı").arg(matchedColumnCount).arg(totalComparedRecords),
-                   QStringLiteral("Karşılaştırma"));
+    recordActivity(tr("Dataset Comparison"),
+                   tr("%1 mapped column(s), %2 rows compared").arg(matchedColumnCount).arg(totalComparedRecords),
+                   tr("Comparison"));
 
     emit datasetComparisonChanged();
+    saveCurrentAnalysisSession();
+    emit sessionAvailabilityChanged();
     return true;
 }
 
@@ -1491,10 +2106,7 @@ bool AppController::analyzeDataset1Eda(
     {
         setError(
             result.errorMessage.trimmed().isEmpty()
-                ? QStringLiteral(
-                      "Bu sütun sayısal değil. "
-                      "İstatistiksel analiz için sayısal bir sütun seçin."
-                      )
+                ? tr("This column is not numeric. Select a numeric column for statistical analysis.")
                 : result.errorMessage
             );
         return false;
@@ -1504,6 +2116,8 @@ bool AppController::analyzeDataset1Eda(
     m_dataset1EdaAvailable = true;
 
     emit dataset1EdaChanged();
+    saveCurrentAnalysisSession();
+    emit sessionAvailabilityChanged();
 
     return true;
 }
@@ -1525,10 +2139,7 @@ bool AppController::analyzeDataset2Eda(
     {
         setError(
             result.errorMessage.trimmed().isEmpty()
-                ? QStringLiteral(
-                      "Bu sütun sayısal değil. "
-                      "İstatistiksel analiz için sayısal bir sütun seçin."
-                      )
+                ? tr("This column is not numeric. Select a numeric column for statistical analysis.")
                 : result.errorMessage
             );
         return false;
@@ -1538,6 +2149,8 @@ bool AppController::analyzeDataset2Eda(
     m_dataset2EdaAvailable = true;
 
     emit dataset2EdaChanged();
+    saveCurrentAnalysisSession();
+    emit sessionAvailabilityChanged();
 
     return true;
 }
@@ -1597,6 +2210,8 @@ bool AppController::analyzeDataset1Correlation(
     m_dataset1CorrelationAvailable = true;
 
     emit dataset1CorrelationChanged();
+    saveCurrentAnalysisSession();
+    emit sessionAvailabilityChanged();
 
     return true;
 }
@@ -1626,6 +2241,8 @@ bool AppController::analyzeDataset2Correlation(
     m_dataset2CorrelationAvailable = true;
 
     emit dataset2CorrelationChanged();
+    saveCurrentAnalysisSession();
+    emit sessionAvailabilityChanged();
 
     return true;
 }
@@ -1950,6 +2567,96 @@ QVariantMap AppController::createDatasetComparisonChart(
     return comparisonChartToVariantMap(result);
 }
 
+QVariantMap AppController::createDatasetComparisonDistributionChart(
+    const QString &sourceColumnName,
+    const QString &targetColumnName,
+    int binCount
+    )
+{
+    clearError();
+
+    const ComparisonDistributionResult result =
+        m_visualizationEngine.createComparisonDistribution(
+            m_dataset1,
+            sourceColumnName,
+            m_dataset2,
+            targetColumnName,
+            binCount
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        m_datasetComparisonAvailable = true;
+        emit visualizationChanged();
+        emit datasetComparisonChanged();
+    }
+
+    return comparisonDistributionToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset1BarChart(
+    const QString &categoryColumnName,
+    const QString &valueColumnName,
+    const QString &aggregation
+    )
+{
+    clearError();
+
+    const BarChartResult result =
+        m_visualizationEngine.createBarChart(
+            m_dataset1,
+            categoryColumnName,
+            valueColumnName,
+            aggregation
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
+
+    return barChartToVariantMap(result);
+}
+
+QVariantMap AppController::createDataset2BarChart(
+    const QString &categoryColumnName,
+    const QString &valueColumnName,
+    const QString &aggregation
+    )
+{
+    clearError();
+
+    const BarChartResult result =
+        m_visualizationEngine.createBarChart(
+            m_dataset2,
+            categoryColumnName,
+            valueColumnName,
+            aggregation
+            );
+
+    if (!result.success)
+    {
+        setError(result.errorMessage);
+    }
+    else
+    {
+        m_visualizationAvailable = true;
+        emit visualizationChanged();
+    }
+
+    return barChartToVariantMap(result);
+}
+
 // =========================================================
 // EXPORT
 // =========================================================
@@ -1965,6 +2672,11 @@ bool AppController::exportDataset1ToCsv(const QString &filePath)
     }
 
     const QString normalizedPath = normalizeFilePath(filePath);
+    if (normalizedPath.isEmpty())
+    {
+        setError(QStringLiteral("Invalid file path."));
+        return false;
+    }
 
     const ExportResult result =
         m_exportEngine.exportDataSetToCsv(
@@ -1978,6 +2690,7 @@ bool AppController::exportDataset1ToCsv(const QString &filePath)
         return false;
     }
 
+    recordActivity(tr("Dataset 1 Exported"), normalizedPath, tr("Export"));
     return true;
 }
 
@@ -1992,6 +2705,11 @@ bool AppController::exportDataset2ToCsv(const QString &filePath)
     }
 
     const QString normalizedPath = normalizeFilePath(filePath);
+    if (normalizedPath.isEmpty())
+    {
+        setError(QStringLiteral("Invalid file path."));
+        return false;
+    }
 
     const ExportResult result =
         m_exportEngine.exportDataSetToCsv(
@@ -2005,6 +2723,7 @@ bool AppController::exportDataset2ToCsv(const QString &filePath)
         return false;
     }
 
+    recordActivity(tr("Dataset 2 Exported"), normalizedPath, tr("Export"));
     return true;
 }
 
@@ -2019,6 +2738,11 @@ bool AppController::exportDataset1ToJson(const QString &filePath)
     }
 
     const QString normalizedPath = normalizeFilePath(filePath);
+    if (normalizedPath.isEmpty())
+    {
+        setError(QStringLiteral("Invalid file path."));
+        return false;
+    }
 
     const ExportResult result =
         m_exportEngine.exportDataSetToJson(
@@ -2032,6 +2756,7 @@ bool AppController::exportDataset1ToJson(const QString &filePath)
         return false;
     }
 
+    recordActivity(tr("Dataset 1 Exported"), normalizedPath, tr("Export"));
     return true;
 }
 
@@ -2046,6 +2771,11 @@ bool AppController::exportDataset2ToJson(const QString &filePath)
     }
 
     const QString normalizedPath = normalizeFilePath(filePath);
+    if (normalizedPath.isEmpty())
+    {
+        setError(QStringLiteral("Invalid file path."));
+        return false;
+    }
 
     const ExportResult result =
         m_exportEngine.exportDataSetToJson(
@@ -2059,6 +2789,7 @@ bool AppController::exportDataset2ToJson(const QString &filePath)
         return false;
     }
 
+    recordActivity(tr("Dataset 2 Exported"), normalizedPath, tr("Export"));
     return true;
 }
 
@@ -2073,6 +2804,11 @@ bool AppController::exportDataset1ToXlsx(const QString &filePath)
     }
 
     const QString normalizedPath = normalizeFilePath(filePath);
+    if (normalizedPath.isEmpty())
+    {
+        setError(QStringLiteral("Invalid file path."));
+        return false;
+    }
 
     const ExportResult result =
         m_exportEngine.exportDataSetToXlsx(
@@ -2086,6 +2822,7 @@ bool AppController::exportDataset1ToXlsx(const QString &filePath)
         return false;
     }
 
+    recordActivity(tr("Dataset 1 Exported"), normalizedPath, tr("Export"));
     return true;
 }
 
@@ -2100,6 +2837,11 @@ bool AppController::exportDataset2ToXlsx(const QString &filePath)
     }
 
     const QString normalizedPath = normalizeFilePath(filePath);
+    if (normalizedPath.isEmpty())
+    {
+        setError(QStringLiteral("Invalid file path."));
+        return false;
+    }
 
     const ExportResult result =
         m_exportEngine.exportDataSetToXlsx(
@@ -2113,63 +2855,81 @@ bool AppController::exportDataset2ToXlsx(const QString &filePath)
         return false;
     }
 
+    recordActivity(tr("Dataset 2 Exported"), normalizedPath, tr("Export"));
     return true;
+}
+
+bool AppController::exportDataset(int datasetIndex, const QString &filePath, const QString &format)
+{
+    clearError();
+    const QString ext = format.toLower().trimmed();
+    if (ext == QStringLiteral("xlsx"))
+    {
+        return (datasetIndex == 1) ? exportDataset1ToXlsx(filePath) : exportDataset2ToXlsx(filePath);
+    }
+    else if (ext == QStringLiteral("csv"))
+    {
+        return (datasetIndex == 1) ? exportDataset1ToCsv(filePath) : exportDataset2ToCsv(filePath);
+    }
+    else if (ext == QStringLiteral("json"))
+    {
+        return (datasetIndex == 1) ? exportDataset1ToJson(filePath) : exportDataset2ToJson(filePath);
+    }
+
+    setError(tr("Unsupported export format: %1").arg(format));
+    return false;
+}
+
+QString AppController::suggestedExportFileName(int datasetIndex, const QString &format) const
+{
+    const DataSet &ds = (datasetIndex == 1) ? m_dataset1 : m_dataset2;
+    QString safeName = ds.name().isEmpty() ? QStringLiteral("dataset") : ds.name();
+    safeName.replace(QLatin1Char('/'), QLatin1Char('_')).replace(QLatin1Char('\\'), QLatin1Char('_'));
+    const QString cleanName = safeName.split(QLatin1Char('.')).first();
+    const QString timeStr = QDateTime::currentDateTime().toString(QStringLiteral("MMdd_HHmm"));
+    const QString ext = format.toLower().trimmed();
+    return QStringLiteral("%1_Export_%2.%3").arg(cleanName, timeStr, ext);
 }
 
 bool AppController::removeDataset1Column(const QString &columnName)
 {
-    clearError();
-
-    if (m_dataset1.isEmpty())
-    {
-        setError(QStringLiteral("Dataset 1 is not loaded."));
-        return false;
-    }
-
-    if (!m_dataset1.removeColumn(columnName))
-    {
-        setError(QStringLiteral("Column could not be removed from Dataset 1: ") + columnName);
-        return false;
-    }
-
-    m_dataset1Modified = true;
-    m_dataset1ColumnModel.setColumns(m_dataset1.columns());
-    clearDataset1Quality();
-    clearDataset1Outliers();
-    clearDataset1Eda();
-    clearDataset1Correlation();
-    clearAnalysis();
-    emit dataset1Changed();
-    tryGenerateMappings();
-    return true;
+    CleaningTask task;
+    task.operation = CleaningTask::RemoveColumn;
+    task.datasetIndex = 1;
+    task.columnName = columnName;
+    return startCleaningTask(task);
 }
 
 bool AppController::removeDataset2Column(const QString &columnName)
 {
-    clearError();
+    CleaningTask task;
+    task.operation = CleaningTask::RemoveColumn;
+    task.datasetIndex = 2;
+    task.columnName = columnName;
+    return startCleaningTask(task);
+}
 
-    if (m_dataset2.isEmpty())
+QString AppController::defaultExportDirectory() const
+{
+    const QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString exportPath = QDir(docPath).filePath(QStringLiteral("GenericDataAnalyzer/Exports"));
+    QDir exportDir(exportPath);
+    if (!exportDir.exists())
     {
-        setError(QStringLiteral("Dataset 2 is not loaded."));
-        return false;
+        exportDir.mkpath(QStringLiteral("."));
     }
+    return exportPath;
+}
 
-    if (!m_dataset2.removeColumn(columnName))
+QString AppController::appDataDirectory() const
+{
+    const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir appDataDir(appData);
+    if (!appDataDir.exists())
     {
-        setError(QStringLiteral("Column could not be removed from Dataset 2: ") + columnName);
-        return false;
+        appDataDir.mkpath(QStringLiteral("."));
     }
-
-    m_dataset2Modified = true;
-    m_dataset2ColumnModel.setColumns(m_dataset2.columns());
-    clearDataset2Quality();
-    clearDataset2Outliers();
-    clearDataset2Eda();
-    clearDataset2Correlation();
-    clearAnalysis();
-    emit dataset2Changed();
-    tryGenerateMappings();
-    return true;
+    return appData;
 }
 
 QString AppController::saveChartImage(const QString &base64Data, const QString &chartTypePrefix)
@@ -2178,18 +2938,12 @@ QString AppController::saveChartImage(const QString &base64Data, const QString &
 
     if (base64Data.isEmpty())
     {
-        setError(QStringLiteral("Görsel verisi boş."));
+        setError(tr("Image data is empty."));
         return QString();
     }
 
-    QString baseDir = QDir::currentPath();
-    const QString knownProjectPath = QStringLiteral("C:/Users/aybuk/Desktop/GenericDataAnalyzer");
-    if (QDir(knownProjectPath).exists())
-    {
-        baseDir = knownProjectPath;
-    }
-
-    QDir outputDir(baseDir + QStringLiteral("/output"));
+    const QString outputDirPath = QDir(defaultExportDirectory()).filePath(QStringLiteral("Charts"));
+    QDir outputDir(outputDirPath);
     if (!outputDir.exists())
     {
         outputDir.mkpath(QStringLiteral("."));
@@ -2206,18 +2960,18 @@ QString AppController::saveChartImage(const QString &base64Data, const QString &
     QImage image;
     if (!image.loadFromData(bytes, "PNG"))
     {
-        setError(QStringLiteral("Grafik görseli dönüştürülemedi."));
+        setError(tr("Failed to decode chart image."));
         return QString();
     }
 
-    const QString safePrefix = chartTypePrefix.isEmpty() ? QStringLiteral("Grafik") : chartTypePrefix;
+    const QString safePrefix = chartTypePrefix.isEmpty() ? QStringLiteral("Chart") : chartTypePrefix;
     const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss"));
     const QString fileName = QStringLiteral("%1_%2.png").arg(safePrefix, timestamp);
     const QString fullPath = outputDir.filePath(fileName);
 
     if (!image.save(fullPath, "PNG"))
     {
-        setError(QStringLiteral("Grafik dosyası kaydedilemedi: ") + fullPath);
+        setError(tr("Failed to save chart file: %1").arg(fullPath));
         return QString();
     }
 
@@ -2229,6 +2983,7 @@ QString AppController::saveChartImage(const QString &base64Data, const QString &
         emit datasetComparisonChanged();
     }
 
+    recordActivity(tr("Chart Exported"), fullPath, tr("Export"));
     return fullPath;
 }
 
@@ -2238,22 +2993,12 @@ QString AppController::autoExportDataset(int datasetIndex, const QString &format
     const DataSet &ds = (datasetIndex == 1) ? m_dataset1 : m_dataset2;
     if (ds.isEmpty())
     {
-        setError(QStringLiteral("Veri seti bulunamadı veya boş."));
+        setError(tr("Dataset not found or is empty."));
         return QString();
     }
 
-    QString baseDir = QDir::currentPath();
-    const QString knownProjectPath = QStringLiteral("C:/Users/aybuk/Desktop/GenericDataAnalyzer");
-    if (QDir(knownProjectPath).exists())
-    {
-        baseDir = knownProjectPath;
-    }
-
-    QDir outputDir(baseDir + QStringLiteral("/output"));
-    if (!outputDir.exists())
-    {
-        outputDir.mkpath(QStringLiteral("."));
-    }
+    const QString outputDirPath = defaultExportDirectory();
+    QDir outputDir(outputDirPath);
 
     const QString timeStr = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss"));
     QString safeName = ds.name().isEmpty() ? QStringLiteral("dataset") : ds.name();
@@ -2279,6 +3024,7 @@ QString AppController::autoExportDataset(int datasetIndex, const QString &format
 
     if (ok)
     {
+        recordActivity(tr("Dataset %1 Exported").arg(datasetIndex), fullPath, tr("Export"));
         return fullPath;
     }
     return QString();
@@ -2290,9 +3036,14 @@ QString AppController::autoExportDataset(int datasetIndex, const QString &format
 
 bool AppController::analyzeDataset1Quality()
 {
+    QElapsedTimer qualityTotalTimer;
+    qualityTotalTimer.start();
+
     clearError();
     clearDataset1Quality();
 
+    QElapsedTimer edaQualityTimer;
+    edaQualityTimer.start();
     const EdaOperationResult result =
         m_edaEngine.analyzeQuality(
             m_dataset1
@@ -2303,20 +3054,38 @@ bool AppController::analyzeDataset1Quality()
         setError(result.errorMessage);
         return false;
     }
+    qInfo() << "[STARTUP][Dataset1][Quality] EdaEngine analyzeQuality:" << edaQualityTimer.elapsed() << "ms";
 
     m_dataset1QualityResult = result.data;
     m_dataset1QualityAvailable = true;
 
+    QElapsedTimer outlierScanTimer;
+    outlierScanTimer.start();
+    analyzeDataset1OutliersAllColumns(QStringLiteral("IQR"), 1.5);
+    qInfo() << "[STARTUP][Dataset1][Quality] Outlier scan (IQR 1.5 all columns):" << outlierScanTimer.elapsed() << "ms";
+
+    const int outlierCount = m_dataset1OutlierResult.value(QStringLiteral("outlierCount")).toInt();
+    const int affectedCols = m_dataset1OutlierResult.value(QStringLiteral("affectedColumnCount")).toInt();
+    m_dataset1QualityResult.insert(QStringLiteral("outlierCount"), outlierCount);
+    m_dataset1QualityResult.insert(QStringLiteral("hasOutliers"), outlierCount > 0);
+    m_dataset1QualityResult.insert(QStringLiteral("outlierColumnCount"), affectedCols);
+
     emit dataset1QualityChanged();
+    qInfo() << "[STARTUP][Dataset1][Quality] analyzeDataset1Quality total:" << qualityTotalTimer.elapsed() << "ms";
 
     return true;
 }
 
 bool AppController::analyzeDataset2Quality()
 {
+    QElapsedTimer qualityTotalTimer;
+    qualityTotalTimer.start();
+
     clearError();
     clearDataset2Quality();
 
+    QElapsedTimer edaQualityTimer;
+    edaQualityTimer.start();
     const EdaOperationResult result =
         m_edaEngine.analyzeQuality(
             m_dataset2
@@ -2327,11 +3096,24 @@ bool AppController::analyzeDataset2Quality()
         setError(result.errorMessage);
         return false;
     }
+    qInfo() << "[STARTUP][Dataset2][Quality] EdaEngine analyzeQuality:" << edaQualityTimer.elapsed() << "ms";
 
     m_dataset2QualityResult = result.data;
     m_dataset2QualityAvailable = true;
 
+    QElapsedTimer outlierScanTimer;
+    outlierScanTimer.start();
+    analyzeDataset2OutliersAllColumns(QStringLiteral("IQR"), 1.5);
+    qInfo() << "[STARTUP][Dataset2][Quality] Outlier scan (IQR 1.5 all columns):" << outlierScanTimer.elapsed() << "ms";
+
+    const int outlierCount = m_dataset2OutlierResult.value(QStringLiteral("outlierCount")).toInt();
+    const int affectedCols = m_dataset2OutlierResult.value(QStringLiteral("affectedColumnCount")).toInt();
+    m_dataset2QualityResult.insert(QStringLiteral("outlierCount"), outlierCount);
+    m_dataset2QualityResult.insert(QStringLiteral("hasOutliers"), outlierCount > 0);
+    m_dataset2QualityResult.insert(QStringLiteral("outlierColumnCount"), affectedCols);
+
     emit dataset2QualityChanged();
+    qInfo() << "[STARTUP][Dataset2][Quality] analyzeDataset2Quality total:" << qualityTotalTimer.elapsed() << "ms";
 
     return true;
 }
@@ -2535,7 +3317,17 @@ bool AppController::analyzeDataset1OutliersAllColumns(
     m_dataset1OutlierResult = resultMap;
     m_dataset1OutlierAvailable = true;
 
+    if (m_dataset1QualityAvailable)
+    {
+        m_dataset1QualityResult.insert(QStringLiteral("outlierCount"), totalOutlierCount);
+        m_dataset1QualityResult.insert(QStringLiteral("hasOutliers"), totalOutlierCount > 0);
+        m_dataset1QualityResult.insert(QStringLiteral("outlierColumnCount"), affectedColumnCount);
+        emit dataset1QualityChanged();
+    }
+
     emit dataset1OutlierChanged();
+    saveCurrentAnalysisSession();
+    emit sessionAvailabilityChanged();
 
     return true;
 }
@@ -2708,7 +3500,17 @@ bool AppController::analyzeDataset2OutliersAllColumns(
     m_dataset2OutlierResult = resultMap;
     m_dataset2OutlierAvailable = true;
 
+    if (m_dataset2QualityAvailable)
+    {
+        m_dataset2QualityResult.insert(QStringLiteral("outlierCount"), totalOutlierCount);
+        m_dataset2QualityResult.insert(QStringLiteral("hasOutliers"), totalOutlierCount > 0);
+        m_dataset2QualityResult.insert(QStringLiteral("outlierColumnCount"), affectedColumnCount);
+        emit dataset2QualityChanged();
+    }
+
     emit dataset2OutlierChanged();
+    saveCurrentAnalysisSession();
+    emit sessionAvailabilityChanged();
 
     return true;
 }
@@ -2736,10 +3538,7 @@ bool AppController::analyzeDataset1Outliers(
     {
         setError(
             result.errorMessage.trimmed().isEmpty()
-                ? QStringLiteral(
-                      "Seçilen sütun sayısal değil. "
-                      "İstatistiksel analiz yalnızca sayısal sütunlarda yapılabilir."
-                      )
+                ? tr("The selected column is not numeric. Statistical analysis can only be performed on numeric columns.")
                 : result.errorMessage
             );
         return false;
@@ -2772,10 +3571,7 @@ bool AppController::analyzeDataset2Outliers(
     {
         setError(
             result.errorMessage.trimmed().isEmpty()
-                ? QStringLiteral(
-                      "Seçilen sütun sayısal değil. "
-                      "İstatistiksel analiz yalnızca sayısal sütunlarda yapılabilir."
-                      )
+                ? tr("The selected column is not numeric. Statistical analysis can only be performed on numeric columns.")
                 : result.errorMessage
             );
         return false;
@@ -2875,10 +3671,10 @@ bool AppController::loadRawMetadata(const QString &filePath)
     m_rawMetadataLoaded = true;
 
     m_lastRawMetadataPath = normalizedPath;
-    addRecentFile(normalizedPath, QStringLiteral("Ham Veri Metadata (Excel)"));
-    recordActivity(QStringLiteral("Ham Veri Metadata Yüklendi"),
-                   QStringLiteral("%1 (%2 parametre)").arg(QFileInfo(normalizedPath).fileName()).arg(definitions.size()),
-                   QStringLiteral("Ham Veri"));
+    addRecentFile(normalizedPath, tr("Raw Metadata (Excel)"));
+    recordActivity(tr("Raw Metadata Loaded"),
+                   tr("%1 (%2 parameters)").arg(QFileInfo(normalizedPath).fileName()).arg(definitions.size()),
+                   tr("Raw Data"));
     emit lastSessionChanged();
     saveSettings();
 
@@ -2933,10 +3729,10 @@ bool AppController::loadRawDataFile(const QString &filePath)
     m_rawDataLoaded = true;
 
     m_lastRawDataPath = normalizedPath;
-    addRecentFile(normalizedPath, QStringLiteral("Ham Veri Dosyası (.bin)"));
-    recordActivity(QStringLiteral("Ham Veri Dosyası Yüklendi"),
-                   QStringLiteral("%1 (%2 KB)").arg(QFileInfo(normalizedPath).fileName()).arg(m_rawData.size() / 1024),
-                   QStringLiteral("Ham Veri"));
+    addRecentFile(normalizedPath, tr("Raw Data File (.bin)"));
+    recordActivity(tr("Raw Data File Loaded"),
+                   tr("%1 (%2 KB)").arg(QFileInfo(normalizedPath).fileName()).arg(m_rawData.size() / 1024),
+                   tr("Raw Data"));
     emit lastSessionChanged();
     saveSettings();
 
@@ -2948,6 +3744,12 @@ bool AppController::loadRawDataFile(const QString &filePath)
 
 bool AppController::parseRawData()
 {
+    if (m_rawParsing)
+    {
+        setError(QStringLiteral("Raw data parsing is already in progress."));
+        return false;
+    }
+
     clearError();
     clearRawParse();
 
@@ -2990,54 +3792,73 @@ bool AppController::parseRawData()
         return false;
     }
 
-    const QList<QList<ParsedParameter>> parsedPackets =
-        m_rawDataParser.parsePackets(
-            m_rawData,
-            m_rawParameterDefinitions,
-            packetSize
-            );
+    m_rawParsing = true;
+    m_rawParseProgress = 0;
+    emit rawParsingChanged();
+    emit rawParseProgressChanged();
 
-    if (parsedPackets.isEmpty())
+    m_rawParserThread = new QThread();
+    m_rawParserWorker = new RawParserWorker(m_rawData, m_rawParameterDefinitions);
+    m_rawParserWorker->moveToThread(m_rawParserThread.data());
+
+    connect(m_rawParserWorker.data(), &RawParserWorker::progressChanged, this, &AppController::onRawParseProgress);
+    connect(m_rawParserWorker.data(), &RawParserWorker::finished, this, &AppController::onRawParseFinished);
+    connect(m_rawParserWorker.data(), &RawParserWorker::failed, this, &AppController::onRawParseFailed);
+    connect(m_rawParserWorker.data(), &RawParserWorker::cancelled, this, &AppController::onRawParseCancelled);
+
+    connect(m_rawParserThread.data(), &QThread::started, m_rawParserWorker.data(), &RawParserWorker::startParsing);
+
+    connect(m_rawParserWorker.data(), &RawParserWorker::finished, m_rawParserThread.data(), &QThread::quit);
+    connect(m_rawParserWorker.data(), &RawParserWorker::failed, m_rawParserThread.data(), &QThread::quit);
+    connect(m_rawParserWorker.data(), &RawParserWorker::cancelled, m_rawParserThread.data(), &QThread::quit);
+
+    connect(m_rawParserThread.data(), &QThread::finished, m_rawParserWorker.data(), &QObject::deleteLater);
+    connect(m_rawParserThread.data(), &QThread::finished, m_rawParserThread.data(), &QObject::deleteLater);
+
+    m_rawParserThread->start();
+    return true;
+}
+
+void AppController::cancelRawParsing()
+{
+    if (m_rawParserWorker && m_rawParsing)
     {
-        setError(QStringLiteral("Raw data parser produced no packet results."));
-        return false;
+        m_rawParserWorker->cancel();
     }
+}
 
-    /*
-     * ParameterModel düz bir liste tuttuğu için bütün
-     * packet'ların parametrelerini tek listede topluyoruz.
-     *
-     * Örnek:
-     * 50 packet x 5 parametre = 250 ParsedParameter
-     */
-    QList<ParsedParameter> allParsedParameters;
+void AppController::onRawParseProgress(int percent)
+{
+    m_rawParseProgress = percent;
+    emit rawParseProgressChanged();
+}
 
-    allParsedParameters.reserve(
-        parsedPackets.size() *
-        m_rawParameterDefinitions.size()
-        );
+void AppController::onRawParseFinished(
+    const QList<QList<ParsedParameter>> &parsedPackets,
+    int ignoredByteCount,
+    bool hasErrorParameter,
+    bool hasSuccessfulParameter
+    )
+{
+    m_rawParsing = false;
+    m_rawParseProgress = 100;
 
-    bool hasSuccessfulParameter = false;
-    bool hasErrorParameter = false;
+    m_cachedParsedRawPackets = parsedPackets;
 
+    // Build preview for ParameterModel
+    QList<ParsedParameter> previewParams;
+    const int previewLimit = 200;
+    int count = 0;
     for (const QList<ParsedParameter> &packet : parsedPackets)
     {
-        for (const ParsedParameter &parameter : packet)
+        for (const ParsedParameter &param : packet)
         {
-            allParsedParameters.append(parameter);
-
-            if (parameter.parsedSuccessfully())
-                hasSuccessfulParameter = true;
-
-            if (parameter.hasError())
-                hasErrorParameter = true;
+            previewParams.append(param);
+            if (++count >= previewLimit)
+                break;
         }
-    }
-
-    if (allParsedParameters.isEmpty())
-    {
-        setError(QStringLiteral("Raw data parser produced no parameter results."));
-        return false;
+        if (count >= previewLimit)
+            break;
     }
 
     if (!hasSuccessfulParameter)
@@ -3052,19 +3873,22 @@ bool AppController::parseRawData()
             );
 
         emit rawParseChanged();
-        return false;
+        emit rawParsingChanged();
+        emit rawParseProgressChanged();
+        emit rawParseCompleted(false, lastError());
+        return;
     }
 
-    m_parameterModel.setParameters(allParsedParameters);
+    m_parameterModel.setParameters(previewParams);
 
     m_rawParseAvailable = true;
-    recordActivity(QStringLiteral("Ham Veri Ayrıştırıldı"),
-                   QStringLiteral("%1 paket başarıyla işlendi").arg(parsedPackets.size()),
-                   QStringLiteral("Ham Veri"));
-    emit rawParseChanged();
+    recordActivity(tr("Raw Data Parsed"),
+                   tr("%1 packet(s) successfully processed").arg(parsedPackets.size()),
+                   tr("Raw Data"));
 
-    const int ignoredByteCount =
-        m_rawData.size() % packetSize;
+    emit rawParseChanged();
+    emit rawParsingChanged();
+    emit rawParseProgressChanged();
 
     if (hasErrorParameter && ignoredByteCount > 0)
     {
@@ -3100,7 +3924,34 @@ bool AppController::parseRawData()
             );
     }
 
-    return true;
+    emit rawParseCompleted(true, tr("%1 packet(s) parsed successfully.").arg(parsedPackets.size()));
+}
+
+void AppController::onRawParseFailed(const QString &errorMessage)
+{
+    m_rawParsing = false;
+    m_rawParseProgress = 0;
+    m_rawParseAvailable = false;
+    m_parameterModel.clear();
+    setError(errorMessage);
+
+    emit rawParsingChanged();
+    emit rawParseProgressChanged();
+    emit rawParseChanged();
+    emit rawParseCompleted(false, errorMessage);
+}
+
+void AppController::onRawParseCancelled()
+{
+    m_rawParsing = false;
+    m_rawParseProgress = 0;
+    m_rawParseAvailable = false;
+    setError(QStringLiteral("Raw data parsing was cancelled."));
+
+    emit rawParsingChanged();
+    emit rawParseProgressChanged();
+    emit rawParseChanged();
+    emit rawParseCompleted(false, QStringLiteral("Parsing cancelled."));
 }
 
 bool AppController::importParsedRawDataAsDataset(
@@ -3110,7 +3961,7 @@ bool AppController::importParsedRawDataAsDataset(
 {
     clearError();
 
-    if (!m_rawParseAvailable)
+    if (!m_rawParseAvailable || m_cachedParsedRawPackets.isEmpty())
     {
         setError(
             QStringLiteral(
@@ -3142,326 +3993,406 @@ bool AppController::importParsedRawDataAsDataset(
         return false;
     }
 
-    const int packetSize =
-        m_rawDataParser.calculateRequiredPacketSize(
-            m_rawParameterDefinitions
-            );
-
-    if (packetSize <= 0)
-    {
-        setError(
-            QStringLiteral(
-                "Packet size could not be calculated from raw metadata."
-                )
-            );
-        return false;
-    }
-
-    const QList<QList<ParsedParameter>> parsedPackets =
-        m_rawDataParser.parsePackets(
-            m_rawData,
-            m_rawParameterDefinitions,
-            packetSize
-            );
-
-    if (parsedPackets.isEmpty())
-    {
-        setError(
-            QStringLiteral(
-                "Parsed raw packets are not available."
-                )
-            );
-        return false;
-    }
+    const QList<QList<ParsedParameter>> &parsedPackets = m_cachedParsedRawPackets;
 
     const QList<ParsedParameter> &firstPacket =
         parsedPackets.first();
 
-    if (firstPacket.isEmpty())
+    DataSet importedDataset;
+
+    const QString defaultName =
+        customName.trimmed().isEmpty()
+            ? (datasetIndex == 1
+                   ? QStringLiteral("Parsed_Raw_Packet_1")
+                   : QStringLiteral("Parsed_Raw_Packet_2"))
+            : customName.trimmed();
+
+    importedDataset.setName(defaultName);
+    importedDataset.setFilePath(m_rawDataFilePath);
+    importedDataset.setSheetName(QStringLiteral("RawPackets"));
+
+    QVector<ColumnInfo> columns;
+    columns.reserve(firstPacket.size());
+
+    for (int paramIndex = 0;
+         paramIndex < firstPacket.size();
+         ++paramIndex)
     {
-        setError(
-            QStringLiteral(
-                "The first parsed raw packet contains no parameters."
-                )
-            );
-        return false;
-    }
+        const ParsedParameter &firstParam =
+            firstPacket.at(paramIndex);
 
-    DataSet dataSet;
+        ColumnInfo column(firstParam.dataName);
+        column.setOriginalName(firstParam.dataName);
 
-    const QString name =
-        customName.isEmpty()
-            ? QStringLiteral("Parsed_Raw_Data")
-            : customName;
+        ColumnInfo::DataType colType = ColumnInfo::DataType::Double;
+        if (firstParam.dataType.contains(QLatin1String("Int"), Qt::CaseInsensitive))
+        {
+            colType = ColumnInfo::DataType::Integer;
+        }
+        else if (firstParam.dataType.contains(QLatin1String("Bool"), Qt::CaseInsensitive))
+        {
+            colType = ColumnInfo::DataType::Boolean;
+        }
+        column.setDataType(colType);
 
-    dataSet.setName(name);
-    dataSet.setFilePath(m_rawDataFilePath);
-    dataSet.setSheetName(QStringLiteral("RawPackets"));
-
-    /*
-     * Her metadata parametresi bir sütundur.
-     * Her packet ise bir satırdır.
-     *
-     * Örnek:
-     *
-     * Packet 1 -> satır 1
-     * Packet 2 -> satır 2
-     * ...
-     * Packet 50 -> satır 50
-     */
-    for (int parameterIndex = 0;
-         parameterIndex < firstPacket.size();
-         ++parameterIndex)
-    {
-        const ParsedParameter &schemaParameter =
-            firstPacket.at(parameterIndex);
-
-        ColumnInfo col;
-
-        col.setName(schemaParameter.dataName);
-        col.setOriginalName(schemaParameter.dataName);
-
-        QVector<QVariant> vals;
-        vals.reserve(parsedPackets.size());
+        QVector<QVariant> values;
+        values.reserve(parsedPackets.size());
 
         for (const QList<ParsedParameter> &packet : parsedPackets)
         {
-            if (parameterIndex >= packet.size())
+            if (paramIndex < packet.size())
             {
-                vals.append(QVariant());
-                continue;
-            }
-
-            const ParsedParameter &parameter =
-                packet.at(parameterIndex);
-
-            if (parameter.parsedSuccessfully() &&
-                parameter.value.isValid() &&
-                !parameter.value.isNull())
-            {
-                vals.append(parameter.value);
+                const ParsedParameter &param = packet.at(paramIndex);
+                values.append(param.value);
             }
             else
             {
-                vals.append(QVariant());
+                values.append(QVariant());
             }
         }
 
-        col.setValues(vals);
-
-        // -------------------------------------------------
-        // COLUMN DATA TYPE
-        // -------------------------------------------------
-
-        const QString typeStr =
-            schemaParameter.dataType
-                .trimmed()
-                .toLower();
-
-        if (typeStr == QStringLiteral("boolean") ||
-            typeStr == QStringLiteral("bool"))
-        {
-            col.setDataType(
-                ColumnInfo::DataType::Boolean
-                );
-        }
-        else if (
-            typeStr == QStringLiteral("float32") ||
-            typeStr == QStringLiteral("float64") ||
-            typeStr == QStringLiteral("float") ||
-            typeStr == QStringLiteral("double"))
-        {
-            col.setDataType(
-                ColumnInfo::DataType::Double
-                );
-        }
-        else if (
-            typeStr.startsWith(QStringLiteral("int")) ||
-            typeStr.startsWith(QStringLiteral("uint")))
-        {
-            bool containsDouble = false;
-
-            for (const QVariant &value : vals)
-            {
-                if (!value.isValid() ||
-                    value.isNull())
-                {
-                    continue;
-                }
-
-                if (value.type() == QVariant::Double)
-                {
-                    containsDouble = true;
-                    break;
-                }
-            }
-
-            col.setDataType(
-                containsDouble
-                    ? ColumnInfo::DataType::Double
-                    : ColumnInfo::DataType::Integer
-                );
-        }
-        else
-        {
-            bool hasInt = false;
-            bool hasDouble = false;
-            bool hasBool = false;
-
-            for (const QVariant &value : vals)
-            {
-                if (!value.isValid() ||
-                    value.isNull())
-                {
-                    continue;
-                }
-
-                if (value.type() == QVariant::Bool)
-                {
-                    hasBool = true;
-                }
-                else if (value.type() == QVariant::Double)
-                {
-                    hasDouble = true;
-                }
-                else if (value.canConvert<qint64>())
-                {
-                    hasInt = true;
-                }
-            }
-
-            if (hasDouble)
-            {
-                col.setDataType(
-                    ColumnInfo::DataType::Double
-                    );
-            }
-            else if (hasInt)
-            {
-                col.setDataType(
-                    ColumnInfo::DataType::Integer
-                    );
-            }
-            else if (hasBool)
-            {
-                col.setDataType(
-                    ColumnInfo::DataType::Boolean
-                    );
-            }
-            else
-            {
-                col.setDataType(
-                    ColumnInfo::DataType::Unknown
-                    );
-            }
-        }
-
-        // -------------------------------------------------
-        // MISSING / UNIQUE STATISTICS
-        // -------------------------------------------------
-
-        int missingCount = 0;
-        QSet<QString> uniqueValues;
-
-        for (const QVariant &value : vals)
-        {
-            if (!value.isValid() ||
-                value.isNull() ||
-                (value.type() == QVariant::String &&
-                 value.toString().trimmed().isEmpty()))
-            {
-                ++missingCount;
-            }
-            else
-            {
-                uniqueValues.insert(
-                    value.toString()
-                    );
-            }
-        }
-
-        col.setMissingCount(
-            missingCount
-            );
-
-        const double missingPercentage =
-            vals.isEmpty()
-                ? 0.0
-                : static_cast<double>(missingCount)
-                      / static_cast<double>(vals.size())
-                      * 100.0;
-
-        col.setMissingPercentage(
-            missingPercentage
-            );
-
-        col.setUniqueCount(
-            uniqueValues.size()
-            );
-
-        dataSet.addColumn(col);
+        column.setValues(values);
+        columns.append(column);
     }
 
-    if (dataSet.isEmpty())
-    {
-        setError(
-            QStringLiteral(
-                "Parsed raw data could not be converted to a dataset."
-                )
-            );
-        return false;
-    }
+    importedDataset.setColumns(columns);
 
     if (datasetIndex == 1)
     {
-        m_originalDataset1 = dataSet;
-        m_dataset1 = dataSet;
+        m_dataset1 = importedDataset;
+        m_originalDataset1 = importedDataset;
         m_dataset1Modified = false;
 
         m_dataset1ColumnModel.setColumns(
             m_dataset1.columns()
             );
 
-        clearDataset1Quality();
-        clearDataset1Outliers();
         clearDataset1OutlierCleaning();
         clearDataset1Eda();
         clearDataset1Correlation();
         clearAnalysis();
 
-        emit dataset1Changed();
-
-        tryGenerateMappings();
         analyzeDataset1Quality();
+
+        emit dataset1Changed();
     }
     else
     {
-        m_originalDataset2 = dataSet;
-        m_dataset2 = dataSet;
+        m_dataset2 = importedDataset;
+        m_originalDataset2 = importedDataset;
         m_dataset2Modified = false;
 
         m_dataset2ColumnModel.setColumns(
             m_dataset2.columns()
             );
 
-        clearDataset2Quality();
-        clearDataset2Outliers();
         clearDataset2OutlierCleaning();
         clearDataset2Eda();
         clearDataset2Correlation();
         clearAnalysis();
 
-        emit dataset2Changed();
-
-        tryGenerateMappings();
         analyzeDataset2Quality();
+
+        emit dataset2Changed();
     }
 
-    recordActivity(QStringLiteral("Ham Veri -> Dataset %1 Aktarıldı").arg(datasetIndex),
-                   QStringLiteral("%1 satır, %2 sütun oluşturuldu").arg(dataSet.rowCount()).arg(dataSet.columnCount()),
-                   QStringLiteral("Ham Veri"));
+    tryGenerateMappings();
+
+    recordActivity(tr("Raw Data Imported"),
+                   tr("Dataset %1: %2 rows, %3 columns").arg(datasetIndex).arg(importedDataset.rowCount()).arg(importedDataset.columnCount()),
+                   tr("Raw Data"));
 
     return true;
+}
+
+bool AppController::applyBulkMissingCleaning(
+    int datasetIndex,
+    const QString &action,
+    const QStringList &columns,
+    const QVariantList &numericFlags
+    )
+{
+    CleaningTask task;
+    task.operation = CleaningTask::BulkMissing;
+    task.datasetIndex = datasetIndex;
+    task.bulkAction = action;
+    task.targetColumns = columns;
+    for (const QVariant &flag : numericFlags)
+    {
+        task.numericFlags.append(flag.toBool());
+    }
+    return startCleaningTask(task);
+}
+
+bool AppController::applyBulkOutlierCleaning(
+    int datasetIndex,
+    const QString &method,
+    const QString &action,
+    double parameter,
+    const QStringList &columns
+    )
+{
+    CleaningTask task;
+    task.operation = CleaningTask::BulkOutliers;
+    task.datasetIndex = datasetIndex;
+    task.method = method;
+    task.action = action;
+    task.parameter = parameter;
+    task.targetColumns = columns;
+    return startCleaningTask(task);
+}
+
+bool AppController::startCleaningTask(const CleaningTask &task)
+{
+    if (m_cleaningBusy)
+    {
+        setError(QStringLiteral("Another cleaning task is currently running."));
+        return false;
+    }
+
+    const DataSet &sourceDataSet = (task.datasetIndex == 1 ? m_dataset1 : m_dataset2);
+    if (sourceDataSet.isEmpty())
+    {
+        setError(QStringLiteral("Dataset is empty."));
+        return false;
+    }
+
+    clearError();
+    m_currentCleaningTask = task;
+    m_cleaningBusy = true;
+    m_cleaningProgress = 0;
+    m_cleaningStatusText = QStringLiteral("Cleaning in progress...");
+    emit cleaningBusyChanged();
+    emit cleaningProgressChanged();
+    emit cleaningStatusTextChanged();
+
+    m_cleaningThread = new QThread();
+    m_cleaningWorker = new CleaningWorker(sourceDataSet, task);
+    m_cleaningWorker->moveToThread(m_cleaningThread.data());
+
+    connect(m_cleaningWorker.data(), &CleaningWorker::progressChanged, this, &AppController::onCleaningProgress);
+    connect(m_cleaningWorker.data(), &CleaningWorker::finished, this, &AppController::onCleaningFinished);
+    connect(m_cleaningWorker.data(), &CleaningWorker::failed, this, &AppController::onCleaningFailed);
+    connect(m_cleaningWorker.data(), &CleaningWorker::cancelled, this, &AppController::onCleaningCancelled);
+
+    connect(m_cleaningThread.data(), &QThread::started, m_cleaningWorker.data(), &CleaningWorker::startCleaning);
+
+    connect(m_cleaningWorker.data(), &CleaningWorker::finished, m_cleaningThread.data(), &QThread::quit);
+    connect(m_cleaningWorker.data(), &CleaningWorker::failed, m_cleaningThread.data(), &QThread::quit);
+    connect(m_cleaningWorker.data(), &CleaningWorker::cancelled, m_cleaningThread.data(), &QThread::quit);
+
+    connect(m_cleaningThread.data(), &QThread::finished, m_cleaningWorker.data(), &QObject::deleteLater);
+    connect(m_cleaningThread.data(), &QThread::finished, m_cleaningThread.data(), &QObject::deleteLater);
+
+    m_cleaningThread->start();
+    return true;
+}
+
+void AppController::cancelCleaning()
+{
+    if (m_cleaningWorker && m_cleaningBusy)
+    {
+        m_cleaningWorker->cancel();
+    }
+}
+
+void AppController::onCleaningProgress(int current, int total)
+{
+    if (total > 0)
+    {
+        m_cleaningProgress = (current * 100) / total;
+        emit cleaningProgressChanged();
+    }
+}
+
+void AppController::onCleaningFinished(
+    const DataSet &cleanedDataSet,
+    const CleaningResult &result,
+    int datasetIndex,
+    const QString &actionDescription
+    )
+{
+    m_cleaningBusy = false;
+    m_cleaningProgress = 100;
+    m_cleaningStatusText = actionDescription;
+
+    if (datasetIndex == 1)
+    {
+        switch (m_currentCleaningTask.operation)
+        {
+        case CleaningTask::RemoveMissingRows:
+        case CleaningTask::FillMissingMean:
+        case CleaningTask::FillMissingMedian:
+        case CleaningTask::FillMissingMode:
+            for (int i = m_dataset1MissingTasks.size() - 1; i >= 0; --i)
+            {
+                if (m_dataset1MissingTasks[i].columnName == m_currentCleaningTask.columnName &&
+                    !m_currentCleaningTask.columnName.isEmpty())
+                {
+                    m_dataset1MissingTasks.removeAt(i);
+                }
+            }
+            m_dataset1MissingTasks.append(m_currentCleaningTask);
+            break;
+
+        case CleaningTask::BulkMissing:
+            m_dataset1MissingTasks.clear();
+            m_dataset1MissingTasks.append(m_currentCleaningTask);
+            break;
+
+        case CleaningTask::ApplyOutlierAction:
+            for (int i = m_dataset1OutlierTasks.size() - 1; i >= 0; --i)
+            {
+                if (m_dataset1OutlierTasks[i].columnName == m_currentCleaningTask.columnName &&
+                    !m_currentCleaningTask.columnName.isEmpty())
+                {
+                    m_dataset1OutlierTasks.removeAt(i);
+                }
+            }
+            m_dataset1OutlierTasks.append(m_currentCleaningTask);
+            break;
+
+        case CleaningTask::BulkOutliers:
+            m_dataset1OutlierTasks.clear();
+            m_dataset1OutlierTasks.append(m_currentCleaningTask);
+            break;
+
+        case CleaningTask::RemoveDuplicates:
+        case CleaningTask::RemoveColumn:
+            m_dataset1OtherTasks.append(m_currentCleaningTask);
+            break;
+        }
+
+        m_dataset1 = cleanedDataSet;
+        m_dataset1Modified = true;
+        m_dataset1ColumnModel.setColumns(m_dataset1.columns());
+        if (m_currentCleaningTask.operation == CleaningTask::ApplyOutlierAction ||
+            m_currentCleaningTask.operation == CleaningTask::BulkOutliers)
+        {
+            m_dataset1OutlierCleaningResult = result.details;
+        }
+
+        clearDataset1Eda();
+        clearDataset1Correlation();
+        clearAnalysis();
+
+        analyzeDataset1Quality();
+
+        emit dataset1Changed();
+        emit dataset1OutlierCleaningChanged();
+        emit dataset1CleaningStateChanged();
+    }
+    else
+    {
+        switch (m_currentCleaningTask.operation)
+        {
+        case CleaningTask::RemoveMissingRows:
+        case CleaningTask::FillMissingMean:
+        case CleaningTask::FillMissingMedian:
+        case CleaningTask::FillMissingMode:
+            for (int i = m_dataset2MissingTasks.size() - 1; i >= 0; --i)
+            {
+                if (m_dataset2MissingTasks[i].columnName == m_currentCleaningTask.columnName &&
+                    !m_currentCleaningTask.columnName.isEmpty())
+                {
+                    m_dataset2MissingTasks.removeAt(i);
+                }
+            }
+            m_dataset2MissingTasks.append(m_currentCleaningTask);
+            break;
+
+        case CleaningTask::BulkMissing:
+            m_dataset2MissingTasks.clear();
+            m_dataset2MissingTasks.append(m_currentCleaningTask);
+            break;
+
+        case CleaningTask::ApplyOutlierAction:
+            for (int i = m_dataset2OutlierTasks.size() - 1; i >= 0; --i)
+            {
+                if (m_dataset2OutlierTasks[i].columnName == m_currentCleaningTask.columnName &&
+                    !m_currentCleaningTask.columnName.isEmpty())
+                {
+                    m_dataset2OutlierTasks.removeAt(i);
+                }
+            }
+            m_dataset2OutlierTasks.append(m_currentCleaningTask);
+            break;
+
+        case CleaningTask::BulkOutliers:
+            m_dataset2OutlierTasks.clear();
+            m_dataset2OutlierTasks.append(m_currentCleaningTask);
+            break;
+
+        case CleaningTask::RemoveDuplicates:
+        case CleaningTask::RemoveColumn:
+            m_dataset2OtherTasks.append(m_currentCleaningTask);
+            break;
+        }
+
+        m_dataset2 = cleanedDataSet;
+        m_dataset2Modified = true;
+        m_dataset2ColumnModel.setColumns(m_dataset2.columns());
+        if (m_currentCleaningTask.operation == CleaningTask::ApplyOutlierAction ||
+            m_currentCleaningTask.operation == CleaningTask::BulkOutliers)
+        {
+            m_dataset2OutlierCleaningResult = result.details;
+        }
+
+        clearDataset2Eda();
+        clearDataset2Correlation();
+        clearAnalysis();
+
+        analyzeDataset2Quality();
+
+        emit dataset2Changed();
+        emit dataset2OutlierCleaningChanged();
+        emit dataset2CleaningStateChanged();
+    }
+
+    tryGenerateMappings();
+    recordActivity(
+        tr("Dataset %1 Cleaned").arg(datasetIndex),
+        actionDescription,
+        tr("Cleaning")
+    );
+
+    saveCurrentCleaningSession();
+    emit sessionAvailabilityChanged();
+
+    emit cleaningBusyChanged();
+    emit cleaningProgressChanged();
+    emit cleaningStatusTextChanged();
+    emit cleaningCompletedSignal(true, actionDescription);
+}
+
+void AppController::onCleaningFailed(const QString &errorMessage, int datasetIndex)
+{
+    Q_UNUSED(datasetIndex);
+    m_cleaningBusy = false;
+    m_cleaningProgress = 0;
+    m_cleaningStatusText = QStringLiteral("Cleaning failed.");
+
+    setError(errorMessage);
+
+    emit cleaningBusyChanged();
+    emit cleaningProgressChanged();
+    emit cleaningStatusTextChanged();
+    emit cleaningCompletedSignal(false, errorMessage);
+}
+
+void AppController::onCleaningCancelled(int datasetIndex)
+{
+    Q_UNUSED(datasetIndex);
+    m_cleaningBusy = false;
+    m_cleaningProgress = 0;
+    m_cleaningStatusText = QStringLiteral("Cleaning cancelled.");
+
+    setError(QStringLiteral("Cleaning operation was cancelled."));
+
+    emit cleaningBusyChanged();
+    emit cleaningProgressChanged();
+    emit cleaningStatusTextChanged();
+    emit cleaningCompletedSignal(false, QStringLiteral("Cleaning cancelled."));
 }
 
 void AppController::clearRawMetadata()
@@ -3502,6 +4433,8 @@ void AppController::clearRawData()
 
 void AppController::clearRawParse()
 {
+    m_cachedParsedRawPackets.clear();
+    m_rawParseProgress = 0;
     const bool hadResults =
         m_rawParseAvailable ||
         !m_parameterModel.isEmpty();
@@ -3687,6 +4620,68 @@ QVariantMap AppController::comparisonChartToVariantMap(
     map.insert(QStringLiteral("indexes"), indexes);
     map.insert(QStringLiteral("sourceValues"), sourceValues);
     map.insert(QStringLiteral("targetValues"), targetValues);
+
+    return map;
+}
+
+QVariantMap AppController::comparisonDistributionToVariantMap(
+    const ComparisonDistributionResult &result
+    ) const
+{
+    QVariantMap map;
+
+    map.insert(QStringLiteral("success"), result.success);
+    map.insert(QStringLiteral("sourceColumnName"), result.sourceColumnName);
+    map.insert(QStringLiteral("targetColumnName"), result.targetColumnName);
+    map.insert(QStringLiteral("errorMessage"), result.errorMessage);
+    map.insert(QStringLiteral("sourceValidCount"), result.sourceValidCount);
+    map.insert(QStringLiteral("targetValidCount"), result.targetValidCount);
+    map.insert(QStringLiteral("binCount"), result.binCount);
+    map.insert(QStringLiteral("minimum"), result.minimum);
+    map.insert(QStringLiteral("maximum"), result.maximum);
+    map.insert(QStringLiteral("binWidth"), result.binWidth);
+
+    QVariantList centers;
+    QVariantList sourceDensities;
+    QVariantList targetDensities;
+    QVariantList sourceFrequencies;
+    QVariantList targetFrequencies;
+
+    for (double v : result.centers) centers.append(v);
+    for (double v : result.sourceDensities) sourceDensities.append(v);
+    for (double v : result.targetDensities) targetDensities.append(v);
+    for (double v : result.sourceFrequencies) sourceFrequencies.append(v);
+    for (double v : result.targetFrequencies) targetFrequencies.append(v);
+
+    map.insert(QStringLiteral("centers"), centers);
+    map.insert(QStringLiteral("sourceDensities"), sourceDensities);
+    map.insert(QStringLiteral("targetDensities"), targetDensities);
+    map.insert(QStringLiteral("sourceFrequencies"), sourceFrequencies);
+    map.insert(QStringLiteral("targetFrequencies"), targetFrequencies);
+
+    return map;
+}
+
+QVariantMap AppController::barChartToVariantMap(
+    const BarChartResult &result
+    ) const
+{
+    QVariantMap map;
+
+    map.insert(QStringLiteral("success"), result.success);
+    map.insert(QStringLiteral("categoryColumnName"), result.categoryColumnName);
+    map.insert(QStringLiteral("valueColumnName"), result.valueColumnName);
+    map.insert(QStringLiteral("aggregation"), result.aggregation);
+    map.insert(QStringLiteral("categoryCount"), result.categoryCount);
+    map.insert(QStringLiteral("labels"), result.labels);
+    map.insert(QStringLiteral("errorMessage"), result.errorMessage);
+
+    QVariantList valuesList;
+    for (double val : result.values)
+    {
+        valuesList.append(val);
+    }
+    map.insert(QStringLiteral("values"), valuesList);
 
     return map;
 }

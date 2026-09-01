@@ -40,18 +40,20 @@ Item {
     FileDialog {
         id: dataset1Dialog
 
-        title: "Dataset 1 Dosyası Seç"
+        title: qsTr("Select Dataset 1 File")
 
         selectExisting: true
         folder: page.appController && page.appController.dataDirectory !== ""
                     ? ("file:///" + page.appController.dataDirectory.replace(/\\/g, "/"))
-                    : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
+                    : (page.appController && page.appController.defaultExportDirectory !== ""
+                        ? ("file:///" + page.appController.defaultExportDirectory.replace(/\\/g, "/"))
+                        : "")
 
         nameFilters: [
-            "Desteklenen Dosyalar (*.csv *.xlsx *.txt)",
-            "CSV Dosyaları (*.csv)",
-            "Excel Dosyaları (*.xlsx)",
-            "Text Dosyaları (*.txt)"
+            qsTr("Supported Files (*.csv *.xlsx *.txt)"),
+            qsTr("CSV Files (*.csv)"),
+            qsTr("Excel Files (*.xlsx)"),
+            qsTr("Text Files (*.txt)")
         ]
 
         onAccepted: {
@@ -66,20 +68,22 @@ Item {
     FileDialog {
         id: dataset2Dialog
 
-        title: "Dataset 2 Dosyası Seç"
+        title: qsTr("Select Dataset 2 File")
 
         selectExisting: true
         selectMultiple: false
 
         folder: page.appController && page.appController.dataDirectory !== ""
                     ? ("file:///" + page.appController.dataDirectory.replace(/\\/g, "/"))
-                    : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
+                    : (page.appController && page.appController.defaultExportDirectory !== ""
+                        ? ("file:///" + page.appController.defaultExportDirectory.replace(/\\/g, "/"))
+                        : "")
 
         nameFilters: [
-            "Desteklenen Dosyalar (*.csv *.xlsx *.txt)",
-            "CSV Dosyaları (*.csv)",
-            "Excel Dosyaları (*.xlsx)",
-            "Text Dosyaları (*.txt)"
+            qsTr("Supported Files (*.csv *.xlsx *.txt)"),
+            qsTr("CSV Files (*.csv)"),
+            qsTr("Excel Files (*.xlsx)"),
+            qsTr("Text Files (*.txt)")
         ]
 
         onAccepted: {
@@ -97,12 +101,12 @@ Item {
 
     function datasetName(number) {
         if (!page.appController)
-            return "Henüz yüklenmedi"
+            return qsTr("Not loaded yet")
 
         if (number === 1)
-            return page.appController.dataset1Name || "Henüz yüklenmedi"
+            return page.appController.dataset1Name || qsTr("Not loaded yet")
 
-        return page.appController.dataset2Name || "Henüz yüklenmedi"
+        return page.appController.dataset2Name || qsTr("Not loaded yet")
     }
 
     function datasetRows(number) {
@@ -135,15 +139,15 @@ Item {
     // =========================================================
 
     ScrollView {
+        id: pageScrollView
         anchors.fill: parent
-
         clip: true
-
+        contentWidth: availableWidth
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
-            width: page.width
-
+            width: pageScrollView.availableWidth
             spacing: 18
 
             // =================================================
@@ -158,6 +162,25 @@ Item {
                 Layout.topMargin: 24
 
                 spacing: 5
+            }
+
+            // =================================================
+            // NAVIGATION & WORKFLOW PROGRESS
+            // =================================================
+
+            Components.WorkflowNavCard {
+                theme: page.theme
+                appController: page.appController
+                currentStepIndex: 1
+                title: page.loadedCount === 2
+                       ? qsTr("Both datasets ready")
+                       : qsTr("Load your datasets")
+                subtitle: page.loadedCount === 2
+                          ? qsTr("Datasets loaded successfully. You can review the column structure below or proceed to Data Analysis.")
+                          : qsTr("Both datasets must be loaded for full comparison and analysis.")
+                buttonText: qsTr("Go to Data Analysis →")
+                buttonVisible: page.loadedCount === 2
+                onButtonClicked: page.goToPage(2)
             }
 
             // =================================================
@@ -199,7 +222,7 @@ Item {
                             Layout.fillWidth: true
 
                             Label {
-                                text: "Dataset 1"
+                                text: qsTr("Dataset 1")
                                 color: theme.text
                                 font.pixelSize: 18
                                 font.bold: true
@@ -214,7 +237,7 @@ Item {
 
                                 Label {
                                     anchors.centerIn: parent
-                                    text: page.dataset1Loaded ? "Yüklendi" : "Bekliyor"
+                                    text: page.dataset1Loaded ? qsTr("Loaded") : qsTr("Pending")
                                     color: page.dataset1Loaded ? theme.success : theme.textSecondary
                                     font.pixelSize: 12
                                     font.bold: true
@@ -238,7 +261,7 @@ Item {
                                 spacing: 2
 
                                 Label {
-                                    text: "Satır"
+                                    text: qsTr("Records")
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
@@ -255,7 +278,7 @@ Item {
                                 spacing: 2
 
                                 Label {
-                                    text: "Sütun"
+                                    text: qsTr("Columns")
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
@@ -278,13 +301,21 @@ Item {
                         }
 
                         Button {
+                            id: ds1Btn
                             Layout.fillWidth: true
                             Layout.preferredHeight: 42
 
                             text:
                                 page.dataset1Loaded
-                                ? "Dataset 1'i Değiştir"
-                                : "Excel / CSV Seç"
+                                ? qsTr("Change Dataset 1")
+                                : qsTr("Select Excel / CSV")
+
+                            property bool clickFeedback: false
+                            Timer {
+                                id: ds1Timer
+                                interval: 450
+                                onTriggered: ds1Btn.clickFeedback = false
+                            }
 
                             contentItem: Text {
                                 text: parent.text
@@ -298,9 +329,13 @@ Item {
                             background: Rectangle {
                                 radius: 10
                                 color: parent.down ? theme.primaryDark : theme.primary
+                                border.color: ds1Btn.clickFeedback ? theme.success : "transparent"
+                                border.width: 1
                             }
 
                             onClicked: {
+                                clickFeedback = true
+                                ds1Timer.restart()
                                 dataset1Dialog.open()
                             }
                         }
@@ -328,7 +363,7 @@ Item {
                             Layout.fillWidth: true
 
                             Label {
-                                text: "Dataset 2"
+                                text: qsTr("Dataset 2")
                                 color: theme.text
                                 font.pixelSize: 18
                                 font.bold: true
@@ -343,7 +378,7 @@ Item {
 
                                 Label {
                                     anchors.centerIn: parent
-                                    text: page.dataset2Loaded ? "Yüklendi" : "Bekliyor"
+                                    text: page.dataset2Loaded ? qsTr("Loaded") : qsTr("Pending")
                                     color: page.dataset2Loaded ? theme.success : theme.textSecondary
                                     font.pixelSize: 12
                                     font.bold: true
@@ -367,7 +402,7 @@ Item {
                                 spacing: 2
 
                                 Label {
-                                    text: "Satır"
+                                    text: qsTr("Records")
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
@@ -384,7 +419,7 @@ Item {
                                 spacing: 2
 
                                 Label {
-                                    text: "Sütun"
+                                    text: qsTr("Columns")
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
@@ -407,13 +442,21 @@ Item {
                         }
 
                         Button {
+                            id: ds2Btn
                             Layout.fillWidth: true
                             Layout.preferredHeight: 42
 
                             text:
                                 page.dataset2Loaded
-                                ? "Dataset 2'yi Değiştir"
-                                : "Excel / CSV Seç"
+                                ? qsTr("Change Dataset 2")
+                                : qsTr("Select Excel / CSV")
+
+                            property bool clickFeedback: false
+                            Timer {
+                                id: ds2Timer
+                                interval: 450
+                                onTriggered: ds2Btn.clickFeedback = false
+                            }
 
                             contentItem: Text {
                                 text: parent.text
@@ -427,9 +470,13 @@ Item {
                             background: Rectangle {
                                 radius: 10
                                 color: parent.down ? theme.primaryDark : theme.primary
+                                border.color: ds2Btn.clickFeedback ? theme.success : "transparent"
+                                border.width: 1
                             }
 
                             onClicked: {
+                                clickFeedback = true
+                                ds2Timer.restart()
                                 dataset2Dialog.open()
                             }
                         }
@@ -437,95 +484,7 @@ Item {
                 }
             }
 
-            // =================================================
-            // YÜKLEME DURUMU
-            // =================================================
-
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.preferredHeight: 105
-
-                radius: 16
-                color: theme.surfaceAlt
-                border.width: 1
-                border.color: theme.border
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 20
-                    spacing: 16
-
-                    Rectangle {
-                        Layout.preferredWidth: 48
-                        Layout.preferredHeight: 48
-                        radius: 14
-                        color: page.loadedCount === 2 ? theme.success : theme.primary
-
-                        Label {
-                            anchors.centerIn: parent
-                            text: page.loadedCount === 2 ? "✓" : page.loadedCount + "/2"
-                            color: "#FFFFFF"
-                            font.pixelSize: 16
-                            font.bold: true
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-
-                        Label {
-                            text:
-                                page.loadedCount === 2
-                                ? "İki veri seti de hazır"
-                                : "Veri setlerini yükleyin"
-                            color: theme.text
-                            font.pixelSize: 16
-                            font.bold: true
-                        }
-
-                        Label {
-                            Layout.fillWidth: true
-                            text:
-                                page.loadedCount === 2
-                                ? "Veri setleri başarıyla yüklendi. Aşağıdaki tablodan sütun yapılarını inceleyebilir veya analize geçebilirsiniz."
-                                : "Karşılaştırma ve analiz için iki veri setinin de yüklenmesi gerekiyor."
-                            color: theme.textSecondary
-                            font.pixelSize: 12
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-
-                    Button {
-                        visible: page.loadedCount === 2
-                        Layout.preferredWidth: 180
-                        Layout.preferredHeight: 40
-                        text: "Veri Analizine Git →"
-
-                        contentItem: Text {
-                            text: parent.text
-                            color: "#FFFFFF"
-                            font.pixelSize: 12
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
-                        background: Rectangle {
-                            radius: 10
-                            color: parent.down ? theme.primaryDark : theme.primary
-                        }
-
-                        onClicked: {
-                            page.goToPage(2)
-                        }
-                    }
-                }
-            }
-
-            // =================================================
+            // ================================================================
             // RECENT FILES QUICK ACCESS
             // =================================================
 
@@ -548,14 +507,14 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         Label {
-                            text: "📂 Son Kullanılan Dosyalar (Tek Tıkla Yükle)"
+                            text: qsTr("📂 Recent Files (Quick Load)")
                             color: theme.text
                             font.pixelSize: 14
                             font.bold: true
                         }
                         Item { Layout.fillWidth: true }
                         Label {
-                            text: "Açmak istediğiniz veri setini seçin"
+                            text: qsTr("Select a dataset to load")
                             color: theme.textSecondary
                             font.pixelSize: 11
                         }
@@ -565,6 +524,7 @@ Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
+                        boundsBehavior: Flickable.StopAtBounds
                         spacing: 6
                         model: page.appController ? page.appController.recentFiles : []
 
@@ -607,11 +567,26 @@ Item {
                                 }
 
                                 Button {
+                                    id: setDs1Btn
                                     Layout.preferredHeight: 28
                                     Layout.preferredWidth: 120
-                                    text: "Dataset 1 Yap"
+                                    text: qsTr("Set as Dataset 1")
                                     font.pixelSize: 10
+                                    property bool clickFeedback: false
+                                    Timer {
+                                        id: setDs1Timer
+                                        interval: 450
+                                        onTriggered: setDs1Btn.clickFeedback = false
+                                    }
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: setDs1Btn.down ? theme.surfaceAlt : (setDs1Btn.hovered ? theme.surfaceAlt : theme.surface)
+                                        border.color: setDs1Btn.clickFeedback ? theme.success : theme.border
+                                        border.width: 1
+                                    }
                                     onClicked: {
+                                        clickFeedback = true
+                                        setDs1Timer.restart()
                                         if (page.appController && modelData.path) {
                                             page.appController.loadRecentFileAsDataset(1, modelData.path)
                                         }
@@ -619,11 +594,26 @@ Item {
                                 }
 
                                 Button {
+                                    id: setDs2Btn
                                     Layout.preferredHeight: 28
                                     Layout.preferredWidth: 120
-                                    text: "Dataset 2 Yap"
+                                    text: qsTr("Set as Dataset 2")
                                     font.pixelSize: 10
+                                    property bool clickFeedback: false
+                                    Timer {
+                                        id: setDs2Timer
+                                        interval: 450
+                                        onTriggered: setDs2Btn.clickFeedback = false
+                                    }
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: setDs2Btn.down ? theme.surfaceAlt : (setDs2Btn.hovered ? theme.surfaceAlt : theme.surface)
+                                        border.color: setDs2Btn.clickFeedback ? theme.success : theme.border
+                                        border.width: 1
+                                    }
                                     onClicked: {
+                                        clickFeedback = true
+                                        setDs2Timer.restart()
                                         if (page.appController && modelData.path) {
                                             page.appController.loadRecentFileAsDataset(2, modelData.path)
                                         }
@@ -646,17 +636,13 @@ Item {
                 Layout.rightMargin: 28
                 Layout.preferredHeight: 380
 
-                title: "Dataset 1 Sütun Yapısı"
+                title: qsTr("Dataset 1 Column Structure")
                 datasetName: page.datasetName(1)
                 rowCount: page.datasetRows(1)
                 columnCount: page.datasetColumns(1)
                 sheetName: page.appController ? page.appController.dataset1SheetName : ""
                 model: page.appController ? page.appController.dataset1ColumnModel : null
             }
-
-            // =================================================
-            // DATASET 2 DETAY TABLOSU
-            // =================================================
 
             // =================================================
             // HAM VERİ (RAW DATA) AYRIŞTIRMA KARTI
@@ -693,13 +679,13 @@ Item {
                         Layout.fillWidth: true
                         spacing: 2
                         Label {
-                            text: "Ham Veri & Metadata Ayrıştırma (Raw Data Parsing)"
+                            text: qsTr("Raw Data & Metadata Parsing")
                             color: theme.text
                             font.pixelSize: 14
                             font.bold: true
                         }
                         Label {
-                            text: "Binary/text ham veri paketlerini parametre metadatasını kullanarak ayrıştırın ve tablo olarak inceleyin."
+                            text: qsTr("Parse binary/text raw packet data streams using protocol metadata and inspect as tabular datasets.")
                             color: theme.textSecondary
                             font.pixelSize: 11
                         }
@@ -708,8 +694,8 @@ Item {
                     Button {
                         Layout.preferredWidth: 210
                         Layout.preferredHeight: 38
-                        text: "⚡ Ham Veri Ayrıştır →"
-                        onClicked: page.goToPage(6)
+                        text: qsTr("⚡ Parse Raw Data →")
+                        onClicked: page.goToPage(7)
                     }
                 }
             }
@@ -721,7 +707,7 @@ Item {
                 Layout.rightMargin: 28
                 Layout.preferredHeight: 380
 
-                title: "Dataset 2 Sütun Yapısı"
+                title: qsTr("Dataset 2 Column Structure")
                 datasetName: page.datasetName(2)
                 rowCount: page.datasetRows(2)
                 columnCount: page.datasetColumns(2)

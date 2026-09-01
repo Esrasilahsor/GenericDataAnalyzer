@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Dialogs 1.3
 import "../" as AppTheme
+import "../components" as Components
 
 Item {
     id: page
@@ -28,16 +29,20 @@ Item {
     // Metadata File Dialog
     FileDialog {
         id: metadataDialog
-        title: "Parametre Metadata Dosyası Seç (.xlsx)"
-        folder: appController && appController.dataDirectory !== "" ? ("file:///" + String(appController.dataDirectory).replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
-        nameFilters: ["Excel Dosyaları (*.xlsx *.xls)", "Tüm Dosyalar (*.*)"]
+        title: qsTr("Select Parameter Metadata File (.xlsx, .csv, .txt)")
+        folder: appController && appController.dataDirectory !== ""
+                    ? ("file:///" + String(appController.dataDirectory).replace(/\\/g, "/"))
+                    : (appController && appController.defaultExportDirectory !== ""
+                        ? ("file:///" + String(appController.defaultExportDirectory).replace(/\\/g, "/"))
+                        : "")
+        nameFilters: [qsTr("Metadata Files (*.xlsx *.csv *.txt)"), qsTr("All Files (*.*)")]
         onAccepted: {
             var path = String(fileUrl).replace("file:///", "")
             var ok = appController.loadRawMetadata(path)
             if (ok) {
-                showStatus("✓ Metadata başarıyla yüklendi: " + appController.rawParameterDefinitionCount + " parametre tanımı bulundu.", true)
+                showStatus(qsTr("✓ Metadata loaded successfully: %1 parameter definitions found.").arg(appController.rawParameterDefinitionCount), true)
             } else {
-                showStatus("✕ Metadata yükleme hatası: " + (appController.lastError || "Hata"), false)
+                showStatus(qsTr("✕ Metadata loading error: %1").arg(appController.lastError || qsTr("Error")), false)
             }
         }
     }
@@ -45,62 +50,139 @@ Item {
     // Raw Data File Dialog
     FileDialog {
         id: rawDataDialog
-        title: "Ham Veri Dosyası Seç (.bin, .txt, .dat, .raw)"
-        folder: appController && appController.dataDirectory !== "" ? ("file:///" + String(appController.dataDirectory).replace(/\\/g, "/")) : "file:///C:/Users/aybuk/Desktop/GenericDataAnalyzer/data"
-        nameFilters: ["Ham Veri Dosyaları (*.bin *.dat *.txt *.raw)", "Tüm Dosyalar (*.*)"]
+        title: qsTr("Select Raw Data File (.bin, .txt, .dat, .raw)")
+        folder: appController && appController.dataDirectory !== ""
+                    ? ("file:///" + String(appController.dataDirectory).replace(/\\/g, "/"))
+                    : (appController && appController.defaultExportDirectory !== ""
+                        ? ("file:///" + String(appController.defaultExportDirectory).replace(/\\/g, "/"))
+                        : "")
+        nameFilters: [qsTr("Raw Data Files (*.bin *.dat *.txt *.raw)"), qsTr("All Files (*.*)")]
         onAccepted: {
             var path = String(fileUrl).replace("file:///", "")
             var ok = appController.loadRawDataFile(path)
             if (ok) {
-                showStatus("✓ Ham veri başarıyla yüklendi: " + appController.rawDataByteCount + " bayt okundu.", true)
+                showStatus(qsTr("✓ Raw data loaded successfully: %1 bytes read.").arg(appController.rawDataByteCount), true)
             } else {
-                showStatus("✕ Ham veri yükleme hatası: " + (appController.lastError || "Hata"), false)
+                showStatus(qsTr("✕ Raw data loading error: %1").arg(appController.lastError || qsTr("Error")), false)
+            }
+        }
+    }
+
+    Connections {
+        target: appController
+        function onRawParseCompleted(success, message) {
+            if (success) {
+                showStatus(qsTr("✓ %1").arg(message), true)
+            } else {
+                showStatus(qsTr("✕ %1").arg(message), false)
             }
         }
     }
 
     ScrollView {
+        id: pageScrollView
         anchors.fill: parent
         clip: true
+        contentWidth: availableWidth
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
-            width: page.width
-            spacing: 16
+            width: pageScrollView.availableWidth
+            spacing: 18
 
-            Item { Layout.preferredHeight: 8 }
+            // Header banner
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 70
+                radius: 16
+                color: theme.surface
+                border.color: theme.border
+                border.width: 1
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    spacing: 14
+
+                    Rectangle {
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        radius: 10
+                        color: theme.accentSoft
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: "📡"
+                            font.pixelSize: 18
+                        }
+                    }
+
+                    ColumnLayout {
+                        spacing: 2
+
+                        Label {
+                            text: qsTr("Raw Data Parser (Telemetry / Sensor Engine)")
+                            color: theme.text
+                            font.pixelSize: 16
+                            font.bold: true
+                        }
+
+                        Label {
+                            text: qsTr("Parse binary & telemetry raw packet data using bit-level definitions and import directly into the analysis pipeline.")
+                            color: theme.textSecondary
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+                }
+            }
 
             // Status message
             Rectangle {
-                visible: page.statusMessage !== ""
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
                 Layout.preferredHeight: 40
                 radius: 8
-                color: page.statusSuccess ? "#1B5E20" : "#B71C1C"
+                color: page.statusSuccess ? theme.successSoft : theme.errorSoft
+                border.color: page.statusSuccess ? theme.success : theme.error
+                border.width: 1
+                visible: page.statusMessage !== ""
+
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 14
+                    spacing: 8
+
                     Label {
+                        Layout.fillWidth: true
                         text: page.statusMessage
-                        color: "#FFFFFF"
-                        font.pixelSize: 12
+                        color: page.statusSuccess ? theme.success : theme.error
+                        font.pixelSize: 13
                         font.bold: true
+                        elide: Text.ElideRight
                     }
                 }
             }
 
-            // Top Cards: Parameter Metadata & Raw Data
-            RowLayout {
+            // Cards Grid
+            GridLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
+                columns: 2
+                columnSpacing: 18
+                rowSpacing: 18
 
-                // Card 1: Parameter Metadata
+                // 1. Parameter Metadata Card
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 180
+                    Layout.preferredHeight: 210
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -109,46 +191,88 @@ Item {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 20
-                        spacing: 8
+                        spacing: 12
 
-                        Label {
-                            text: "Parameter Metadata"
-                            color: theme.text
-                            font.pixelSize: 17
-                            font.bold: true
-                            Layout.alignment: Qt.AlignHCenter
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Label {
+                                text: "📋 " + qsTr("1. Parameter Metadata")
+                                color: theme.text
+                                font.pixelSize: 15
+                                font.bold: true
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Rectangle {
+                                Layout.preferredWidth: 80
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                color: appController && appController.rawMetadataLoaded ? theme.successSoft : theme.surfaceAlt
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: appController && appController.rawMetadataLoaded ? qsTr("Loaded") : qsTr("Not Loaded")
+                                    color: appController && appController.rawMetadataLoaded ? theme.success : theme.textSecondary
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
                         }
 
                         Label {
-                            text: appController && appController.rawMetadataLoaded ? "Metadata loaded successfully" : "No metadata loaded"
-                            color: appController && appController.rawMetadataLoaded ? theme.success : theme.textSecondary
-                            font.pixelSize: 13
-                            Layout.alignment: Qt.AlignHCenter
-                        }
-
-                        Label {
-                            text: appController && appController.rawMetadataLoaded ? (appController.rawParameterDefinitionCount + " parameter definitions") : "Select an Excel metadata definition file"
+                            text: qsTr("Load metadata containing struct names, bit offsets, sizes, data types, and units.")
                             color: theme.textSecondary
                             font.pixelSize: 12
-                            Layout.alignment: Qt.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: appController && appController.rawMetadataLoaded
+                                  ? qsTr("File: %1 (%2 parameters)").arg(appController.rawMetadataFilePath.split("/").pop()).arg(appController.rawParameterDefinitionCount)
+                                  : qsTr("No metadata file selected.")
+                            color: appController && appController.rawMetadataLoaded ? theme.text : theme.textSecondary
+                            font.pixelSize: 12
+                            elide: Text.ElideMiddle
+                            Layout.fillWidth: true
                         }
 
                         Item { Layout.fillHeight: true }
 
                         Button {
+                            id: metaBtn
                             Layout.preferredWidth: 180
                             Layout.preferredHeight: 38
                             Layout.alignment: Qt.AlignHCenter
-                            text: appController && appController.rawMetadataLoaded ? "Change Metadata" : "Load Metadata (.xlsx)"
-                            onClicked: metadataDialog.open()
+                            text: appController && appController.rawMetadataLoaded ? qsTr("Change Metadata") : qsTr("Load Metadata (.xlsx)")
+                            property bool clickFeedback: false
+                            Timer {
+                                id: metaTimer
+                                interval: 450
+                                onTriggered: metaBtn.clickFeedback = false
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: metaBtn.down ? theme.surfaceAlt : (metaBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: metaBtn.clickFeedback ? theme.success : theme.border
+                                border.width: 1
+                            }
+                            onClicked: {
+                                clickFeedback = true
+                                metaTimer.restart()
+                                metadataDialog.open()
+                            }
                         }
                     }
                 }
 
-                // Card 2: Raw Data
+                // 2. Raw Data File Card
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 180
+                    Layout.preferredHeight: 210
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -157,38 +281,80 @@ Item {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 20
-                        spacing: 8
+                        spacing: 12
 
-                        Label {
-                            text: "Raw Data"
-                            color: theme.text
-                            font.pixelSize: 17
-                            font.bold: true
-                            Layout.alignment: Qt.AlignHCenter
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Label {
+                                text: "📦 " + qsTr("2. Raw Data Source")
+                                color: theme.text
+                                font.pixelSize: 15
+                                font.bold: true
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Rectangle {
+                                Layout.preferredWidth: 80
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                color: appController && appController.rawDataLoaded ? theme.successSoft : theme.surfaceAlt
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: appController && appController.rawDataLoaded ? qsTr("Loaded") : qsTr("Not Loaded")
+                                    color: appController && appController.rawDataLoaded ? theme.success : theme.textSecondary
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
                         }
 
                         Label {
-                            text: appController && appController.rawDataLoaded ? "Raw data loaded successfully" : "No raw data loaded"
-                            color: appController && appController.rawDataLoaded ? theme.success : theme.textSecondary
-                            font.pixelSize: 13
-                            Layout.alignment: Qt.AlignHCenter
-                        }
-
-                        Label {
-                            text: appController && appController.rawDataLoaded ? (appController.rawDataByteCount + " bytes") : "Select a binary/text packet file"
+                            text: qsTr("Load binary packets (.bin, .raw) or formatted hex strings (.txt, .dat).")
                             color: theme.textSecondary
                             font.pixelSize: 12
-                            Layout.alignment: Qt.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: appController && appController.rawDataLoaded
+                                  ? qsTr("File: %1 (%2 bytes)").arg(appController.rawDataFilePath.split("/").pop()).arg(appController.rawDataByteCount)
+                                  : qsTr("No raw data file selected.")
+                            color: appController && appController.rawDataLoaded ? theme.text : theme.textSecondary
+                            font.pixelSize: 12
+                            elide: Text.ElideMiddle
+                            Layout.fillWidth: true
                         }
 
                         Item { Layout.fillHeight: true }
 
                         Button {
+                            id: rawFileBtn
                             Layout.preferredWidth: 180
                             Layout.preferredHeight: 38
                             Layout.alignment: Qt.AlignHCenter
-                            text: appController && appController.rawDataLoaded ? "Change Raw Data" : "Load Raw Data (.bin)"
-                            onClicked: rawDataDialog.open()
+                            text: appController && appController.rawDataLoaded ? qsTr("Change Raw Data") : qsTr("Load Raw Data (.bin)")
+                            property bool clickFeedback: false
+                            Timer {
+                                id: rawFileTimer
+                                interval: 450
+                                onTriggered: rawFileBtn.clickFeedback = false
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: rawFileBtn.down ? theme.surfaceAlt : (rawFileBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: rawFileBtn.clickFeedback ? theme.success : theme.border
+                                border.width: 1
+                            }
+                            onClicked: {
+                                clickFeedback = true
+                                rawFileTimer.restart()
+                                rawDataDialog.open()
+                            }
                         }
                     }
                 }
@@ -203,74 +369,157 @@ Item {
                 radius: 14
                 color: theme.surfaceAlt
                 border.color: theme.border
+                border.width: 1
 
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: 14
                     spacing: 12
 
-                    Button {
-                        Layout.preferredWidth: 160
-                        Layout.preferredHeight: 38
-                        text: "⚡ Parse Raw Data"
-                        enabled: appController && appController.rawMetadataLoaded && appController.rawDataLoaded
-                        onClicked: {
-                            var ok = appController.parseRawData()
-                            if (ok) {
-                                showStatus("✓ Ham veri paketi başarıyla ayrıştırıldı!", true)
-                            } else {
-                                showStatus("✕ Ayrıştırma hatası: " + (appController.lastError || "Hata"), false)
+                    ColumnLayout {
+                        spacing: 2
+
+                        Button {
+                            id: parseBtn
+                            Layout.preferredWidth: 160
+                            Layout.preferredHeight: 38
+                            text: qsTr("⚡ Parse Raw Data")
+                            enabled: appController && appController.rawMetadataLoaded && appController.rawDataLoaded && !appController.rawParsing
+                            onClicked: {
+                                var ok = appController.parseRawData()
+                                if (ok) {
+                                    showStatus(qsTr("Parsing raw data in background..."), true)
+                                } else {
+                                    showStatus(qsTr("✕ Parsing error: %1").arg(appController.lastError || qsTr("Error")), false)
+                                }
+                            }
+
+                            background: Rectangle {
+                                radius: 8
+                                color: parseBtn.down ? theme.surfaceAlt : (parseBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: (appController && appController.rawParsing) ? theme.success : theme.border
+                                border.width: 1
                             }
                         }
-                    }
 
-                    Button {
-                        Layout.preferredWidth: 130
-                        Layout.preferredHeight: 38
-                        text: "✕ Clear Results"
-                        enabled: appController && (appController.rawParseAvailable || appController.rawMetadataLoaded || appController.rawDataLoaded)
-                        onClicked: {
-                            appController.clearRawParse()
-                            showStatus("Sonuçlar temizlendi.", true)
+                        Components.CompactProgress {
+                            Layout.preferredWidth: 160
+                            running: appController && appController.rawParsing
+                            progress: appController ? appController.rawParseProgress : 0
+                            theme: page.theme
                         }
                     }
 
-                    Label {
-                        text: appController && appController.rawParseAvailable ? "✓ Parse completed" : ""
-                        color: theme.success
-                        font.pixelSize: 13
-                        font.bold: true
+                    Button {
+                        id: cancelParseBtn
+                        Layout.preferredWidth: 90
+                        Layout.preferredHeight: 38
+                        text: qsTr("Cancel")
+                        visible: appController && appController.rawParsing
+                        property bool clickFeedback: false
+                        Timer {
+                            id: cancelTimer
+                            interval: 450
+                            onTriggered: cancelParseBtn.clickFeedback = false
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: cancelParseBtn.down ? theme.surfaceAlt : (cancelParseBtn.hovered ? theme.surfaceAlt : theme.surface)
+                            border.color: cancelParseBtn.clickFeedback ? theme.success : theme.border
+                            border.width: 1
+                        }
+                        onClicked: {
+                            clickFeedback = true
+                            cancelTimer.restart()
+                            appController.cancelRawParsing()
+                        }
+                    }
+
+                    Button {
+                        id: clearParseBtn
+                        Layout.preferredWidth: 130
+                        Layout.preferredHeight: 38
+                        text: qsTr("✕ Clear Results")
+                        enabled: appController && !appController.rawParsing && (appController.rawParseAvailable || appController.rawMetadataLoaded || appController.rawDataLoaded)
+                        property bool clickFeedback: false
+                        Timer {
+                            id: clearTimer
+                            interval: 450
+                            onTriggered: clearParseBtn.clickFeedback = false
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: clearParseBtn.down ? theme.surfaceAlt : (clearParseBtn.hovered ? theme.surfaceAlt : theme.surface)
+                            border.color: clearParseBtn.clickFeedback ? theme.success : theme.border
+                            border.width: 1
+                        }
+                        onClicked: {
+                            clickFeedback = true
+                            clearTimer.restart()
+                            appController.clearRawParse()
+                            showStatus(qsTr("Results cleared."), true)
+                        }
                     }
 
                     Item { Layout.fillWidth: true }
 
                     // Import as Dataset buttons
                     Button {
+                        id: importDs1Btn
                         Layout.preferredWidth: 175
                         Layout.preferredHeight: 38
-                        text: "📥 Dataset 1 Olarak Aktar"
-                        enabled: appController && appController.rawParseAvailable
+                        text: qsTr("📥 Import as Dataset 1")
+                        enabled: appController && appController.rawParseAvailable && !appController.rawParsing
+                        property bool clickFeedback: false
+                        Timer {
+                            id: importDs1Timer
+                            interval: 450
+                            onTriggered: importDs1Btn.clickFeedback = false
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: importDs1Btn.down ? theme.surfaceAlt : (importDs1Btn.hovered ? theme.surfaceAlt : theme.surface)
+                            border.color: importDs1Btn.clickFeedback ? theme.success : theme.border
+                            border.width: 1
+                        }
                         onClicked: {
+                            clickFeedback = true
+                            importDs1Timer.restart()
                             var ok = appController.importParsedRawDataAsDataset(1, "Parsed_Raw_Packet_1")
                             if (ok) {
-                                showStatus("✓ Ayrıştırılmış paket Dataset 1 olarak aktarıldı! Analiz edebilirsiniz.", true)
+                                showStatus(qsTr("✓ Parsed packet imported as Dataset 1! Ready for analysis."), true)
                             } else {
-                                showStatus("✕ Aktarma hatası: " + (appController.lastError || "Hata"), false)
+                                showStatus(qsTr("✕ Import error: %1").arg(appController.lastError || qsTr("Error")), false)
                             }
                         }
                     }
 
                     Button {
+                        id: importDs2Btn
                         Layout.preferredWidth: 175
                         Layout.preferredHeight: 38
-                        text: "📥 Dataset 2 Olarak Aktar"
-                        enabled: appController && appController.rawParseAvailable
+                        text: qsTr("📥 Import as Dataset 2")
+                        enabled: appController && appController.rawParseAvailable && !appController.rawParsing
+                        property bool clickFeedback: false
+                        Timer {
+                            id: importDs2Timer
+                            interval: 450
+                            onTriggered: importDs2Btn.clickFeedback = false
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: importDs2Btn.down ? theme.surfaceAlt : (importDs2Btn.hovered ? theme.surfaceAlt : theme.surface)
+                            border.color: importDs2Btn.clickFeedback ? theme.success : theme.border
+                            border.width: 1
+                        }
                         onClicked: {
+                            clickFeedback = true
+                            importDs2Timer.restart()
                             var ok = appController.importParsedRawDataAsDataset(2, "Parsed_Raw_Packet_2")
                             if (ok) {
-                                showStatus("✓ Ayrıştırılmış paket Dataset 2 olarak aktarıldı! Analiz edebilirsiniz.", true)
+                                showStatus(qsTr("✓ Parsed packet imported as Dataset 2! Ready for analysis."), true)
                             } else {
-                                showStatus("✕ Aktarma hatası: " + (appController.lastError || "Hata"), false)
+                                showStatus(qsTr("✕ Import error: %1").arg(appController.lastError || qsTr("Error")), false)
                             }
                         }
                     }
@@ -294,7 +543,7 @@ Item {
                     spacing: 12
 
                     Label {
-                        text: "Parsed Parameters"
+                        text: qsTr("Parsed Parameters")
                         color: theme.text
                         font.pixelSize: 16
                         font.bold: true
@@ -312,11 +561,11 @@ Item {
                             anchors.margins: 12
                             spacing: 10
 
-                            Label { Layout.preferredWidth: 200; text: "Parameter"; color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
-                            Label { Layout.preferredWidth: 180; text: "Value"; color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
-                            Label { Layout.preferredWidth: 140; text: "Type"; color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
-                            Label { Layout.preferredWidth: 100; text: "Unit"; color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
-                            Label { Layout.preferredWidth: 100; text: "Status"; color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
+                            Label { Layout.preferredWidth: 200; text: qsTr("Parameter"); color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
+                            Label { Layout.preferredWidth: 180; text: qsTr("Value"); color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
+                            Label { Layout.preferredWidth: 140; text: qsTr("Type"); color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
+                            Label { Layout.preferredWidth: 100; text: qsTr("Unit"); color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
+                            Label { Layout.preferredWidth: 100; text: qsTr("Status"); color: theme.textSecondary; font.pixelSize: 12; font.bold: true }
                             Item { Layout.fillWidth: true }
                         }
                     }
@@ -345,53 +594,73 @@ Item {
                                     font.bold: true
                                     elide: Text.ElideMiddle
                                 }
+
                                 Label {
                                     Layout.preferredWidth: 180
-                                    text: (itemData && itemData.displayValue !== undefined && itemData.displayValue !== "") ? String(itemData.displayValue) : String((itemData && itemData.value !== undefined) ? itemData.value : "-")
-                                    color: theme.primary
+                                    text: (itemData && itemData.displayValue !== undefined) ? itemData.displayValue : ""
+                                    color: (itemData && itemData.status === "Ok") ? theme.primary : (itemData && itemData.status === "Warning" ? theme.warning : theme.error)
                                     font.pixelSize: 13
                                     font.bold: true
-                                    elide: Text.ElideMiddle
+                                    elide: Text.ElideRight
                                 }
+
                                 Label {
                                     Layout.preferredWidth: 140
-                                    text: (itemData && itemData.dataType !== undefined && itemData.dataType !== "") ? itemData.dataType : "-"
+                                    text: (itemData && itemData.dataType !== undefined) ? itemData.dataType : ""
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
+
                                 Label {
                                     Layout.preferredWidth: 100
                                     text: (itemData && itemData.unit !== undefined && itemData.unit !== "") ? itemData.unit : "-"
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
+
                                 Rectangle {
-                                    Layout.preferredWidth: 50
+                                    Layout.preferredWidth: 70
                                     Layout.preferredHeight: 22
-                                    radius: 4
-                                    color: (itemData && (itemData.status === "OK" || itemData.valid)) ? "#1B5E20" : "#B71C1C"
+                                    radius: 11
+                                    color: (itemData && itemData.status === "Ok") ? theme.successSoft : (itemData && itemData.status === "Warning" ? theme.warningSoft : theme.errorSoft)
+
                                     Label {
                                         anchors.centerIn: parent
-                                        text: (itemData && (itemData.status === "OK" || itemData.valid)) ? "OK" : "ERROR"
-                                        color: "#FFFFFF"
-                                        font.pixelSize: 10
+                                        text: (itemData && itemData.status !== undefined) ? itemData.status : ""
+                                        color: (itemData && itemData.status === "Ok") ? theme.success : (itemData && itemData.status === "Warning" ? theme.warning : theme.error)
+                                        font.pixelSize: 11
                                         font.bold: true
                                     }
                                 }
+
                                 Item { Layout.fillWidth: true }
                             }
                         }
                     }
 
-                    Label {
-                        visible: !appController || !appController.parameterModel || appController.parameterModel.count === 0
+                    // Empty State
+                    Item {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 80
-                        text: "Henüz ham veri ayrıştırılmadı. Metadata ve Ham Veri dosyalarını yükleyip 'Parse Raw Data' butonuna tıklayın."
-                        color: theme.textSecondary
-                        font.pixelSize: 13
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
+                        Layout.fillHeight: true
+                        visible: !appController || !appController.parameterModel || appController.parameterModel.count === 0
+
+                        ColumnLayout {
+                            anchors.centerIn: parent
+                            spacing: 8
+
+                            Label {
+                                Layout.alignment: Qt.AlignHCenter
+                                text: "📊"
+                                font.pixelSize: 32
+                            }
+
+                            Label {
+                                Layout.alignment: Qt.AlignHCenter
+                                text: qsTr("No parameters parsed yet.")
+                                color: theme.textSecondary
+                                font.pixelSize: 13
+                            }
+                        }
                     }
                 }
             }

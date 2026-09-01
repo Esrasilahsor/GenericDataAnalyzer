@@ -16,9 +16,14 @@
         <file>qml/assets/app_icon.ico</file>
         <file>qml/assets/app_icon.png</file>
         <file>qml/components/DatasetDetails.qml</file>
+        <file>qml/components/AnalysisNotificationDialog.qml</file>
+        <file>qml/components/SessionRestoreDialog.qml</file>
+        <file>qml/components/WorkflowNavCard.qml</file>
+        <file>qml/components/CompactProgress.qml</file>
         <file>qml/qmldir</file>
         <file>qml/pages/DataCleaningPage.qml</file>
         <file>qml/pages/VisualizationPage.qml</file>
+        <file>qml/pages/ExportPage.qml</file>
         <file>qml/pages/RawDataPage.qml</file>
     </qresource>
 </RCC>

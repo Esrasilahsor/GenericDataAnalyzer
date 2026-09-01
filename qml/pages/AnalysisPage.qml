@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
 import "../" as AppTheme
+import "../components" as Components
 
 Item {
     id: page
@@ -19,6 +20,20 @@ Item {
     property double outlierParameter: 1.5
 
     property string analysisError: ""
+    property bool sessionPromptHandled: false
+
+    function checkSessionRestore() {
+        if (page.sessionPromptHandled) return
+        if (page.appController &&
+            page.appController.sessionRestoreDecision === 0 &&
+            page.appController.hasRestorableSession) {
+            sessionRestoreDialog.showPrompt(
+                qsTr("Restore Session"),
+                qsTr("Would you like to restore the last session?"),
+                qsTr("Previous analysis results, cleaning operations and visualization settings will be restored.")
+            )
+        }
+    }
 
     function goToPage(index) {
         if (page.mainWindow)
@@ -36,11 +51,11 @@ Item {
 
     function name(dataset) {
         if (!page.appController)
-            return "Yüklenmedi"
+            return qsTr("Not loaded")
 
         return dataset === 1
-                ? page.appController.dataset1Name
-                : page.appController.dataset2Name
+                ? (page.appController.dataset1Name || qsTr("Not loaded"))
+                : (page.appController.dataset2Name || qsTr("Not loaded"))
     }
 
     function rows(dataset) {
@@ -113,6 +128,13 @@ Item {
         return page.outlierMethod
     }
 
+    function outlierParameterValue(dataset) {
+        var result = page.outlierResult(dataset)
+        if (result && result.parameter !== undefined && result.parameter !== null)
+            return Number(result.parameter)
+        return page.outlierParameter
+    }
+
     function selectedColumn(dataset) {
         return dataset === 1
                 ? page.dataset1Column
@@ -121,8 +143,13 @@ Item {
 
     function setAnalysisError(message) {
         page.analysisError = message || ""
-        if (page.analysisError !== "") {
-            errorPopup.open()
+        if (page.analysisError !== "" && page.mainWindow) {
+            page.mainWindow.showAlert(
+                qsTr("Operation / Analysis Notification"),
+                page.analysisError,
+                qsTr("A notification or warning occurred during the operation."),
+                "warning"
+            )
         }
     }
 
@@ -157,7 +184,7 @@ Item {
 
         if (column === "") {
             page.setAnalysisError(
-                "İstatistik analizi için önce bir sütun seçmelisiniz."
+                qsTr("You must select a column before running statistical analysis.")
             )
             return
         }
@@ -174,9 +201,18 @@ Item {
         if (!page.appController)
             return
 
-        var parameter = Number(page.outlierParameter)
-        if (!isFinite(parameter) || parameter <= 0)
+        var paramRaw = outlierParameterField ? outlierParameterField.text : String(page.outlierParameter)
+        var cleaned = paramRaw.trim().replace(",", ".")
+        var parameter = Number(cleaned)
+        if (!isFinite(parameter) || parameter <= 0) {
+            page.setAnalysisError(
+                qsTr("Please enter a valid numeric parameter.")
+            )
             return
+        }
+
+        page.outlierParameter = parameter
+        page.setAnalysisError("")
 
         if (page.outlierDataset === 1) {
             if (typeof page.appController.analyzeDataset1OutliersAllColumns === "function") {
@@ -268,47 +304,33 @@ Item {
         if (!page.qualityAvailable(dataset))
             return 0
 
-        var missing =
-            page.qualityNumber(dataset, "totalMissingValues")
+        var hasMissing = (page.qualityNumber(dataset, "totalMissingValues") > 0 ||
+                          page.qualityNumber(dataset, "columnsWithMissingValues") > 0) ? 1 : 0
 
-        var duplicates =
-            page.qualityNumber(dataset, "duplicateRowCount")
+        var hasDuplicates = page.qualityNumber(dataset, "duplicateRowCount") > 0 ? 1 : 0
 
-        var constants =
-            page.qualityNumber(dataset, "constantColumnCount")
+        var hasConstants = page.qualityNumber(dataset, "constantColumnCount") > 0 ? 1 : 0
 
-        var outliers =
-            page.outlierAvailable(dataset)
-            ? page.totalOutlierCount(dataset)
-            : 0
+        var hasOutliers = 0
+        if (page.outlierAvailable(dataset)) {
+            hasOutliers = page.totalOutlierCount(dataset) > 0 ? 1 : 0
+        } else {
+            var qResult = page.qualityResult(dataset)
+            if (qResult && (qResult.hasOutliers === true || Number(qResult.outlierCount || 0) > 0)) {
+                hasOutliers = 1
+            }
+        }
 
-        return missing + duplicates + constants + outliers
+        return hasMissing + hasDuplicates + hasConstants + hasOutliers
     }
 
     function qualityStatus(dataset) {
         if (!page.qualityAvailable(dataset))
-            return "Analiz bekliyor"
+            return qsTr("Pending analysis")
 
-        var missing =
-            page.qualityNumber(dataset, "totalMissingValues")
-
-        var duplicates =
-            page.qualityNumber(dataset, "duplicateRowCount")
-
-        var constants =
-            page.qualityNumber(dataset, "constantColumnCount")
-
-        var outliers =
-            page.outlierAvailable(dataset)
-            ? page.totalOutlierCount(dataset)
-            : 0
-
-        return (missing === 0 &&
-                duplicates === 0 &&
-                constants === 0 &&
-                outliers === 0)
-                ? "✓ Sorun tespit edilmedi"
-                : "⚠ İnceleme gerekli"
+        return qualityProblemCount(dataset) === 0
+                ? qsTr("✓ No issues detected")
+                : qsTr("⚠ Review required")
     }
 
     function qualityStatusColor(dataset) {
@@ -318,6 +340,12 @@ Item {
         return page.qualityProblemCount(dataset) === 0
                 ? theme.success
                 : theme.warning
+    }
+
+    onVisibleChanged: {
+        if (page.visible) {
+            page.checkSessionRestore()
+        }
     }
 
     onAppControllerChanged: {
@@ -336,6 +364,9 @@ Item {
             if (page.loaded(2) && !page.qualityAvailable(2))
                 page.runQualityAnalysis(2)
         }
+        if (page.visible) {
+            page.checkSessionRestore()
+        }
     }
 
     Connections {
@@ -343,24 +374,53 @@ Item {
         ignoreUnknownSignals: true
 
         function onDataset1Changed() {
+            page.sessionPromptHandled = false
             page.runQualityAnalysis(1)
         }
 
         function onDataset2Changed() {
+            page.sessionPromptHandled = false
             page.runQualityAnalysis(2)
         }
     }
 
     ScrollView {
+        id: pageScrollView
         anchors.fill: parent
         clip: true
+        contentWidth: availableWidth
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
-            width: page.width
+            width: pageScrollView.availableWidth
             spacing: 18
 
             Item {
                 Layout.preferredHeight: 8
+            }
+
+            // =================================================
+            // NAVIGATION & WORKFLOW PROGRESS
+            // =================================================
+
+            Components.WorkflowNavCard {
+                theme: page.theme
+                appController: page.appController
+                currentStepIndex: 2
+                title: qsTr("Next step: Data Cleaning")
+                subtitle: qsTr("Apply missing value imputation, duplicate removal, constant column drop and analyzed outlier actions in Data Cleaning.")
+                buttonText: qsTr("Go to Data Cleaning →")
+                buttonVisible: true
+                buttonEnabled: page.qualityAvailable(1) || page.qualityAvailable(2)
+                onButtonClicked: page.goToPage(3)
+                secondaryButtonText: qsTr("Skip to Comparison →")
+                secondaryButtonVisible: true
+                onSecondaryButtonClicked: {
+                    if (appController)
+                        appController.skipCleaning()
+                    page.goToPage(4)
+                }
             }
 
             // =================================================
@@ -415,7 +475,7 @@ Item {
                                 spacing: 2
 
                                 Label {
-                                    text: "DATASET " + parent.parent.parent.dataset
+                                    text: qsTr("DATASET %1").arg(parent.parent.parent.dataset)
                                     color: theme.primary
                                     font.pixelSize: 11
                                     font.bold: true
@@ -424,7 +484,7 @@ Item {
                                 Label {
                                     text: page.loaded(parent.parent.parent.dataset)
                                           ? page.name(parent.parent.parent.dataset)
-                                          : "Dosya yüklenmedi"
+                                          : qsTr("No file loaded")
                                     color: theme.text
                                     font.pixelSize: 14
                                     font.bold: true
@@ -434,11 +494,8 @@ Item {
 
                                 Label {
                                     text: page.loaded(parent.parent.parent.dataset)
-                                          ? page.rows(parent.parent.parent.dataset)
-                                            + " satır  •  "
-                                            + page.columns(parent.parent.parent.dataset)
-                                            + " sütun"
-                                          : "Veri seti bekleniyor"
+                                          ? qsTr("%1 records  •  %2 columns").arg(page.rows(parent.parent.parent.dataset)).arg(page.columns(parent.parent.parent.dataset))
+                                          : qsTr("Waiting for dataset")
                                     color: theme.textSecondary
                                     font.pixelSize: 12
                                 }
@@ -464,7 +521,7 @@ Item {
                     Layout.fillWidth: true
 
                     Label {
-                        text: "Toplu Veri Kontrolü"
+                        text: qsTr("Batch Data Quality & Outlier Check")
                         color: theme.text
                         font.pixelSize: 18
                         font.bold: true
@@ -472,7 +529,7 @@ Item {
                     }
 
                     Label {
-                        text: "Veri Kalitesi + Outlier"
+                        text: qsTr("Data Quality + Outliers")
                         color: theme.primary
                         font.pixelSize: 12
                         font.bold: true
@@ -480,7 +537,7 @@ Item {
                 }
 
                 Label {
-                    text: "Temizleme yapmadan önce iki veri setindeki kalite problemlerini tek ekranda kontrol edin."
+                    text: qsTr("Inspect quality issues and outliers in both datasets on a single screen before cleaning.")
                     color: theme.textSecondary
                     font.pixelSize: 12
                 }
@@ -541,7 +598,7 @@ Item {
                         property int outliers:
                             page.outlierAvailable(qualityCard.dataset)
                             ? page.totalOutlierCount(qualityCard.dataset)
-                            : 0
+                            : (qualityCard.available ? Number(page.qualityValue(qualityCard.dataset, "outlierCount", 0)) : 0)
 
                         Layout.fillWidth: true
                         Layout.preferredHeight: 265
@@ -564,7 +621,7 @@ Item {
                                     spacing: 2
 
                                     Label {
-                                        text: "DATASET " + qualityCard.dataset
+                                        text: qsTr("DATASET %1").arg(qualityCard.dataset)
                                         color: theme.primary
                                         font.pixelSize: 11
                                         font.bold: true
@@ -597,7 +654,7 @@ Item {
                                         anchors.centerIn: parent
                                         text:
                                             !qualityCard.available
-                                            ? "BEKLENİYOR"
+                                            ? qsTr("PENDING")
                                             : page.qualityStatus(
                                                 qualityCard.dataset
                                               )
@@ -618,10 +675,10 @@ Item {
 
                                 Repeater {
                                     model: [
-                                        { title: "Eksik değer", key: "missing" },
-                                        { title: "Duplicate", key: "duplicates" },
-                                        { title: "Sabit sütun", key: "constants" },
-                                        { title: "Outlier", key: "outliers" }
+                                        { title: qsTr("Missing values"), key: "missing" },
+                                        { title: qsTr("Duplicates"), key: "duplicates" },
+                                        { title: qsTr("Constant columns"), key: "constants" },
+                                        { title: qsTr("Outliers"), key: "outliers" }
                                     ]
 
                                     delegate: Rectangle {
@@ -705,7 +762,7 @@ Item {
                                         spacing: 1
 
                                         Label {
-                                            text: "Sütun yapısı"
+                                            text: qsTr("Column structure")
                                             color: theme.textSecondary
                                             font.pixelSize: 11
                                         }
@@ -714,9 +771,9 @@ Item {
                                             text:
                                                 qualityCard.available
                                                 ? qualityCard.numeric
-                                                  + " sayısal  •  "
+                                                  + qsTr(" numeric  •  ")
                                                   + qualityCard.textColumns
-                                                  + " metinsel"
+                                                  + qsTr(" text")
                                                 : "—"
                                             color: theme.text
                                             font.pixelSize: 12
@@ -735,7 +792,7 @@ Item {
                                         spacing: 1
 
                                         Label {
-                                            text: "Eksik sütun"
+                                            text: qsTr("Missing columns")
                                             color: theme.textSecondary
                                             font.pixelSize: 11
                                         }
@@ -760,94 +817,21 @@ Item {
                                 Layout.fillWidth: true
                                 text:
                                     !qualityCard.available
-                                    ? "Kalite analizi henüz çalıştırılmadı."
+                                    ? qsTr("Quality analysis not yet executed.")
                                     : qualityCard.outliers > 0
-                                      ? "⚠ Outlier sonucu hazır; Veri Temizleme sayfasına aktarılabilir."
+                                      ? qsTr("⚠ Outlier results ready; can be applied in Data Cleaning.")
                                       : qualityCard.constants > 0
-                                        ? "⚠ Sabit sütunlar inceleme için işaretlendi."
+                                        ? qsTr("⚠ Constant columns flagged for review.")
                                         : qualityCard.missing > 0
-                                          ? "⚠ Eksik değerler temizleme aşamasında yönetilebilir."
+                                          ? qsTr("⚠ Missing values can be managed in Data Cleaning.")
                                           : qualityCard.duplicates > 0
-                                            ? "⚠ Duplicate kayıtlar temizleme aşamasında yönetilebilir."
-                                            : "✓ Bu dataset için mevcut kalite kontrollerinde sorun bulunmadı."
+                                            ? qsTr("⚠ Duplicate records can be managed in Data Cleaning.")
+                                            : qsTr("✓ No issues detected in current quality checks.")
                                 color: page.qualityStatusColor(qualityCard.dataset)
                                 font.pixelSize: 11
                                 font.bold: true
                                 wrapMode: Text.WordWrap
                             }
-                        }
-                    }
-                }
-            }
-
-            // Toplu kontrol sonrası temizleme
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.preferredHeight: 74
-                radius: 14
-                color: theme.surfaceAlt
-                border.width: 1
-                border.color: theme.border
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 14
-
-                    Label {
-                        text: "🧹"
-                        font.pixelSize: 20
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Label {
-                            text: "Kontrolden sonra temizleme"
-                            color: theme.text
-                            font.pixelSize: 13
-                            font.bold: true
-                        }
-
-                        Label {
-                            text: "Eksik değer, duplicate, sabit sütun ve analiz edilmiş outlier sonuçları Veri Temizleme sayfasında seçerek uygulayabilirsiniz."
-                            color: theme.textSecondary
-                            font.pixelSize: 11
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                        }
-                    }
-
-                    Button {
-                        Layout.preferredWidth: 175
-                        Layout.preferredHeight: 38
-                        text: "Veri Temizlemeye Git →"
-
-                        enabled:
-                            page.qualityAvailable(1) ||
-                            page.qualityAvailable(2)
-
-                        onClicked: page.goToPage(3)
-
-                        contentItem: Text {
-                            text: parent.text
-                            color: parent.enabled
-                                   ? "#FFFFFF"
-                                   : theme.textSecondary
-                            font.pixelSize: 11
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
-                        background: Rectangle {
-                            radius: 8
-                            color: parent.enabled
-                                   ? theme.primary
-                                   : theme.border
                         }
                     }
                 }
@@ -864,14 +848,14 @@ Item {
                 spacing: 4
 
                 Label {
-                    text: "Sütun Bazında Kalite Detayı"
+                    text: qsTr("Column-Level Quality Details")
                     color: theme.text
                     font.pixelSize: 18
                     font.bold: true
                 }
 
                 Label {
-                    text: "Her sütunun veri tipi, eksik değer sayısı/yüzdesi ve benzersiz değer sayısı burada görünür."
+                    text: qsTr("Inspect data types, missing value count/percentage and unique counts per column.")
                     color: theme.textSecondary
                     font.pixelSize: 12
                 }
@@ -907,7 +891,7 @@ Item {
                                 Layout.fillWidth: true
 
                                 Label {
-                                    text: "Dataset " + columnQualityCard.dataset
+                                    text: qsTr("Dataset %1").arg(columnQualityCard.dataset)
                                     color: theme.text
                                     font.pixelSize: 14
                                     font.bold: true
@@ -917,8 +901,7 @@ Item {
                                 Label {
                                     text:
                                         page.loaded(columnQualityCard.dataset)
-                                        ? page.columns(columnQualityCard.dataset)
-                                          + " sütun"
+                                        ? qsTr("%1 columns").arg(page.columns(columnQualityCard.dataset))
                                         : "—"
                                     color: theme.textSecondary
                                     font.pixelSize: 12
@@ -936,7 +919,7 @@ Item {
                                     anchors.margins: 8
 
                                     Label {
-                                        text: "Sütun"
+                                        text: qsTr("Column")
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                         font.bold: true
@@ -944,7 +927,7 @@ Item {
                                     }
 
                                     Label {
-                                        text: "Tip"
+                                        text: qsTr("Type")
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                         font.bold: true
@@ -952,7 +935,7 @@ Item {
                                     }
 
                                     Label {
-                                        text: "Eksik"
+                                        text: qsTr("Missing")
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                         font.bold: true
@@ -961,7 +944,7 @@ Item {
                                     }
 
                                     Label {
-                                        text: "Unique"
+                                        text: qsTr("Unique")
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                         font.bold: true
@@ -975,6 +958,7 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 clip: true
+                                boundsBehavior: Flickable.StopAtBounds
                                 spacing: 5
                                 model: page.columnModel(
                                     columnQualityCard.dataset
@@ -1047,7 +1031,7 @@ Item {
 
             Label {
                 Layout.leftMargin: 28
-                text: "Sütun İstatistikleri"
+                text: qsTr("Column Statistics")
                 color: theme.text
                 font.pixelSize: 18
                 font.bold: true
@@ -1055,7 +1039,7 @@ Item {
 
             Label {
                 Layout.leftMargin: 28
-                text: "Her veri setinden bir sütun seçerek istatistikleri aynı anda karşılaştırabilirsiniz."
+                text: qsTr("Select a column from each dataset to compare their descriptive statistics simultaneously.")
                 color: theme.textSecondary
                 font.pixelSize: 12
             }
@@ -1099,7 +1083,7 @@ Item {
                                     spacing: 2
 
                                     Label {
-                                        text: "DATASET " + statisticsCard.dataset
+                                        text: qsTr("DATASET %1").arg(statisticsCard.dataset)
                                         color: theme.primary
                                         font.pixelSize: 11
                                         font.bold: true
@@ -1108,7 +1092,7 @@ Item {
                                     Label {
                                         text: page.loaded(statisticsCard.dataset)
                                               ? page.name(statisticsCard.dataset)
-                                              : "Dosya yüklenmedi"
+                                              : qsTr("No file loaded")
                                         color: theme.text
                                         font.pixelSize: 14
                                         font.bold: true
@@ -1119,8 +1103,8 @@ Item {
 
                                 Label {
                                     text: page.edaAvailable(statisticsCard.dataset)
-                                          ? "✓ Analiz edildi"
-                                          : "Analiz bekliyor"
+                                          ? qsTr("✓ Analyzed")
+                                          : qsTr("Pending analysis")
                                     color: page.edaAvailable(statisticsCard.dataset)
                                            ? theme.success
                                            : theme.textSecondary
@@ -1152,14 +1136,25 @@ Item {
                                 }
 
                                 Button {
+                                    id: viewStatsBtn
                                     Layout.preferredWidth: 145
                                     Layout.preferredHeight: 38
 
-                                    text: "İstatistikleri Gör"
+                                    text: qsTr("View Statistics")
                                     enabled: statisticsCard.selectedColumn !== ""
 
-                                    onClicked:
+                                    property bool clickFeedback: false
+                                    Timer {
+                                        id: viewStatsTimer
+                                        interval: 450
+                                        onTriggered: viewStatsBtn.clickFeedback = false
+                                    }
+
+                                    onClicked: {
+                                        clickFeedback = true
+                                        viewStatsTimer.restart()
                                         page.analyzeEda(statisticsCard.dataset)
+                                    }
 
                                     contentItem: Text {
                                         text: parent.text
@@ -1175,6 +1170,8 @@ Item {
                                         color: parent.enabled
                                                ? theme.primary
                                                : theme.border
+                                        border.color: viewStatsBtn.clickFeedback ? theme.success : "transparent"
+                                        border.width: 1
                                     }
                                 }
                             }
@@ -1196,16 +1193,16 @@ Item {
 
                                     Repeater {
                                         model: [
-                                            { title: "Count", key: "count" },
-                                            { title: "Mean", key: "mean" },
-                                            { title: "Median", key: "median" },
-                                            { title: "Min", key: "minimum" },
-                                            { title: "Max", key: "maximum" },
-                                            { title: "Std. Dev.", key: "standardDeviation" },
-                                            { title: "Q1", key: "q1" },
-                                            { title: "Q3", key: "q3" },
-                                            { title: "IQR", key: "iqr" },
-                                            { title: "Range", key: "range" }
+                                            { title: qsTr("Count"), key: "count" },
+                                            { title: qsTr("Mean"), key: "mean" },
+                                            { title: qsTr("Median"), key: "median" },
+                                            { title: qsTr("Min"), key: "minimum" },
+                                            { title: qsTr("Max"), key: "maximum" },
+                                            { title: qsTr("Std. Dev."), key: "standardDeviation" },
+                                            { title: qsTr("Q1"), key: "q1" },
+                                            { title: qsTr("Q3"), key: "q3" },
+                                            { title: qsTr("IQR"), key: "iqr" },
+                                            { title: qsTr("Range"), key: "range" }
                                         ]
 
                                         delegate: Rectangle {
@@ -1254,7 +1251,7 @@ Item {
 
             Label {
                 Layout.leftMargin: 28
-                text: "Aykırı Değer Analizi"
+                text: qsTr("Outlier Analysis")
                 color: theme.text
                 font.pixelSize: 18
                 font.bold: true
@@ -1262,7 +1259,7 @@ Item {
 
             Label {
                 Layout.leftMargin: 28
-                text: "Seçilen yöntem, veri setindeki tüm uygun sayısal sütunlara uygulanır. Sonuçlar Veri Temizleme sayfasına aktarılır."
+                text: qsTr("The selected method is applied to all eligible numeric columns. Results are passed to the Data Cleaning page.")
                 color: theme.textSecondary
                 font.pixelSize: 12
             }
@@ -1292,7 +1289,7 @@ Item {
                             spacing: 4
 
                             Label {
-                                text: "Veri seti"
+                                text: qsTr("Dataset")
                                 color: theme.textSecondary
                                 font.pixelSize: 11
                             }
@@ -1300,7 +1297,7 @@ Item {
                             ComboBox {
                                 id: outlierDatasetCombo
                                 Layout.fillWidth: true
-                                model: ["Dataset 1", "Dataset 2"]
+                                model: [qsTr("Dataset 1"), qsTr("Dataset 2")]
                                 currentIndex: page.outlierDataset - 1
 
                                 onActivated: {
@@ -1314,22 +1311,19 @@ Item {
                             spacing: 4
 
                             Label {
-                                text: "Yöntem"
+                                text: qsTr("Method")
                                 color: theme.textSecondary
                                 font.pixelSize: 11
                             }
 
                             ComboBox {
-                                id: methodCombo
+                                id: outlierMethodComboBox
                                 Layout.fillWidth: true
                                 model: ["IQR", "Z-Score"]
+                                currentIndex: page.outlierMethod === "Z-Score" ? 1 : 0
 
                                 onActivated: {
                                     page.outlierMethod = currentText
-                                    page.outlierParameter =
-                                        currentText === "IQR" ? 1.5 : 3.0
-                                    parameterField.text =
-                                        page.outlierParameter.toString()
                                 }
                             }
                         }
@@ -1339,47 +1333,60 @@ Item {
                             spacing: 4
 
                             Label {
-                                text:
-                                    page.outlierMethod === "IQR"
-                                    ? "IQR katsayısı"
-                                    : "Z-Score eşiği"
+                                text: qsTr("Parameter")
                                 color: theme.textSecondary
                                 font.pixelSize: 11
                             }
 
                             TextField {
-                                id: parameterField
+                                id: outlierParameterField
                                 Layout.fillWidth: true
-                                text: page.outlierMethod === "IQR"
-                                      ? "1.5"
-                                      : "3.0"
+                                text: page.outlierParameter > 0 ? page.outlierParameter.toString() : "1.5"
 
                                 inputMethodHints: Qt.ImhFormattedNumbersOnly
 
                                 validator: DoubleValidator {
                                     bottom: 0.01
-                                    top: 1000.0
-                                    decimals: 6
+                                    top: 100.0
+                                    decimals: 4
                                     notation: DoubleValidator.StandardNotation
                                 }
 
-                                onEditingFinished: {
-                                    var value = Number(text)
+                                onTextChanged: {
+                                    var cleaned = text.trim().replace(",", ".")
+                                    var value = Number(cleaned)
                                     if (isFinite(value) && value > 0)
                                         page.outlierParameter = value
+                                }
+
+                                onAccepted: {
+                                    if (analyzeOutlierBtn.enabled)
+                                        analyzeOutlierBtn.clicked()
                                 }
                             }
                         }
 
                         Button {
+                            id: analyzeOutlierBtn
                             Layout.preferredWidth: 135
                             Layout.preferredHeight: 38
-                            text: "Analiz Et"
+                            text: qsTr("Analyze")
                             enabled:
                                 page.loaded(page.outlierDataset) &&
-                                Number(page.outlierParameter) > 0
+                                Number(String(outlierParameterField.text).trim().replace(",", ".")) > 0
 
-                            onClicked: page.analyzeOutlier()
+                            property bool clickFeedback: false
+                            Timer {
+                                id: analyzeOutlierTimer
+                                interval: 450
+                                onTriggered: analyzeOutlierBtn.clickFeedback = false
+                            }
+
+                            onClicked: {
+                                clickFeedback = true
+                                analyzeOutlierTimer.restart()
+                                page.analyzeOutlier()
+                            }
 
                             contentItem: Text {
                                 text: parent.text
@@ -1395,6 +1402,8 @@ Item {
                                 color: parent.enabled
                                        ? theme.primary
                                        : theme.border
+                                border.color: analyzeOutlierBtn.clickFeedback ? theme.success : "transparent"
+                                border.width: 1
                             }
                         }
                     }
@@ -1415,7 +1424,7 @@ Item {
                                 spacing: 3
 
                                 Label {
-                                    text: "Analiz edilen sayısal sütun"
+                                    text: qsTr("Analyzed numeric columns")
                                     color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
@@ -1433,8 +1442,8 @@ Item {
 
                                 Label {
                                     text: page.outlierAvailable(page.outlierDataset)
-                                          ? "Sütunların tamamı tarandı"
-                                          : "Henüz analiz yapılmadı"
+                                          ? qsTr("All columns scanned")
+                                          : qsTr("No analysis yet")
                                     color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
@@ -1451,7 +1460,7 @@ Item {
                                 spacing: 3
 
                                 Label {
-                                    text: "Toplam aykırı değer"
+                                    text: qsTr("Total outliers")
                                     color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
@@ -1475,7 +1484,7 @@ Item {
                                           ? totalOutlierPercentage(
                                                 page.outlierDataset
                                             ).toFixed(2) + "%"
-                                          : "Sonuç bekleniyor"
+                                          : qsTr("Awaiting result")
                                     color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
@@ -1492,24 +1501,28 @@ Item {
                                 spacing: 3
 
                                 Label {
-                                    text: "Kullanılan kural"
+                                    text: qsTr("Rule applied")
                                     color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
 
                                 Label {
-                                    text: outlierMethodText(page.outlierDataset)
-                                          + " • "
-                                          + Number(page.outlierParameter).toFixed(3)
+                                    text: page.outlierAvailable(page.outlierDataset)
+                                          ? (outlierMethodText(page.outlierDataset)
+                                             + " • "
+                                             + Number(outlierParameterValue(page.outlierDataset)).toFixed(3))
+                                          : "—"
                                     color: theme.primary
                                     font.pixelSize: 13
                                     font.bold: true
                                 }
 
                                 Label {
-                                    text: page.outlierMethod === "IQR"
-                                          ? "Q1 − katsayı × IQR  /  Q3 + katsayı × IQR"
-                                          : "|x − mean| / std. dev. > eşik"
+                                    text: (page.outlierAvailable(page.outlierDataset)
+                                           ? outlierMethodText(page.outlierDataset)
+                                           : page.outlierMethod) === "IQR"
+                                          ? "Q1 − k × IQR  /  Q3 + k × IQR"
+                                          : "|x − mean| / std. dev. > threshold"
                                     color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
@@ -1538,7 +1551,7 @@ Item {
                     spacing: 6
 
                     Label {
-                        text: "Sütun bazında sonuçlar"
+                        text: qsTr("Column-level results")
                         color: theme.text
                         font.pixelSize: 12
                         font.bold: true
@@ -1561,8 +1574,7 @@ Item {
                             }
 
                             Label {
-                                text: String(modelData.outlierCount || 0)
-                                      + " aykırı"
+                                text: qsTr("%1 outliers").arg(modelData.outlierCount || 0)
                                 color: Number(modelData.outlierCount || 0) > 0
                                        ? theme.warning
                                        : theme.success
@@ -1584,98 +1596,28 @@ Item {
                 }
             }
 
-            // =================================================
-            // NEXT STEP
-            // =================================================
-
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.preferredHeight: 80
-
-                radius: 14
-                color: theme.surfaceAlt
-                border.width: 1
-                border.color: theme.border
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 14
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Label {
-                            text: "Sonraki adım: Veri Temizleme"
-                            color: theme.text
-                            font.pixelSize: 13
-                            font.bold: true
-                        }
-
-                        Label {
-                            text: "Eksik değer, duplicate ve bu analizde bulunan tüm aykırı değerleri Veri Temizleme sayfasında seçip tek seferde uygulayın."
-                            color: theme.textSecondary
-                            font.pixelSize: 11
-                        }
-                    }
-
-                    Button {
-                        Layout.preferredWidth: 165
-                        Layout.preferredHeight: 38
-                        text: "Veri Temizlemeye Git →"
-
-                        onClicked: page.goToPage(3)
-
-                        contentItem: Text {
-                            text: parent.text
-                            color: "#FFFFFF"
-                            font.pixelSize: 12
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
-                        background: Rectangle {
-                            radius: 8
-                            color: theme.primary
-                        }
-                    }
-
-                    Button {
-                        Layout.preferredWidth: 185
-                        Layout.preferredHeight: 38
-                        text: "Temizlemeyi Atla (Karşılaştır) →"
-
-                        onClicked: {
-                            if (appController)
-                                appController.skipCleaning()
-                            page.goToPage(4)
-                        }
-
-                        contentItem: Text {
-                            text: parent.text
-                            color: theme.text
-                            font.pixelSize: 12
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
-                        background: Rectangle {
-                            radius: 8
-                            color: theme.surfaceAlt
-                            border.width: 1
-                            border.color: theme.border
-                        }
-                    }
-                }
-            }
-
             Item {
                 Layout.preferredHeight: 24
+            }
+        }
+    }
+
+    Components.SessionRestoreDialog {
+        id: sessionRestoreDialog
+        x: Math.round((page.width - width) / 2)
+        y: Math.round((page.height - height) / 2)
+
+        onRestoreClicked: {
+            page.sessionPromptHandled = true
+            if (page.appController) {
+                page.appController.applyGlobalRestoreDecision(true)
+            }
+        }
+
+        onStartFreshClicked: {
+            page.sessionPromptHandled = true
+            if (page.appController) {
+                page.appController.applyGlobalRestoreDecision(false)
             }
         }
     }

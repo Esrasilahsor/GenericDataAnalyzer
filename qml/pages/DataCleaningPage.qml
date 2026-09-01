@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "../" as AppTheme
+import "../components" as Components
 
 Item {
     id: page
@@ -12,8 +13,25 @@ Item {
     property int activeDs: 1 // 1 for Dataset 1, 2 for Dataset 2
     property string outlierMethod: "IQR"
     property double outlierParam: 1.5
-    property string bulkMissingAction: "Mean (Ortalama)"
-    property string bulkOutlierAction: "Aykırıları kaldır"
+    property string bulkMissingAction: "Mean (Average)"
+    property string bulkOutlierAction: "Remove Outliers"
+
+    property int activeCleaningDs: 0
+    property string activeCleaningOp: ""
+    property string activeOutlierCol: ""
+    property string activeMissingCol: ""
+
+    property bool sessionPromptHandled: false
+
+    function checkSessionRestore() {
+        if (!page.appController) return
+        if (page.appController.sessionRestoreDecision === 1) {
+            if (page.appController.hasRestorableCleaningSession) {
+                page.appController.restoreCleaningSession()
+                page.refreshAnalysis()
+            }
+        }
+    }
 
     ListModel { id: missingModel }
     ListModel { id: duplicateModel }
@@ -31,9 +49,9 @@ Item {
     }
 
     function name(ds) {
-        if (!appController) return "Dataset " + ds
+        if (!appController) return qsTr("Dataset %1").arg(ds)
         var n = ds === 1 ? appController.dataset1Name : appController.dataset2Name
-        return n && n !== "" ? n : "Dataset " + ds
+        return n && n !== "" ? n : qsTr("Dataset %1").arg(ds)
     }
 
     function quality(ds) {
@@ -87,16 +105,7 @@ Item {
             missingModel.append({
                 columnName: col,
                 isNumeric: isNum,
-                action: isNum ? "Mean (Ortalama)" : "Mode (Mod)"
-            })
-        }
-
-        // Missing rows summary
-        if (missingCols.length > 0) {
-            missingModel.append({
-                columnName: "Tüm Eksik Değerli Satırlar",
-                isNumeric: false,
-                action: "Satırları kaldır"
+                action: isNum ? "Mean (Average)" : "Mode"
             })
         }
 
@@ -104,7 +113,7 @@ Item {
         var dupCount = Number(q.duplicateRowCount || 0)
         if (dupCount > 0) {
             duplicateModel.append({
-                title: "Tekrarlanan Kayıtlar (" + dupCount + " adet)",
+                title: qsTr("Duplicate Records (%1 count)").arg(dupCount),
                 count: dupCount
             })
         }
@@ -118,8 +127,11 @@ Item {
         }
 
         // 4. Outliers
+        var isOutlierAvail = ds === 1
+            ? (appController && appController.dataset1OutlierAvailable)
+            : (appController && appController.dataset2OutlierAvailable)
         var out = ds === 1 ? appController.dataset1OutlierResult : appController.dataset2OutlierResult
-        var outCols = out && out.columns ? out.columns : []
+        var outCols = (isOutlierAvail && out && out.columns) ? out.columns : []
         for (var k = 0; k < outCols.length; ++k) {
             var oc = outCols[k]
             var outCount = Number(oc.outlierCount || 0)
@@ -128,7 +140,7 @@ Item {
                     columnName: String(oc.columnName),
                     outlierCount: outCount,
                     percentage: Number(oc.outlierPercentage || 0).toFixed(2),
-                    action: "Aykırıları kaldır"
+                    action: "Remove Outliers"
                 })
             }
         }
@@ -144,55 +156,68 @@ Item {
         var ok = false
         var act = String(item.action || "")
 
-        if (item.columnName === "Tüm Eksik Değerli Satırlar" || act.indexOf("Satır") !== -1 || act === "Sil") {
+        page.activeCleaningDs = ds
+        page.activeCleaningOp = "single_missing"
+        page.activeMissingCol = item.columnName
+
+        if (act === "Drop Rows" || act === "Satırları Sil" || act === "Drop Missing Rows") {
             ok = ds === 1 ? appController.removeDataset1MissingRows() : appController.removeDataset2MissingRows()
-            log("Dataset " + ds + " • Eksik Değerli Satırlar kaldırıldı.", ok)
+            log(qsTr("Dataset %1 • Rows with missing values dropped.").arg(ds), ok)
+        } else if (act === "Drop Column" || act === "Sütunu Sil" || act === "Remove Column" || act === "Delete Column") {
+            ok = ds === 1 ? appController.removeDataset1Column(item.columnName) : appController.removeDataset2Column(item.columnName)
+            log(qsTr("Dataset %1 • Column '%2' removed.").arg(ds).arg(item.columnName), ok)
         } else if (act.indexOf("Mean") !== -1 || act.indexOf("Ortalama") !== -1) {
             ok = ds === 1 ? appController.fillDataset1MissingWithMean(item.columnName) : appController.fillDataset2MissingWithMean(item.columnName)
-            log("Dataset " + ds + " • " + item.columnName + " ortalama (Mean) ile dolduruldu.", ok)
+            log(qsTr("Dataset %1 • %2 filled with mean (Average).").arg(ds).arg(item.columnName), ok)
         } else if (act.indexOf("Median") !== -1 || act.indexOf("Medyan") !== -1) {
             ok = ds === 1 ? appController.fillDataset1MissingWithMedian(item.columnName) : appController.fillDataset2MissingWithMedian(item.columnName)
-            log("Dataset " + ds + " • " + item.columnName + " medyan ile dolduruldu.", ok)
+            log(qsTr("Dataset %1 • %2 filled with median.").arg(ds).arg(item.columnName), ok)
         } else if (act.indexOf("Mode") !== -1 || act.indexOf("Mod") !== -1) {
             ok = ds === 1 ? appController.fillDataset1MissingWithMode(item.columnName) : appController.fillDataset2MissingWithMode(item.columnName)
-            log("Dataset " + ds + " • " + item.columnName + " mod ile dolduruldu.", ok)
-        } else if (act === "Atla") {
-            log("Dataset " + ds + " • " + item.columnName + " atlandı.", true)
+            log(qsTr("Dataset %1 • %2 filled with mode.").arg(ds).arg(item.columnName), ok)
+        } else if (act.indexOf("Skip") !== -1 || act === "Atla") {
+            log(qsTr("Dataset %1 • %2 skipped.").arg(ds).arg(item.columnName), true)
         }
 
-        refreshAnalysis()
+        if (!ok) {
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+            page.activeMissingCol = ""
+        }
     }
 
     function applyBulkMissing() {
         var ds = page.activeDs
         var act = page.bulkMissingAction
-        if (act.indexOf("Satır") !== -1 || act === "Sil") {
-            var ok = ds === 1 ? appController.removeDataset1MissingRows() : appController.removeDataset2MissingRows()
-            log("Dataset " + ds + " • Tüm eksik değerli satırlar kaldırıldı.", ok)
-        } else {
-            var q = quality(ds)
-            var missingCols = q.columnsWithMissing || []
-            for (var i = 0; i < missingCols.length; ++i) {
-                var col = String(missingCols[i])
-                var isNum = isColumnNumeric(ds, col)
-                if ((act.indexOf("Mean") !== -1 || act.indexOf("Ortalama") !== -1) && isNum) {
-                    if (ds === 1) appController.fillDataset1MissingWithMean(col); else appController.fillDataset2MissingWithMean(col)
-                } else if ((act.indexOf("Median") !== -1 || act.indexOf("Medyan") !== -1) && isNum) {
-                    if (ds === 1) appController.fillDataset1MissingWithMedian(col); else appController.fillDataset2MissingWithMedian(col)
-                } else if (act.indexOf("Mode") !== -1 || act.indexOf("Mod") !== -1) {
-                    if (ds === 1) appController.fillDataset1MissingWithMode(col); else appController.fillDataset2MissingWithMode(col)
-                }
-            }
-            log("Dataset " + ds + " • Tüm eksik sütunlar '" + act + "' ile dolduruldu.", true)
+        var q = quality(ds)
+        var missingCols = q.columnsWithMissing || []
+        var numericFlags = []
+        for (var i = 0; i < missingCols.length; ++i) {
+            numericFlags.push(isColumnNumeric(ds, String(missingCols[i])))
         }
-        refreshAnalysis()
+        page.activeCleaningDs = ds
+        page.activeCleaningOp = "missing"
+        var ok = appController.applyBulkMissingCleaning(ds, act, missingCols, numericFlags)
+        if (ok) {
+            log(qsTr("Dataset %1 • Bulk missing cleaning running in background...").arg(ds), true)
+        } else {
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+            log(qsTr("✕ Bulk cleaning error: %1").arg(appController.lastError || qsTr("Error")), false)
+        }
     }
 
     function applyRemoveDuplicates() {
         var ds = page.activeDs
+        page.activeCleaningDs = ds
+        page.activeCleaningOp = "duplicates"
         var ok = ds === 1 ? appController.removeDataset1Duplicates() : appController.removeDataset2Duplicates()
-        log("Dataset " + ds + " • Tekrarlanan kayıtlar kaldırıldı.", ok)
-        refreshAnalysis()
+        if (ok) {
+            log(qsTr("Dataset %1 • Duplicate removal running in background...").arg(ds), true)
+        } else {
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+        }
     }
 
     function mapOutlierAction(actionName) {
@@ -208,50 +233,120 @@ Item {
         var item = outlierModel.get(index)
         if (!item) return
         var ds = page.activeDs
+
+        var cleaned = outlierParameterField ? outlierParameterField.text.trim().replace(",", ".") : ""
+        var val = Number(cleaned)
+        if (isFinite(val) && val > 0) {
+            page.outlierParam = val
+        }
+
         var backendAction = mapOutlierAction(item.action)
+
+        page.activeCleaningDs = ds
+        page.activeCleaningOp = "single_outlier"
+        page.activeOutlierCol = item.columnName
 
         var ok = ds === 1
             ? appController.applyDataset1OutlierAction(item.columnName, page.outlierMethod, backendAction, page.outlierParam)
             : appController.applyDataset2OutlierAction(item.columnName, page.outlierMethod, backendAction, page.outlierParam)
 
-        log("Dataset " + ds + " • " + item.columnName + " (" + item.action + " - " + page.outlierMethod + ").", ok)
-        refreshAnalysis()
+        if (ok) {
+            log(qsTr("Dataset %1 • %2 (%3 - %4) running in background...").arg(ds).arg(item.columnName).arg(item.action).arg(page.outlierMethod), true)
+        } else {
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+            page.activeOutlierCol = ""
+        }
     }
 
     function applyBulkOutliers() {
         var ds = page.activeDs
-        var total = outlierModel.count
-        var successCount = 0
-        var backendAction = mapOutlierAction(page.bulkOutlierAction)
 
-        for (var i = 0; i < outlierModel.count; ++i) {
-            var rowItem = outlierModel.get(i)
-            if (!rowItem) continue
-            var col = rowItem.columnName
-            var ok = ds === 1
-                ? appController.applyDataset1OutlierAction(col, page.outlierMethod, backendAction, page.outlierParam)
-                : appController.applyDataset2OutlierAction(col, page.outlierMethod, backendAction, page.outlierParam)
-            if (ok) successCount++
+        var cleaned = outlierParameterField ? outlierParameterField.text.trim().replace(",", ".") : ""
+        var val = Number(cleaned)
+        if (isFinite(val) && val > 0) {
+            page.outlierParam = val
         }
 
-        log("Dataset " + ds + " • " + successCount + "/" + total + " sütunun aykırı değerleri '" + page.bulkOutlierAction + "' ile temizlendi.", successCount > 0)
-        refreshAnalysis()
+        var backendAction = mapOutlierAction(page.bulkOutlierAction)
+        var cols = []
+        for (var i = 0; i < outlierModel.count; ++i) {
+            var rowItem = outlierModel.get(i)
+            if (rowItem && rowItem.columnName) {
+                cols.push(rowItem.columnName)
+            }
+        }
+
+        page.activeCleaningDs = ds
+        page.activeCleaningOp = "outliers"
+        var ok = appController.applyBulkOutlierCleaning(ds, page.outlierMethod, backendAction, page.outlierParam, cols)
+        if (ok) {
+            log(qsTr("Dataset %1 • Bulk outlier cleaning running in background...").arg(ds), true)
+        } else {
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+        }
     }
 
     function applyRemoveConstant(colName) {
         var ds = page.activeDs
         var ok = ds === 1 ? appController.removeDataset1Column(colName) : appController.removeDataset2Column(colName)
-        log("Dataset " + ds + " • Sabit sütun '" + colName + "' kaldırıldı.", ok)
-        refreshAnalysis()
+        if (ok) {
+            log(qsTr("Dataset %1 • Column '%2' removed.").arg(ds).arg(colName), true)
+        }
     }
 
-    function restoreDataset() {
+    function hasMissingCleaning(ds) {
+        if (!appController) return false
+        return ds === 1 ? appController.dataset1HasMissingCleaning : appController.dataset2HasMissingCleaning
+    }
+
+    function hasOutlierCleaning(ds) {
+        if (!appController) return false
+        return ds === 1 ? appController.dataset1HasOutlierCleaning : appController.dataset2HasOutlierCleaning
+    }
+
+    function applyResetMissing() {
+        var ds = page.activeDs
+        var ok = appController ? appController.resetDatasetMissing(ds) : false
+        if (ok) {
+            log(qsTr("↶ Dataset %1 • Missing value cleaning reverted.").arg(ds), true)
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+            page.activeOutlierCol = ""
+            page.activeMissingCol = ""
+            refreshAnalysis()
+        }
+    }
+
+    function applyResetOutliers() {
+        var ds = page.activeDs
+        var ok = appController ? appController.resetDatasetOutliers(ds) : false
+        if (ok) {
+            log(qsTr("↶ Dataset %1 • Outlier cleaning reverted.").arg(ds), true)
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+            page.activeOutlierCol = ""
+            page.activeMissingCol = ""
+            refreshAnalysis()
+        }
+    }
+
+    function applyRestore() {
         var ds = page.activeDs
         var ok = ds === 1 ? appController.restoreDataset1() : appController.restoreDataset2()
         if (ok) {
-            log("↶ Dataset " + ds + " orijinal haline sıfırlandı.", true)
+            log(qsTr("↶ Dataset %1 reset to original state.").arg(ds), true)
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+            page.activeOutlierCol = ""
+            page.activeMissingCol = ""
             refreshAnalysis()
         }
+    }
+
+    function restoreDataset() {
+        applyRestore()
     }
 
     onVisibleChanged: {
@@ -260,6 +355,7 @@ Item {
                 page.activeDs = 2
             }
             refreshAnalysis()
+            page.checkSessionRestore()
         }
     }
 
@@ -272,27 +368,78 @@ Item {
             page.activeDs = 2
         }
         refreshAnalysis()
+        if (page.visible) {
+            page.checkSessionRestore()
+        }
     }
 
     Connections {
         target: appController
+        function onSessionRestoreDecisionChanged() { page.checkSessionRestore() }
         function onDataset1QualityChanged() { if (page.activeDs === 1) page.rebuildLists() }
         function onDataset2QualityChanged() { if (page.activeDs === 2) page.rebuildLists() }
         function onDataset1OutlierChanged() { if (page.activeDs === 1) page.rebuildLists() }
         function onDataset2OutlierChanged() { if (page.activeDs === 2) page.rebuildLists() }
-        function onDataset1Changed() { if (page.activeDs === 1) page.refreshAnalysis() }
-        function onDataset2Changed() { if (page.activeDs === 2) page.refreshAnalysis() }
+        function onDataset1CleaningStateChanged() { if (page.activeDs === 1) page.rebuildLists() }
+        function onDataset2CleaningStateChanged() { if (page.activeDs === 2) page.rebuildLists() }
+        function onDataset1Changed() {
+            page.sessionPromptHandled = false
+            if (page.activeDs === 1) page.refreshAnalysis()
+        }
+        function onDataset2Changed() {
+            page.sessionPromptHandled = false
+            if (page.activeDs === 2) page.refreshAnalysis()
+        }
+        function onCleaningCompletedSignal(success, message) {
+            log(message, success)
+            page.activeCleaningDs = 0
+            page.activeCleaningOp = ""
+            page.activeOutlierCol = ""
+            page.activeMissingCol = ""
+            refreshAnalysis()
+        }
     }
 
     ScrollView {
+        id: pageScrollView
         anchors.fill: parent
         clip: true
+        contentWidth: availableWidth
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
-            width: page.width
+            width: pageScrollView.availableWidth
             spacing: 16
 
             Item { Layout.preferredHeight: 8 }
+
+            // =================================================
+            // NAVIGATION & WORKFLOW PROGRESS
+            // =================================================
+
+            Components.WorkflowNavCard {
+                theme: page.theme
+                appController: page.appController
+                currentStepIndex: 3
+                title: qsTr("Next Step: Comparison or Visualization")
+                subtitle: qsTr("You can compare the cleaned datasets or create charts on the Visualization page.")
+                buttonText: qsTr("Proceed to Comparison →")
+                buttonVisible: true
+                buttonEnabled: true
+                onButtonClicked: {
+                    if (appController)
+                        appController.setCleaningCompleted(true)
+                    page.goToPage(4)
+                }
+                secondaryButtonText: qsTr("Go to Visualization →")
+                secondaryButtonVisible: true
+                onSecondaryButtonClicked: {
+                    if (appController)
+                        appController.setCleaningCompleted(true)
+                    page.goToPage(5)
+                }
+            }
 
             // Dataset Selector & Restore Row
             Rectangle {
@@ -311,7 +458,7 @@ Item {
                     spacing: 12
 
                     Label {
-                        text: "Aktif Veri Seti:"
+                        text: qsTr("Active Dataset:")
                         color: theme.text
                         font.pixelSize: 13
                         font.bold: true
@@ -320,7 +467,7 @@ Item {
                     Button {
                         Layout.preferredWidth: 160
                         Layout.preferredHeight: 38
-                        text: "Dataset 1: " + page.name(1)
+                        text: qsTr("Dataset 1: %1").arg(page.name(1))
                         highlighted: page.activeDs === 1
                         enabled: page.isLoaded(1)
                         onClicked: {
@@ -332,7 +479,7 @@ Item {
                     Button {
                         Layout.preferredWidth: 160
                         Layout.preferredHeight: 38
-                        text: "Dataset 2: " + page.name(2)
+                        text: qsTr("Dataset 2: %1").arg(page.name(2))
                         highlighted: page.activeDs === 2
                         enabled: page.isLoaded(2)
                         onClicked: {
@@ -355,7 +502,7 @@ Item {
 
                         Label {
                             anchors.centerIn: parent
-                            text: "✓ Temizlendi"
+                            text: qsTr("✓ Cleaned")
                             color: theme.success
                             font.pixelSize: 11
                             font.bold: true
@@ -365,10 +512,28 @@ Item {
                     Item { Layout.fillWidth: true }
 
                     Button {
+                        id: resetBtn
                         Layout.preferredWidth: 160
                         Layout.preferredHeight: 38
-                        text: "↶ Orijinale Sıfırla"
-                        onClicked: page.restoreDataset()
+                        text: qsTr("↶ Reset to Original")
+                        enabled: (page.activeDs === 1 ? (appController && appController.dataset1Modified) : (appController && appController.dataset2Modified)) && appController && !appController.cleaningBusy
+                        property bool clickFeedback: false
+                        Timer {
+                            id: resetTimer
+                            interval: 450
+                            onTriggered: resetBtn.clickFeedback = false
+                        }
+                        background: Rectangle {
+                            radius: 8
+                            color: resetBtn.down ? theme.surfaceAlt : (resetBtn.hovered ? theme.surfaceAlt : theme.surface)
+                            border.color: resetBtn.clickFeedback ? theme.success : theme.border
+                            border.width: 1
+                        }
+                        onClicked: {
+                            clickFeedback = true
+                            resetTimer.restart()
+                            page.applyRestore()
+                        }
                     }
                 }
             }
@@ -393,7 +558,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 10
                         Label {
-                            text: "🧩 Eksik Değerler & Tekrarlanan Kayıtlar"
+                            text: qsTr("🧩 Missing Values & Duplicate Records")
                             color: theme.text
                             font.pixelSize: 15
                             font.bold: true
@@ -404,16 +569,62 @@ Item {
                             visible: missingModel.count > 0
                             Layout.preferredWidth: 190
                             Layout.preferredHeight: 34
-                            model: ["Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Satırları kaldır (Sil)"]
+                            model: ["Mean (Average)", "Median", "Mode", "Drop Column", "Drop Rows"]
                             onActivated: page.bulkMissingAction = currentText
                         }
 
-                        Button {
+                        ColumnLayout {
                             visible: missingModel.count > 0
-                            Layout.preferredWidth: 190
+                            spacing: 2
+
+                            Button {
+                                id: bulkMissingBtn
+                                Layout.preferredWidth: 190
+                                Layout.preferredHeight: 34
+                                text: qsTr("⚡ Apply All Missing")
+                                enabled: appController && !appController.cleaningBusy
+                                onClicked: page.applyBulkMissing()
+
+                                property bool isRunning: appController && appController.cleaningBusy && page.activeCleaningDs === page.activeDs && page.activeCleaningOp === "missing"
+                                background: Rectangle {
+                                    radius: 8
+                                    color: bulkMissingBtn.down ? theme.surfaceAlt : (bulkMissingBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                    border.color: bulkMissingBtn.isRunning ? theme.success : theme.border
+                                    border.width: 1
+                                }
+                            }
+
+                            Components.CompactProgress {
+                                Layout.preferredWidth: 190
+                                running: bulkMissingBtn.isRunning
+                                progress: appController ? appController.cleaningProgress : 0
+                                theme: page.theme
+                            }
+                        }
+
+                        Button {
+                            id: resetMissingBtn
+                            Layout.preferredWidth: 140
                             Layout.preferredHeight: 34
-                            text: "⚡ Tüm Eksikleri Uygula"
-                            onClicked: page.applyBulkMissing()
+                            text: qsTr("↶ Reset Missing")
+                            enabled: page.hasMissingCleaning(page.activeDs) && appController && !appController.cleaningBusy
+                            property bool clickFeedback: false
+                            Timer {
+                                id: resetMissingTimer
+                                interval: 450
+                                onTriggered: resetMissingBtn.clickFeedback = false
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: resetMissingBtn.down ? theme.surfaceAlt : (resetMissingBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: resetMissingBtn.clickFeedback ? theme.success : (resetMissingBtn.enabled ? theme.border : theme.surfaceAlt)
+                                border.width: 1
+                            }
+                            onClicked: {
+                                clickFeedback = true
+                                resetMissingTimer.restart()
+                                page.applyResetMissing()
+                            }
                         }
                     }
 
@@ -441,10 +652,20 @@ Item {
                                     Layout.fillWidth: true
                                 }
                                 Button {
+                                    id: removeDupBtn
                                     Layout.preferredWidth: 140
                                     Layout.preferredHeight: 32
-                                    text: "Kayıtları Kaldır"
+                                    text: qsTr("Remove Records")
+                                    enabled: appController && !appController.cleaningBusy
                                     onClicked: page.applyRemoveDuplicates()
+
+                                    property bool isRunning: appController && appController.cleaningBusy && page.activeCleaningDs === page.activeDs && page.activeCleaningOp === "duplicates"
+                                    background: Rectangle {
+                                        radius: 8
+                                        color: removeDupBtn.down ? theme.surfaceAlt : (removeDupBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                        border.color: removeDupBtn.isRunning ? theme.success : theme.border
+                                        border.width: 1
+                                    }
                                 }
                             }
                         }
@@ -457,7 +678,7 @@ Item {
                             property int rowIndex: index
                             property string colName: (model && model.columnName !== undefined) ? model.columnName : ""
                             property bool isNum: (model && model.isNumeric !== undefined) ? model.isNumeric : false
-                            property string actName: (model && model.action !== undefined) ? model.action : "Mean (Ortalama)"
+                            property string actName: (model && model.action !== undefined) ? model.action : "Mean (Average)"
                             visible: colName !== ""
                             Layout.fillWidth: true
                             Layout.preferredHeight: 48
@@ -480,12 +701,11 @@ Item {
 
                                 ComboBox {
                                     id: missingCombo
-                                    visible: colName !== "Tüm Eksik Değerli Satırlar"
                                     Layout.preferredWidth: 175
                                     Layout.preferredHeight: 34
                                     model: isNum
-                                           ? ["Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Satırları kaldır", "Atla"]
-                                           : ["Mode (Mod)", "Satırları kaldır", "Atla"]
+                                           ? ["Mean (Average)", "Median", "Mode", "Drop Column", "Drop Rows", "Skip"]
+                                           : ["Mode", "Drop Column", "Drop Rows", "Skip"]
                                     currentIndex: Math.max(0, model.indexOf(actName))
                                     onActivated: {
                                         if (rowIndex >= 0 && rowIndex < missingModel.count) {
@@ -495,10 +715,20 @@ Item {
                                 }
 
                                 Button {
+                                    id: singleMissingBtn
                                     Layout.preferredWidth: 110
                                     Layout.preferredHeight: 34
-                                    text: "▶ Uygula"
+                                    text: qsTr("▶ Apply")
+                                    enabled: appController && !appController.cleaningBusy
                                     onClicked: page.applySingleMissing(rowIndex)
+
+                                    property bool isRunning: appController && appController.cleaningBusy && page.activeCleaningDs === page.activeDs && page.activeCleaningOp === "single_missing" && page.activeMissingCol === colName
+                                    background: Rectangle {
+                                        radius: 8
+                                        color: singleMissingBtn.down ? theme.surfaceAlt : (singleMissingBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                        border.color: singleMissingBtn.isRunning ? theme.success : theme.border
+                                        border.width: 1
+                                    }
                                 }
                             }
                         }
@@ -506,7 +736,7 @@ Item {
 
                     Label {
                         visible: missingModel.count === 0 && duplicateModel.count === 0
-                        text: "✓ Bu veri setinde eksik değer veya tekrarlanan kayıt bulunmuyor."
+                        text: qsTr("✓ No missing values or duplicate records found in this dataset.")
                         color: theme.success
                         font.pixelSize: 12
                     }
@@ -531,9 +761,9 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 10
+                        spacing: 8
                         Label {
-                            text: "⚡ Aykırı Değerler (Outliers)"
+                            text: qsTr("⚡ Outliers")
                             color: theme.text
                             font.pixelSize: 15
                             font.bold: true
@@ -541,33 +771,150 @@ Item {
 
                         Item { Layout.fillWidth: true }
 
-                        Label { text: "Yöntem:"; color: theme.textSecondary; font.pixelSize: 11 }
+                        Label {
+                            text: qsTr("Method")
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+
                         ComboBox {
-                            Layout.preferredWidth: 110
+                            id: outlierMethodComboBox
+                            Layout.preferredWidth: 100
                             Layout.preferredHeight: 32
-                            model: ["IQR (1.5)", "IQR (3.0)", "Z-Score (3.0)"]
+                            model: ["IQR", "Z-Score"]
+                            currentIndex: page.outlierMethod === "Z-Score" ? 1 : 0
                             onActivated: {
-                                if (currentIndex === 0) { page.outlierMethod = "IQR"; page.outlierParam = 1.5 }
-                                else if (currentIndex === 1) { page.outlierMethod = "IQR"; page.outlierParam = 3.0 }
-                                else if (currentIndex === 2) { page.outlierMethod = "Z-Score"; page.outlierParam = 3.0 }
+                                page.outlierMethod = currentText
                                 page.refreshAnalysis()
                             }
                         }
 
-                        ComboBox {
-                            visible: outlierModel.count > 0
-                            Layout.preferredWidth: 180
+                        Label {
+                            text: qsTr("Parameter")
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+
+                        TextField {
+                            id: outlierParameterField
+                            Layout.preferredWidth: 65
                             Layout.preferredHeight: 32
-                            model: ["Aykırıları kaldır", "Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Sınırla (Cap)"]
-                            onActivated: page.bulkOutlierAction = currentText
+                            text: page.outlierParam > 0 ? page.outlierParam.toString() : "1.5"
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            validator: DoubleValidator {
+                                bottom: 0.01
+                                top: 100.0
+                                decimals: 4
+                                notation: DoubleValidator.StandardNotation
+                            }
+                            onAccepted: {
+                                applyParamBtn.clicked()
+                            }
                         }
 
                         Button {
-                            visible: outlierModel.count > 0
-                            Layout.preferredWidth: 190
+                            id: applyParamBtn
+                            Layout.preferredWidth: 62
+                            Layout.preferredHeight: 32
+                            text: qsTr("Apply")
+                            enabled: page.isLoaded(page.activeDs) && appController && !appController.cleaningBusy
+                            property bool clickFeedback: false
+                            Timer {
+                                id: applyParamTimer
+                                interval: 450
+                                onTriggered: applyParamBtn.clickFeedback = false
+                            }
+                            background: Rectangle {
+                                radius: 6
+                                color: applyParamBtn.down ? theme.surfaceAlt : (applyParamBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: applyParamBtn.clickFeedback ? theme.success : theme.border
+                                border.width: 1
+                            }
+                            onClicked: {
+                                clickFeedback = true
+                                applyParamTimer.restart()
+                                var cleaned = outlierParameterField ? outlierParameterField.text.trim().replace(",", ".") : ""
+                                var val = Number(cleaned)
+                                if (isFinite(val) && val > 0) {
+                                    page.outlierParam = val
+                                    page.refreshAnalysis()
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("Action")
+                            color: theme.textSecondary
+                            font.pixelSize: 11
+                        }
+
+                        ComboBox {
+                            id: outlierActionComboBox
+                            Layout.preferredWidth: 155
+                            Layout.preferredHeight: 32
+                            model: ["Remove Outliers", "Mean (Average)", "Median", "Mode", "Cap"]
+                            currentIndex: Math.max(0, model.indexOf(page.bulkOutlierAction))
+                            onActivated: page.bulkOutlierAction = currentText
+                        }
+
+                        ColumnLayout {
+                            spacing: 2
+
+                            Button {
+                                id: bulkOutlierBtn
+                                Layout.preferredWidth: 175
+                                Layout.preferredHeight: 34
+                                text: qsTr("⚡ Apply All Outliers")
+                                enabled: page.isLoaded(page.activeDs) && outlierModel.count > 0 && appController && !appController.cleaningBusy
+                                onClicked: {
+                                    var cleaned = outlierParameterField ? outlierParameterField.text.trim().replace(",", ".") : ""
+                                    var val = Number(cleaned)
+                                    if (isFinite(val) && val > 0) {
+                                        page.outlierParam = val
+                                    }
+                                    page.applyBulkOutliers()
+                                }
+
+                                property bool isRunning: appController && appController.cleaningBusy && page.activeCleaningDs === page.activeDs && page.activeCleaningOp === "outliers"
+                                background: Rectangle {
+                                    radius: 8
+                                    color: bulkOutlierBtn.down ? theme.surfaceAlt : (bulkOutlierBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                    border.color: bulkOutlierBtn.isRunning ? theme.success : theme.border
+                                    border.width: 1
+                                }
+                            }
+
+                            Components.CompactProgress {
+                                Layout.preferredWidth: 175
+                                running: bulkOutlierBtn.isRunning
+                                progress: appController ? appController.cleaningProgress : 0
+                                theme: page.theme
+                            }
+                        }
+
+                        Button {
+                            id: resetOutlierBtn
+                            Layout.preferredWidth: 130
                             Layout.preferredHeight: 34
-                            text: "⚡ Tüm Aykırıları Uygula"
-                            onClicked: page.applyBulkOutliers()
+                            text: qsTr("↶ Reset Outliers")
+                            enabled: page.hasOutlierCleaning(page.activeDs) && appController && !appController.cleaningBusy
+                            property bool clickFeedback: false
+                            Timer {
+                                id: resetOutlierTimer
+                                interval: 450
+                                onTriggered: resetOutlierBtn.clickFeedback = false
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: resetOutlierBtn.down ? theme.surfaceAlt : (resetOutlierBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: resetOutlierBtn.clickFeedback ? theme.success : (resetOutlierBtn.enabled ? theme.border : theme.surfaceAlt)
+                                border.width: 1
+                            }
+                            onClicked: {
+                                clickFeedback = true
+                                resetOutlierTimer.restart()
+                                page.applyResetOutliers()
+                            }
                         }
                     }
 
@@ -578,7 +925,7 @@ Item {
                             property string outColName: (model && model.columnName !== undefined) ? model.columnName : ""
                             property string outCountStr: (model && model.outlierCount !== undefined) ? String(model.outlierCount) : "0"
                             property string outPctStr: (model && model.percentage !== undefined) ? String(model.percentage) : "0"
-                            property string outActionStr: (model && model.action !== undefined) ? model.action : "Aykırıları kaldır"
+                            property string outActionStr: (model && model.action !== undefined) ? model.action : "Remove Outliers"
                             visible: outColName !== ""
                             Layout.fillWidth: true
                             Layout.preferredHeight: 50
@@ -600,7 +947,7 @@ Item {
                                 }
 
                                 Label {
-                                    text: outCountStr + " aykırı değer (% " + outPctStr + ")"
+                                    text: qsTr("%1 outliers (%2%)").arg(outCountStr).arg(outPctStr)
                                     color: "#FF6E40"
                                     font.pixelSize: 12
                                     Layout.fillWidth: true
@@ -610,7 +957,7 @@ Item {
                                     id: outlierActionCombo
                                     Layout.preferredWidth: 175
                                     Layout.preferredHeight: 34
-                                    model: ["Aykırıları kaldır", "Mean (Ortalama)", "Median (Medyan)", "Mode (Mod)", "Sınırla (Cap)"]
+                                    model: ["Remove Outliers", "Mean (Average)", "Median", "Mode", "Cap"]
                                     currentIndex: Math.max(0, model.indexOf(outActionStr))
                                     onActivated: {
                                         if (outIndex >= 0 && outIndex < outlierModel.count) {
@@ -620,18 +967,35 @@ Item {
                                 }
 
                                 Button {
+                                    id: singleOutlierBtn
                                     Layout.preferredWidth: 110
                                     Layout.preferredHeight: 34
-                                    text: "▶ Uygula"
+                                    text: qsTr("▶ Apply")
+                                    enabled: appController && !appController.cleaningBusy
                                     onClicked: page.applySingleOutlier(outIndex)
+
+                                    property bool isRunning: appController && appController.cleaningBusy && page.activeCleaningDs === page.activeDs && page.activeCleaningOp === "single_outlier" && page.activeOutlierCol === outColName
+                                    background: Rectangle {
+                                        radius: 8
+                                        color: singleOutlierBtn.down ? theme.surfaceAlt : (singleOutlierBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                        border.color: singleOutlierBtn.isRunning ? theme.success : theme.border
+                                        border.width: 1
+                                    }
                                 }
                             }
                         }
                     }
 
                     Label {
-                        visible: outlierModel.count === 0
-                        text: "✓ Bu veri setinde (" + page.outlierMethod + ") yöntemiyle belirlenen aykırı değer bulunmuyor."
+                        visible: !page.isLoaded(page.activeDs)
+                        text: qsTr("Dataset is not loaded.")
+                        color: theme.textSecondary
+                        font.pixelSize: 12
+                    }
+
+                    Label {
+                        visible: page.isLoaded(page.activeDs) && outlierModel.count === 0
+                        text: qsTr("✓ No outliers found in this dataset using the (%1) method.").arg(page.outlierMethod)
                         color: theme.success
                         font.pixelSize: 12
                     }
@@ -656,7 +1020,7 @@ Item {
                     spacing: 12
 
                     Label {
-                        text: "🗑️ Sabit Değerli Sütunlar"
+                        text: qsTr("🗑️ Constant Columns")
                         color: theme.text
                         font.pixelSize: 15
                         font.bold: true
@@ -678,16 +1042,113 @@ Item {
                                 spacing: 12
 
                                 Label {
-                                    text: "C • " + constCol + " (Tek bir sabit değer içeriyor)"
+                                    text: qsTr("C • %1 (Contains a single constant value)").arg(constCol)
                                     color: theme.text
                                     font.pixelSize: 13
                                     Layout.fillWidth: true
                                 }
                                 Button {
+                                    id: removeConstBtn
                                     Layout.preferredWidth: 130
                                     Layout.preferredHeight: 32
-                                    text: "Sütunu Kaldır"
-                                    onClicked: page.applyRemoveConstant(constCol)
+                                    text: qsTr("Remove Column")
+                                    property bool clickFeedback: false
+                                    Timer {
+                                        id: removeConstTimer
+                                        interval: 450
+                                        onTriggered: removeConstBtn.clickFeedback = false
+                                    }
+                                    background: Rectangle {
+                                        radius: 8
+                                        color: removeConstBtn.down ? theme.surfaceAlt : (removeConstBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                        border.color: removeConstBtn.clickFeedback ? theme.success : theme.border
+                                        border.width: 1
+                                    }
+                                    onClicked: {
+                                        clickFeedback = true
+                                        removeConstTimer.restart()
+                                        page.applyRemoveConstant(constCol)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Category 4: Remove Specific Column
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                Layout.preferredHeight: 110
+                radius: 16
+                color: theme.surface
+                border.color: theme.border
+                border.width: 1
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    spacing: 12
+
+                    Label {
+                        text: qsTr("🗑️ Remove Column")
+                        color: theme.text
+                        font.pixelSize: 15
+                        font.bold: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        Label {
+                            text: qsTr("Select Column:")
+                            color: theme.textSecondary
+                            font.pixelSize: 12
+                        }
+
+                        ComboBox {
+                            id: removeColumnCombo
+                            Layout.preferredWidth: 240
+                            Layout.preferredHeight: 36
+                            model: page.activeDs === 1
+                                   ? (appController ? appController.dataset1ColumnModel : null)
+                                   : (appController ? appController.dataset2ColumnModel : null)
+                            textRole: "name"
+                        }
+
+                        Button {
+                            id: removeColSpecificBtn
+                            Layout.preferredWidth: 150
+                            Layout.preferredHeight: 36
+                            text: qsTr("Remove Column")
+                            enabled: removeColumnCombo.currentIndex >= 0 && removeColumnCombo.currentText !== ""
+                            property bool clickFeedback: false
+                            Timer {
+                                id: removeColSpecificTimer
+                                interval: 450
+                                onTriggered: removeColSpecificBtn.clickFeedback = false
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: removeColSpecificBtn.down ? theme.surfaceAlt : (removeColSpecificBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: removeColSpecificBtn.clickFeedback ? theme.success : theme.border
+                                border.width: 1
+                            }
+                            onClicked: {
+                                clickFeedback = true
+                                removeColSpecificTimer.restart()
+                                var colName = removeColumnCombo.currentText
+                                if (colName && colName !== "") {
+                                    var ds = page.activeDs
+                                    var ok = ds === 1
+                                        ? appController.removeDataset1Column(colName)
+                                        : appController.removeDataset2Column(colName)
+                                    log(qsTr("Dataset %1 • Column '%2' removed.").arg(ds).arg(colName), ok)
+                                    removeColumnCombo.currentIndex = -1
+                                    page.refreshAnalysis()
                                 }
                             }
                         }
@@ -714,17 +1175,34 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         Label {
-                            text: "Canlı Temizleme Günlüğü (Log)"
+                            text: qsTr("Live Cleaning Log")
                             color: theme.text
                             font.pixelSize: 14
                             font.bold: true
                         }
                         Item { Layout.fillWidth: true }
                         Button {
+                            id: clearLogBtn
                             Layout.preferredWidth: 90
                             Layout.preferredHeight: 28
-                            text: "Temizle"
-                            onClicked: logModel.clear()
+                            text: qsTr("Clear")
+                            property bool clickFeedback: false
+                            Timer {
+                                id: clearLogTimer
+                                interval: 450
+                                onTriggered: clearLogBtn.clickFeedback = false
+                            }
+                            background: Rectangle {
+                                radius: 6
+                                color: clearLogBtn.down ? theme.surfaceAlt : (clearLogBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                border.color: clearLogBtn.clickFeedback ? theme.success : theme.border
+                                border.width: 1
+                            }
+                            onClicked: {
+                                clickFeedback = true
+                                clearLogTimer.restart()
+                                logModel.clear()
+                            }
                         }
                     }
 
@@ -732,10 +1210,12 @@ Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
+                        contentWidth: availableWidth
 
                         ListView {
                             id: logView
                             model: logModel
+                            boundsBehavior: Flickable.StopAtBounds
                             spacing: 4
                             delegate: RowLayout {
                                 width: logView.width
@@ -752,50 +1232,9 @@ Item {
 
                     Label {
                         visible: logModel.count === 0
-                        text: "Henüz bir temizleme işlemi uygulanmadı."
+                        text: qsTr("No cleaning actions performed yet.")
                         color: theme.textSecondary
                         font.pixelSize: 12
-                    }
-                }
-            }
-
-            // Next Step Card
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.preferredHeight: 80
-                radius: 15
-                color: theme.surfaceAlt
-                border.color: theme.border
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 16
-                    spacing: 14
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Label {
-                            text: "Sonraki Adım: Karşılaştırma veya Görselleştirme"
-                            color: theme.text
-                            font.pixelSize: 14
-                            font.bold: true
-                        }
-                        Label {
-                            text: "Temizlenen verileri karşılaştırabilir veya görselleştirme sayfasında grafiklerini çıkarabilirsiniz."
-                            color: theme.textSecondary
-                            font.pixelSize: 12
-                        }
-                    }
-                    Button {
-                        Layout.preferredWidth: 180
-                        Layout.preferredHeight: 38
-                        text: "Karşılaştırmaya Geç →"
-                        onClicked: {
-                            if (appController)
-                                appController.setCleaningCompleted(true)
-                            page.goToPage(4)
-                        }
                     }
                 }
             }

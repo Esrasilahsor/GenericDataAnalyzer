@@ -9,10 +9,10 @@ Rectangle {
 
     height: 76
 
-    property string title: "Dashboard"
+    property string title: qsTr("Dashboard")
 
     property string subtitle:
-        "Veri setlerinizi yönetin ve analiz edin."
+        qsTr("Manage and analyze your datasets.")
 
     signal themeToggleRequested()
 

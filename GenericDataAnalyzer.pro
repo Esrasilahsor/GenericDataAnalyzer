@@ -1,4 +1,4 @@
-QT += core gui qml quick charts
+QT += core gui qml quick charts concurrent
 
 CONFIG += c++11
 
@@ -16,6 +16,8 @@ SOURCES += \
     main.cpp \
     \
     backend/AppController.cpp \
+    \
+    session/SessionManager.cpp \
     \
     models/ParameterModel.cpp \
     models/ColumnModel.cpp \
@@ -41,7 +43,10 @@ SOURCES += \
     \
     export/ExportEngine.cpp \
     \
-    raw/FileRawDataSource.cpp
+    raw/FileRawDataSource.cpp \
+    \
+    workers/RawParserWorker.cpp \
+    workers/CleaningWorker.cpp
 
 
 # =========================================================
@@ -50,6 +55,8 @@ SOURCES += \
 
 HEADERS += \
     backend/AppController.h \
+    \
+    session/SessionManager.h \
     \
     models/ParameterModel.h \
     models/ColumnModel.h \
@@ -83,7 +90,10 @@ HEADERS += \
     \
     raw/FileRawDataSource.h \
     raw/IRawDataSource.h \
-    raw/RawDataSourceResult.h
+    raw/RawDataSourceResult.h \
+    \
+    workers/RawParserWorker.h \
+    workers/CleaningWorker.h
 
 
 # =========================================================

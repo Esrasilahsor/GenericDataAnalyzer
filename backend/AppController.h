@@ -5,8 +5,11 @@
 #include <QString>
 #include <QStringList>
 #include <QVariantMap>
+#include <QVariantList>
 #include <QByteArray>
 #include <QList>
+#include <QThread>
+#include <QPointer>
 
 #include "../parser/ExcelParser.h"
 #include "../parser/DataSet.h"
@@ -24,6 +27,10 @@
 #include "../visualization/VisualizationEngine.h"
 #include "../export/ExportEngine.h"
 
+#include "../workers/RawParserWorker.h"
+#include "../workers/CleaningWorker.h"
+#include "../session/SessionManager.h"
+
 class AppController : public QObject
 {
     Q_OBJECT
@@ -33,6 +40,8 @@ class AppController : public QObject
     Q_PROPERTY(int dataset1ColumnCount READ dataset1ColumnCount NOTIFY dataset1Changed)
     Q_PROPERTY(QString dataset1SheetName READ dataset1SheetName NOTIFY dataset1Changed)
     Q_PROPERTY(QString dataDirectory READ dataDirectory CONSTANT)
+    Q_PROPERTY(QString defaultExportDirectory READ defaultExportDirectory CONSTANT)
+    Q_PROPERTY(QString appDataDirectory READ appDataDirectory CONSTANT)
 
     Q_PROPERTY(QString dataset2Name READ dataset2Name NOTIFY dataset2Changed)
     Q_PROPERTY(int dataset2RowCount READ dataset2RowCount NOTIFY dataset2Changed)
@@ -41,6 +50,10 @@ class AppController : public QObject
 
     Q_PROPERTY(bool dataset1Modified READ dataset1Modified NOTIFY dataset1Changed)
     Q_PROPERTY(bool dataset2Modified READ dataset2Modified NOTIFY dataset2Changed)
+    Q_PROPERTY(bool dataset1HasMissingCleaning READ dataset1HasMissingCleaning NOTIFY dataset1CleaningStateChanged)
+    Q_PROPERTY(bool dataset2HasMissingCleaning READ dataset2HasMissingCleaning NOTIFY dataset2CleaningStateChanged)
+    Q_PROPERTY(bool dataset1HasOutlierCleaning READ dataset1HasOutlierCleaning NOTIFY dataset1CleaningStateChanged)
+    Q_PROPERTY(bool dataset2HasOutlierCleaning READ dataset2HasOutlierCleaning NOTIFY dataset2CleaningStateChanged)
     Q_PROPERTY(bool cleaningCompleted READ cleaningCompleted WRITE setCleaningCompleted NOTIFY cleaningCompletedChanged)
 
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
@@ -95,6 +108,13 @@ class AppController : public QObject
     Q_PROPERTY(QString rawDataFilePath READ rawDataFilePath NOTIFY rawDataChanged)
     Q_PROPERTY(QStringList rawWarnings READ rawWarnings NOTIFY rawMetadataChanged)
 
+    Q_PROPERTY(bool rawParsing READ rawParsing NOTIFY rawParsingChanged)
+    Q_PROPERTY(int rawParseProgress READ rawParseProgress NOTIFY rawParseProgressChanged)
+
+    Q_PROPERTY(bool cleaningBusy READ cleaningBusy NOTIFY cleaningBusyChanged)
+    Q_PROPERTY(int cleaningProgress READ cleaningProgress NOTIFY cleaningProgressChanged)
+    Q_PROPERTY(QString cleaningStatusText READ cleaningStatusText NOTIFY cleaningStatusTextChanged)
+
     Q_PROPERTY(QVariantList recentActivities READ recentActivities NOTIFY recentActivitiesChanged)
     Q_PROPERTY(QVariantList recentFiles READ recentFiles NOTIFY recentFilesChanged)
     Q_PROPERTY(QString lastDataset1Path READ lastDataset1Path NOTIFY lastSessionChanged)
@@ -102,8 +122,23 @@ class AppController : public QObject
     Q_PROPERTY(bool hasPreviousSession READ hasPreviousSession NOTIFY lastSessionChanged)
     Q_PROPERTY(bool autoRestoreEnabled READ autoRestoreEnabled WRITE setAutoRestoreEnabled NOTIFY autoRestoreEnabledChanged)
 
+    Q_PROPERTY(bool hasRestorableAnalysisSession READ hasRestorableAnalysisSession NOTIFY sessionAvailabilityChanged)
+    Q_PROPERTY(bool hasRestorableCleaningSession READ hasRestorableCleaningSession NOTIFY sessionAvailabilityChanged)
+    Q_PROPERTY(bool hasRestorableVisualizationSession READ hasRestorableVisualizationSession NOTIFY sessionAvailabilityChanged)
+    Q_PROPERTY(bool hasRestorableComparisonSession READ hasRestorableComparisonSession NOTIFY sessionAvailabilityChanged)
+    Q_PROPERTY(bool hasRestorableSession READ hasRestorableSession NOTIFY sessionAvailabilityChanged)
+    Q_PROPERTY(int sessionRestoreDecision READ sessionRestoreDecision WRITE setSessionRestoreDecision NOTIFY sessionRestoreDecisionChanged)
+    Q_PROPERTY(bool sessionRestored READ sessionRestored NOTIFY sessionRestoreDecisionChanged)
+
 public:
+    enum SessionRestoreDecision {
+        NotAsked = 0,
+        Restore = 1,
+        StartFresh = 2
+    };
+    Q_ENUM(SessionRestoreDecision)
     explicit AppController(QObject *parent = nullptr);
+    ~AppController() override;
 
     QString dataset1Name() const;
     QString dataset2Name() const;
@@ -120,6 +155,11 @@ public:
 
     bool dataset1Modified() const;
     bool dataset2Modified() const;
+
+    bool dataset1HasMissingCleaning() const;
+    bool dataset2HasMissingCleaning() const;
+    bool dataset1HasOutlierCleaning() const;
+    bool dataset2HasOutlierCleaning() const;
 
     bool cleaningCompleted() const;
     Q_INVOKABLE void setCleaningCompleted(bool completed);
@@ -175,25 +215,69 @@ public:
     QString rawDataFilePath() const;
     QStringList rawWarnings() const;
 
+    bool rawParsing() const;
+    int rawParseProgress() const;
+
+    bool cleaningBusy() const;
+    int cleaningProgress() const;
+    QString cleaningStatusText() const;
+
     QVariantList recentActivities() const;
     QVariantList recentFiles() const;
     QString lastDataset1Path() const;
     QString lastDataset2Path() const;
     bool hasPreviousSession() const;
+    bool sessionRestored() const;
     bool autoRestoreEnabled() const;
     void setAutoRestoreEnabled(bool enabled);
 
     Q_INVOKABLE void recordActivity(const QString &title, const QString &detail, const QString &category = QStringLiteral("Genel"));
     Q_INVOKABLE void clearRecentActivities();
     Q_INVOKABLE void clearRecentFiles();
+    Q_INVOKABLE bool autoRestoreDatasets();
     Q_INVOKABLE bool restoreLastSession();
     Q_INVOKABLE bool loadRecentFileAsDataset(int datasetIndex, const QString &filePath);
 
+    bool hasRestorableAnalysisSession() const;
+    bool hasRestorableCleaningSession() const;
+    bool hasRestorableVisualizationSession() const;
+    bool hasRestorableComparisonSession() const;
+    bool hasRestorableSession() const;
+
+    int sessionRestoreDecision() const;
+    void setSessionRestoreDecision(int decision);
+
+    Q_INVOKABLE void applyGlobalRestoreDecision(bool restore);
+
+    Q_INVOKABLE bool restoreAnalysisSession();
+    Q_INVOKABLE bool restoreCleaningSession();
+    Q_INVOKABLE bool restoreComparisonSession();
+    Q_INVOKABLE QVariantMap getSavedVisualizationSession() const;
+    Q_INVOKABLE void saveVisualizationSession(const QVariantMap &visData);
+    Q_INVOKABLE QVariantMap getSavedComparisonSession() const;
+    Q_INVOKABLE void saveComparisonSession(const QVariantMap &compData);
+
+    Q_INVOKABLE void dismissAnalysisSession();
+    Q_INVOKABLE void dismissCleaningSession();
+    Q_INVOKABLE void dismissVisualizationSession();
+    Q_INVOKABLE void dismissComparisonSession();
+
+    Q_INVOKABLE void saveCurrentSession();
+
     Q_INVOKABLE bool loadDataset1(const QString &filePath);
     Q_INVOKABLE bool loadDataset2(const QString &filePath);
+    Q_INVOKABLE void clearDataset1();
+    Q_INVOKABLE void clearDataset2();
 
     Q_INVOKABLE bool restoreDataset1();
     Q_INVOKABLE bool restoreDataset2();
+
+    Q_INVOKABLE bool resetDataset1Missing();
+    Q_INVOKABLE bool resetDataset2Missing();
+    Q_INVOKABLE bool resetDataset1Outliers();
+    Q_INVOKABLE bool resetDataset2Outliers();
+    Q_INVOKABLE bool resetDatasetMissing(int datasetIndex);
+    Q_INVOKABLE bool resetDatasetOutliers(int datasetIndex);
 
     Q_INVOKABLE bool removeDataset1Duplicates();
     Q_INVOKABLE bool removeDataset2Duplicates();
@@ -220,7 +304,6 @@ public:
         double parameter
         );
 
-    // Eski IQR Remove çağrılarını bozmaz.
     Q_INVOKABLE bool removeDataset1Outliers(
         const QString &columnName,
         double multiplier = 1.5
@@ -231,7 +314,6 @@ public:
         double multiplier = 1.5
         );
 
-    // Gereksinimdeki IQR / Z-Score + Keep / Mark / Remove.
     Q_INVOKABLE bool applyDataset1OutlierAction(
         const QString &columnName,
         const QString &method,
@@ -244,6 +326,21 @@ public:
         const QString &method,
         const QString &action,
         double parameter
+        );
+
+    Q_INVOKABLE bool applyBulkMissingCleaning(
+        int datasetIndex,
+        const QString &action,
+        const QStringList &columns,
+        const QVariantList &numericFlags
+        );
+
+    Q_INVOKABLE bool applyBulkOutlierCleaning(
+        int datasetIndex,
+        const QString &method,
+        const QString &action,
+        double parameter,
+        const QStringList &columns
         );
 
     Q_INVOKABLE void clearDataset1OutlierCleaning();
@@ -338,6 +435,24 @@ public:
         const QString &targetColumnName
         );
 
+    Q_INVOKABLE QVariantMap createDatasetComparisonDistributionChart(
+        const QString &sourceColumnName,
+        const QString &targetColumnName,
+        int binCount = 25
+        );
+
+    Q_INVOKABLE QVariantMap createDataset1BarChart(
+        const QString &categoryColumnName,
+        const QString &valueColumnName,
+        const QString &aggregation = QStringLiteral("Mean")
+        );
+
+    Q_INVOKABLE QVariantMap createDataset2BarChart(
+        const QString &categoryColumnName,
+        const QString &valueColumnName,
+        const QString &aggregation = QStringLiteral("Mean")
+        );
+
     // =====================================================
     // EXPORT
     // =====================================================
@@ -351,7 +466,11 @@ public:
     Q_INVOKABLE bool exportDataset1ToXlsx(const QString &filePath);
     Q_INVOKABLE bool exportDataset2ToXlsx(const QString &filePath);
 
+    Q_INVOKABLE bool exportDataset(int datasetIndex, const QString &filePath, const QString &format);
+    Q_INVOKABLE QString suggestedExportFileName(int datasetIndex, const QString &format) const;
     Q_INVOKABLE QString autoExportDataset(int datasetIndex, const QString &format);
+    Q_INVOKABLE QString defaultExportDirectory() const;
+    Q_INVOKABLE QString appDataDirectory() const;
 
     Q_INVOKABLE bool removeDataset1Column(const QString &columnName);
     Q_INVOKABLE bool removeDataset2Column(const QString &columnName);
@@ -380,6 +499,8 @@ public:
     Q_INVOKABLE bool loadRawMetadata(const QString &filePath);
     Q_INVOKABLE bool loadRawDataFile(const QString &filePath);
     Q_INVOKABLE bool parseRawData();
+    Q_INVOKABLE void cancelRawParsing();
+    Q_INVOKABLE void cancelCleaning();
     Q_INVOKABLE bool importParsedRawDataAsDataset(int datasetIndex, const QString &customName = QString());
 
     Q_INVOKABLE void clearRawMetadata();
@@ -413,21 +534,69 @@ signals:
     void dataset1OutlierCleaningChanged();
     void dataset2OutlierCleaningChanged();
 
+    void dataset1CleaningStateChanged();
+    void dataset2CleaningStateChanged();
+
     void cleaningCompletedChanged();
 
     void rawMetadataChanged();
     void rawDataChanged();
     void rawParseChanged();
+    void rawParsingChanged();
+    void rawParseProgressChanged();
+
+    void cleaningBusyChanged();
+    void cleaningProgressChanged();
+    void cleaningStatusTextChanged();
+
+    void rawParseCompleted(bool success, const QString &message);
+    void cleaningCompletedSignal(bool success, const QString &message);
 
     void recentActivitiesChanged();
     void recentFilesChanged();
     void lastSessionChanged();
     void autoRestoreEnabledChanged();
+    void sessionAvailabilityChanged();
+    void sessionRestoreDecisionChanged();
+
+private slots:
+    void onRawParseProgress(int percent);
+    void onRawParseFinished(
+        const QList<QList<ParsedParameter>> &parsedPackets,
+        int ignoredByteCount,
+        bool hasErrorParameter,
+        bool hasSuccessfulParameter
+    );
+    void onRawParseFailed(const QString &errorMessage);
+    void onRawParseCancelled();
+
+    void onCleaningProgress(int current, int total);
+    void onCleaningFinished(
+        const DataSet &cleanedDataSet,
+        const CleaningResult &result,
+        int datasetIndex,
+        const QString &actionDescription
+    );
+    void onCleaningFailed(const QString &errorMessage, int datasetIndex);
+    void onCleaningCancelled(int datasetIndex);
 
 private:
     void loadSettings();
     void saveSettings();
     void addRecentFile(const QString &filePath, const QString &type, int rowCount = 0, int colCount = 0);
+
+    bool startCleaningTask(const CleaningTask &task);
+    bool rebuildDataset1();
+    bool rebuildDataset2();
+    bool applyCleaningTaskSynchronous(DataSet &dataSet, const CleaningTask &task);
+
+    CleaningTask m_currentCleaningTask;
+    QList<CleaningTask> m_dataset1MissingTasks;
+    QList<CleaningTask> m_dataset1OutlierTasks;
+    QList<CleaningTask> m_dataset1OtherTasks;
+    QList<CleaningTask> m_dataset2MissingTasks;
+    QList<CleaningTask> m_dataset2OutlierTasks;
+    QList<CleaningTask> m_dataset2OtherTasks;
 
     QVariantList m_recentActivities;
     QVariantList m_recentFiles;
@@ -436,6 +605,8 @@ private:
     QString m_lastRawMetadataPath;
     QString m_lastRawDataPath;
     bool m_autoRestoreEnabled = true;
+    int m_sessionRestoreDecision = 0; // NotAsked = 0, Restore = 1, StartFresh = 2
+    bool m_restoringSession = false;
 
     ExcelParser m_parser1;
     ExcelParser m_parser2;
@@ -507,6 +678,18 @@ private:
     bool m_rawDataLoaded = false;
     bool m_rawParseAvailable = false;
 
+    bool m_rawParsing = false;
+    int m_rawParseProgress = 0;
+    QPointer<QThread> m_rawParserThread;
+    QPointer<RawParserWorker> m_rawParserWorker;
+    QList<QList<ParsedParameter>> m_cachedParsedRawPackets;
+
+    bool m_cleaningBusy = false;
+    int m_cleaningProgress = 0;
+    QString m_cleaningStatusText;
+    QPointer<QThread> m_cleaningThread;
+    QPointer<CleaningWorker> m_cleaningWorker;
+
     QString m_lastError;
 
     QString normalizeFilePath(const QString &filePath) const;
@@ -518,8 +701,6 @@ private:
     QVariantMap statisticsToVariantMap(
         const StatisticsResult &statistics
         ) const;
-
-
 
     QVariantMap histogramToVariantMap(
         const HistogramResult &result
@@ -545,9 +726,17 @@ private:
         const ComparisonChartResult &result
         ) const;
 
+    QVariantMap comparisonDistributionToVariantMap(
+        const ComparisonDistributionResult &result
+        ) const;
 
+    QVariantMap barChartToVariantMap(
+        const BarChartResult &result
+        ) const;
 
-
+    SessionManager m_sessionManager;
+    void saveCurrentAnalysisSession();
+    void saveCurrentCleaningSession();
 };
 
 #endif // APPCONTROLLER_H

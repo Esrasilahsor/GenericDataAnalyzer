@@ -129,7 +129,7 @@ struct CorrelationMatrixResult
 
 
 // =========================================================
-// DATASET COMPARISON CHART RESULT
+// DATASET COMPARISON CHART RESULT (TREND / LINE)
 // =========================================================
 
 struct ComparisonChartResult
@@ -145,6 +145,54 @@ struct ComparisonChartResult
     QVector<double> indexes;
     QVector<double> sourceValues;
     QVector<double> targetValues;
+};
+
+
+// =========================================================
+// DATASET COMPARISON DISTRIBUTION RESULT
+// =========================================================
+
+struct ComparisonDistributionResult
+{
+    bool success = false;
+
+    QString sourceColumnName;
+    QString targetColumnName;
+    QString errorMessage;
+
+    int sourceValidCount = 0;
+    int targetValidCount = 0;
+    int binCount = 0;
+
+    double minimum = 0.0;
+    double maximum = 0.0;
+    double binWidth = 0.0;
+
+    QVector<double> centers;
+    QVector<double> sourceFrequencies;
+    QVector<double> targetFrequencies;
+    QVector<double> sourceDensities;
+    QVector<double> targetDensities;
+};
+
+
+// =========================================================
+// BAR CHART RESULT
+// =========================================================
+
+struct BarChartResult
+{
+    bool success = false;
+
+    QString categoryColumnName;
+    QString valueColumnName;
+    QString aggregation; // Mean, Sum, Count, Min, Max
+    QString errorMessage;
+
+    int categoryCount = 0;
+
+    QStringList labels;
+    QVector<double> values;
 };
 
 
@@ -215,11 +263,40 @@ public:
     // DATASET COMPARISON CHART
     // =====================================================
 
+    // =====================================================
+    // DATASET COMPARISON CHART (TREND / LINE)
+    // =====================================================
+
     ComparisonChartResult createComparisonChart(
         const DataSet &sourceDataSet,
         const QString &sourceColumnName,
         const DataSet &targetDataSet,
         const QString &targetColumnName
+        ) const;
+
+
+    // =====================================================
+    // DATASET COMPARISON DISTRIBUTION
+    // =====================================================
+
+    ComparisonDistributionResult createComparisonDistribution(
+        const DataSet &sourceDataSet,
+        const QString &sourceColumnName,
+        const DataSet &targetDataSet,
+        const QString &targetColumnName,
+        int binCount = 25
+        ) const;
+
+
+    // =====================================================
+    // BAR CHART (Category + Value + Aggregation)
+    // =====================================================
+
+    BarChartResult createBarChart(
+        const DataSet &dataSet,
+        const QString &categoryColumnName,
+        const QString &valueColumnName,
+        const QString &aggregation = QStringLiteral("Mean")
         ) const;
 
 

@@ -2,6 +2,7 @@
 
 #include <QMap>
 #include <QSet>
+#include <QObject>
 
 #include <algorithm>
 #include <cmath>
@@ -25,7 +26,7 @@ CleaningResult CleaningEngine::removeDuplicateRows(
     if (dataSet.isEmpty())
     {
         result.errorMessage =
-            QStringLiteral("Dataset is not loaded.");
+            QObject::tr("Dataset is not loaded.");
 
         return result;
     }
@@ -39,7 +40,7 @@ CleaningResult CleaningEngine::removeDuplicateRows(
     {
         result.success = true;
         result.modified = false;
-        result.message = QStringLiteral("Tekrarlanan kayıt bulunmuyor (zaten temiz).");
+        result.message = QObject::tr("No duplicate rows found (already clean).");
         result.details.insert(QStringLiteral("removedRowCount"), 0);
         return result;
     }
@@ -47,7 +48,7 @@ CleaningResult CleaningEngine::removeDuplicateRows(
     if (!dataSet.removeRows(rows))
     {
         result.errorMessage =
-            QStringLiteral(
+            QObject::tr(
                 "Duplicate rows could not be removed."
                 );
 
@@ -58,7 +59,7 @@ CleaningResult CleaningEngine::removeDuplicateRows(
     result.modified = true;
 
     result.message =
-        QStringLiteral("%1 duplicate row(s) removed.")
+        QObject::tr("%1 duplicate row(s) removed.")
             .arg(rows.size());
 
     result.details.insert(
@@ -83,7 +84,7 @@ CleaningResult CleaningEngine::removeRowsWithMissingValues(
     if (dataSet.isEmpty())
     {
         result.errorMessage =
-            QStringLiteral("Dataset is not loaded.");
+            QObject::tr("Dataset is not loaded.");
 
         return result;
     }
@@ -97,7 +98,7 @@ CleaningResult CleaningEngine::removeRowsWithMissingValues(
     {
         result.success = true;
         result.modified = false;
-        result.message = QStringLiteral("Eksik değerli satır bulunmuyor (zaten temiz).");
+        result.message = QObject::tr("No rows with missing values found (already clean).");
         result.details.insert(QStringLiteral("removedRowCount"), 0);
         return result;
     }
@@ -105,7 +106,7 @@ CleaningResult CleaningEngine::removeRowsWithMissingValues(
     if (!dataSet.removeRows(rows))
     {
         result.errorMessage =
-            QStringLiteral(
+            QObject::tr(
                 "Rows with missing values could not be removed."
                 );
 
@@ -912,7 +913,7 @@ CleaningResult CleaningEngine::applyOutlierAction(
         {
             result.success = true;
             result.modified = false;
-            result.message = QStringLiteral("Aykırı değer bulunmuyor (zaten temiz).");
+            result.message = QObject::tr("No outliers found (already clean).");
             result.details = resultMap;
             return result;
         }
@@ -922,7 +923,7 @@ CleaningResult CleaningEngine::applyOutlierAction(
                 ))
         {
             result.errorMessage =
-                QStringLiteral(
+                QObject::tr(
                     "Outlier rows could not be removed."
                     );
 
@@ -931,7 +932,7 @@ CleaningResult CleaningEngine::applyOutlierAction(
 
         resultMap.insert(
             QStringLiteral("message"),
-            QStringLiteral(
+            QObject::tr(
                 "%1 outlier row(s) removed."
                 )
                 .arg(
@@ -960,13 +961,13 @@ CleaningResult CleaningEngine::applyOutlierAction(
         {
             result.success = true;
             result.modified = false;
-            result.message = QStringLiteral("Aykırı değer bulunmuyor.");
+            result.message = QObject::tr("No outliers found.");
             result.details = resultMap;
             return result;
         }
 
         const ColumnInfo *col = dataSet.findColumn(columnName);
-        if (!col) { result.errorMessage = QStringLiteral("Sütun bulunamadı."); return result; }
+        if (!col) { result.errorMessage = QObject::tr("Column not found."); return result; }
 
         QVector<QVariant> vals = col->values();
         double total = 0.0;
@@ -986,13 +987,13 @@ CleaningResult CleaningEngine::applyOutlierAction(
 
         if (!dataSet.setColumnValues(columnName, vals))
         {
-            result.errorMessage = QStringLiteral("Sütun güncellenemedi.");
+            result.errorMessage = QObject::tr("Column could not be updated.");
             return result;
         }
 
         result.success = true;
         result.modified = true;
-        result.message = QStringLiteral("%1 aykırı değer ortalama (%2) ile dolduruldu.").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
+        result.message = QObject::tr("%1 outlier(s) filled with mean (%2).").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
         resultMap.insert(QStringLiteral("message"), result.message);
         result.details = resultMap;
         return result;
@@ -1006,13 +1007,13 @@ CleaningResult CleaningEngine::applyOutlierAction(
         {
             result.success = true;
             result.modified = false;
-            result.message = QStringLiteral("Aykırı değer bulunmuyor.");
+            result.message = QObject::tr("No outliers found.");
             result.details = resultMap;
             return result;
         }
 
         const ColumnInfo *col = dataSet.findColumn(columnName);
-        if (!col) { result.errorMessage = QStringLiteral("Sütun bulunamadı."); return result; }
+        if (!col) { result.errorMessage = QObject::tr("Column not found."); return result; }
 
         QVector<QVariant> vals = col->values();
         QVector<double> validNums;
@@ -1038,13 +1039,13 @@ CleaningResult CleaningEngine::applyOutlierAction(
 
         if (!dataSet.setColumnValues(columnName, vals))
         {
-            result.errorMessage = QStringLiteral("Sütun güncellenemedi.");
+            result.errorMessage = QObject::tr("Column could not be updated.");
             return result;
         }
 
         result.success = true;
         result.modified = true;
-        result.message = QStringLiteral("%1 aykırı değer medyan (%2) ile dolduruldu.").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
+        result.message = QObject::tr("%1 outlier(s) filled with median (%2).").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
         resultMap.insert(QStringLiteral("message"), result.message);
         result.details = resultMap;
         return result;
@@ -1058,13 +1059,13 @@ CleaningResult CleaningEngine::applyOutlierAction(
         {
             result.success = true;
             result.modified = false;
-            result.message = QStringLiteral("Aykırı değer bulunmuyor.");
+            result.message = QObject::tr("No outliers found.");
             result.details = resultMap;
             return result;
         }
 
         const ColumnInfo *col = dataSet.findColumn(columnName);
-        if (!col) { result.errorMessage = QStringLiteral("Sütun bulunamadı."); return result; }
+        if (!col) { result.errorMessage = QObject::tr("Column not found."); return result; }
 
         QVector<QVariant> vals = col->values();
         QHash<double, int> counts;
@@ -1089,13 +1090,13 @@ CleaningResult CleaningEngine::applyOutlierAction(
 
         if (!dataSet.setColumnValues(columnName, vals))
         {
-            result.errorMessage = QStringLiteral("Sütun güncellenemedi.");
+            result.errorMessage = QObject::tr("Column could not be updated.");
             return result;
         }
 
         result.success = true;
         result.modified = true;
-        result.message = QStringLiteral("%1 aykırı değer mod (%2) ile dolduruldu.").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
+        result.message = QObject::tr("%1 outlier(s) filled with mode (%2).").arg(outlierRows.size()).arg(QString::number(replacement, 'f', 2));
         resultMap.insert(QStringLiteral("message"), result.message);
         result.details = resultMap;
         return result;
@@ -1109,13 +1110,13 @@ CleaningResult CleaningEngine::applyOutlierAction(
         {
             result.success = true;
             result.modified = false;
-            result.message = QStringLiteral("Aykırı değer bulunmuyor.");
+            result.message = QObject::tr("No outliers found.");
             result.details = resultMap;
             return result;
         }
 
         const ColumnInfo *col = dataSet.findColumn(columnName);
-        if (!col) { result.errorMessage = QStringLiteral("Sütun bulunamadı."); return result; }
+        if (!col) { result.errorMessage = QObject::tr("Column not found."); return result; }
 
         double lowerB = resultMap.value(QStringLiteral("lowerBound")).toDouble();
         double upperB = resultMap.value(QStringLiteral("upperBound")).toDouble();
@@ -1134,20 +1135,20 @@ CleaningResult CleaningEngine::applyOutlierAction(
 
         if (!dataSet.setColumnValues(columnName, vals))
         {
-            result.errorMessage = QStringLiteral("Sütun güncellenemedi.");
+            result.errorMessage = QObject::tr("Column could not be updated.");
             return result;
         }
 
         result.success = true;
         result.modified = true;
-        result.message = QStringLiteral("%1 aykırı değer alt/üst sınırlara baskılandı.").arg(outlierRows.size());
+        result.message = QObject::tr("%1 outlier(s) capped to boundaries.").arg(outlierRows.size());
         resultMap.insert(QStringLiteral("message"), result.message);
         result.details = resultMap;
         return result;
     }
 
     result.errorMessage =
-        QStringLiteral(
+        QObject::tr(
             "Unknown outlier action."
             );
 

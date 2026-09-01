@@ -711,6 +711,346 @@ ComparisonChartResult VisualizationEngine::createComparisonChart(
 
 
 // =========================================================
+// CREATE DATASET COMPARISON DISTRIBUTION
+// =========================================================
+
+ComparisonDistributionResult VisualizationEngine::createComparisonDistribution(
+    const DataSet &sourceDataSet,
+    const QString &sourceColumnName,
+    const DataSet &targetDataSet,
+    const QString &targetColumnName,
+    int binCount
+    ) const
+{
+    ComparisonDistributionResult result;
+
+    result.sourceColumnName = sourceColumnName.trimmed();
+    result.targetColumnName = targetColumnName.trimmed();
+
+    if (sourceDataSet.isEmpty() || targetDataSet.isEmpty())
+    {
+        result.errorMessage = QStringLiteral("Comparison dataset is empty.");
+        return result;
+    }
+
+    const ColumnInfo *sourceColumn = findColumn(sourceDataSet, result.sourceColumnName);
+    const ColumnInfo *targetColumn = findColumn(targetDataSet, result.targetColumnName);
+
+    if (!sourceColumn || !targetColumn)
+    {
+        result.errorMessage = QStringLiteral("Comparison column was not found.");
+        return result;
+    }
+
+    if (!sourceColumn->isNumeric() || !targetColumn->isNumeric())
+    {
+        result.errorMessage = QStringLiteral("Comparison distribution requires numeric columns.");
+        return result;
+    }
+
+    const QVector<double> sourceValues = extractNumericValues(*sourceColumn);
+    const QVector<double> targetValues = extractNumericValues(*targetColumn);
+
+    result.sourceValidCount = sourceValues.size();
+    result.targetValidCount = targetValues.size();
+
+    if (result.sourceValidCount <= 0 && result.targetValidCount <= 0)
+    {
+        result.errorMessage = QStringLiteral("No valid numeric values found for distribution comparison.");
+        return result;
+    }
+
+    double globalMin = 0.0;
+    double globalMax = 0.0;
+    bool hasMinMax = false;
+
+    if (!sourceValues.isEmpty())
+    {
+        double min1 = sourceValues.at(0);
+        double max1 = sourceValues.at(0);
+        for (double v : sourceValues)
+        {
+            if (v < min1) min1 = v;
+            if (v > max1) max1 = v;
+        }
+        globalMin = min1;
+        globalMax = max1;
+        hasMinMax = true;
+    }
+
+    if (!targetValues.isEmpty())
+    {
+        double min2 = targetValues.at(0);
+        double max2 = targetValues.at(0);
+        for (double v : targetValues)
+        {
+            if (v < min2) min2 = v;
+            if (v > max2) max2 = v;
+        }
+        if (hasMinMax)
+        {
+            globalMin = std::min(globalMin, min2);
+            globalMax = std::max(globalMax, max2);
+        }
+        else
+        {
+            globalMin = min2;
+            globalMax = max2;
+            hasMinMax = true;
+        }
+    }
+
+    if (globalMin == globalMax)
+    {
+        globalMin -= 1.0;
+        globalMax += 1.0;
+    }
+
+    const int actualBinCount = std::max(5, std::min(binCount, 100));
+    const double binWidth = (globalMax - globalMin) / static_cast<double>(actualBinCount);
+
+    result.binCount = actualBinCount;
+    result.minimum = globalMin;
+    result.maximum = globalMax;
+    result.binWidth = binWidth;
+
+    result.centers.resize(actualBinCount);
+    result.sourceFrequencies.resize(actualBinCount);
+    result.targetFrequencies.resize(actualBinCount);
+    result.sourceDensities.resize(actualBinCount);
+    result.targetDensities.resize(actualBinCount);
+
+    for (int i = 0; i < actualBinCount; ++i)
+    {
+        result.centers[i] = globalMin + (static_cast<double>(i) + 0.5) * binWidth;
+        result.sourceFrequencies[i] = 0.0;
+        result.targetFrequencies[i] = 0.0;
+        result.sourceDensities[i] = 0.0;
+        result.targetDensities[i] = 0.0;
+    }
+
+    for (double v : sourceValues)
+    {
+        int binIndex = static_cast<int>((v - globalMin) / binWidth);
+        if (binIndex < 0) binIndex = 0;
+        if (binIndex >= actualBinCount) binIndex = actualBinCount - 1;
+        result.sourceFrequencies[binIndex] += 1.0;
+    }
+
+    for (double v : targetValues)
+    {
+        int binIndex = static_cast<int>((v - globalMin) / binWidth);
+        if (binIndex < 0) binIndex = 0;
+        if (binIndex >= actualBinCount) binIndex = actualBinCount - 1;
+        result.targetFrequencies[binIndex] += 1.0;
+    }
+
+    for (int i = 0; i < actualBinCount; ++i)
+    {
+        if (result.sourceValidCount > 0)
+        {
+            result.sourceDensities[i] = result.sourceFrequencies[i] / static_cast<double>(result.sourceValidCount);
+        }
+        if (result.targetValidCount > 0)
+        {
+            result.targetDensities[i] = result.targetFrequencies[i] / static_cast<double>(result.targetValidCount);
+        }
+    }
+
+    result.success = true;
+    return result;
+}
+
+
+// =========================================================
+// CREATE BAR CHART
+// =========================================================
+
+BarChartResult VisualizationEngine::createBarChart(
+    const DataSet &dataSet,
+    const QString &categoryColumnName,
+    const QString &valueColumnName,
+    const QString &aggregation
+    ) const
+{
+    BarChartResult result;
+
+    result.categoryColumnName = categoryColumnName.trimmed();
+    result.valueColumnName = valueColumnName.trimmed();
+    result.aggregation = aggregation.trimmed();
+    if (result.aggregation.isEmpty())
+    {
+        result.aggregation = QStringLiteral("Mean");
+    }
+
+    if (dataSet.isEmpty())
+    {
+        result.errorMessage = QStringLiteral("Dataset is empty.");
+        return result;
+    }
+
+    if (result.categoryColumnName.isEmpty())
+    {
+        result.errorMessage = QStringLiteral("Category column name is empty.");
+        return result;
+    }
+
+    const ColumnInfo *categoryColumn = findColumn(dataSet, result.categoryColumnName);
+    if (!categoryColumn)
+    {
+        result.errorMessage = QStringLiteral("Category column was not found.");
+        return result;
+    }
+
+    const bool isCount = (result.aggregation.compare(QLatin1String("Count"), Qt::CaseInsensitive) == 0 ||
+                          result.aggregation.compare(QLatin1String("Sayım"), Qt::CaseInsensitive) == 0);
+
+    const ColumnInfo *valueColumn = nullptr;
+    if (!result.valueColumnName.isEmpty())
+    {
+        valueColumn = findColumn(dataSet, result.valueColumnName);
+    }
+
+    if (!isCount)
+    {
+        if (result.valueColumnName.isEmpty())
+        {
+            result.errorMessage = QStringLiteral("Value column is required for aggregation.");
+            return result;
+        }
+
+        if (!valueColumn)
+        {
+            result.errorMessage = QStringLiteral("Value column was not found.");
+            return result;
+        }
+
+        if (!valueColumn->isNumeric())
+        {
+            result.errorMessage = QStringLiteral("Value column must be numeric.");
+            return result;
+        }
+    }
+
+    const QVector<QVariant> catRawValues = categoryColumn->values();
+    const QVector<QVariant> valRawValues = valueColumn ? valueColumn->values() : QVector<QVariant>();
+    const int rowCount = catRawValues.size();
+
+    QVector<QString> categoryList;
+    QHash<QString, QVector<double>> groupedValues;
+
+    for (int row = 0; row < rowCount; ++row)
+    {
+        const QVariant &catVar = catRawValues.at(row);
+        if (!catVar.isValid() || catVar.isNull())
+        {
+            continue;
+        }
+
+        const QString catLabel = catVar.toString().trimmed();
+        if (catLabel.isEmpty())
+        {
+            continue;
+        }
+
+        if (!groupedValues.contains(catLabel))
+        {
+            // Limit to at most 100 distinct categories to prevent UI overload
+            if (categoryList.size() >= 100)
+            {
+                continue;
+            }
+            categoryList.append(catLabel);
+        }
+
+        if (isCount)
+        {
+            if (valueColumn && row < valRawValues.size())
+            {
+                double dummy = 0.0;
+                if (variantToFiniteDouble(valRawValues.at(row), &dummy))
+                {
+                    groupedValues[catLabel].append(1.0);
+                }
+            }
+            else
+            {
+                groupedValues[catLabel].append(1.0);
+            }
+        }
+        else
+        {
+            if (row < valRawValues.size())
+            {
+                double numVal = 0.0;
+                if (variantToFiniteDouble(valRawValues.at(row), &numVal))
+                {
+                    groupedValues[catLabel].append(numVal);
+                }
+            }
+        }
+    }
+
+    for (const QString &cat : categoryList)
+    {
+        const QVector<double> &vals = groupedValues.value(cat);
+        if (vals.isEmpty())
+        {
+            continue;
+        }
+
+        double aggVal = 0.0;
+        if (result.aggregation.compare(QLatin1String("Sum"), Qt::CaseInsensitive) == 0 ||
+            result.aggregation.compare(QLatin1String("Toplam"), Qt::CaseInsensitive) == 0)
+        {
+            double sum = 0.0;
+            for (double v : vals) sum += v;
+            aggVal = sum;
+        }
+        else if (isCount)
+        {
+            aggVal = static_cast<double>(vals.size());
+        }
+        else if (result.aggregation.compare(QLatin1String("Min"), Qt::CaseInsensitive) == 0 ||
+                 result.aggregation.compare(QLatin1String("Minimum"), Qt::CaseInsensitive) == 0)
+        {
+            double minV = vals.first();
+            for (double v : vals) if (v < minV) minV = v;
+            aggVal = minV;
+        }
+        else if (result.aggregation.compare(QLatin1String("Max"), Qt::CaseInsensitive) == 0 ||
+                 result.aggregation.compare(QLatin1String("Maksimum"), Qt::CaseInsensitive) == 0)
+        {
+            double maxV = vals.first();
+            for (double v : vals) if (v > maxV) maxV = v;
+            aggVal = maxV;
+        }
+        else
+        {
+            // Default: Mean (Average)
+            double sum = 0.0;
+            for (double v : vals) sum += v;
+            aggVal = sum / vals.size();
+        }
+
+        result.labels.append(cat);
+        result.values.append(aggVal);
+    }
+
+    result.categoryCount = result.labels.size();
+
+    if (result.categoryCount <= 0)
+    {
+        result.errorMessage = QStringLiteral("No valid data found for bar chart aggregation.");
+        return result;
+    }
+
+    result.success = true;
+    return result;
+}
+
+
+// =========================================================
 // FIND COLUMN
 // =========================================================
 

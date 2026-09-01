@@ -9,6 +9,7 @@
 #include <QDateTime>
 #include <QFile>
 #include <QTextStream>
+#include <QObject>
 
 #include <cmath>
 
@@ -547,8 +548,8 @@ bool ExcelParser::loadFile(
         !fileInfo.isFile()) {
 
         m_lastError =
-            QStringLiteral(
-                "Dosya bulunamadı.");
+            QObject::tr(
+                "File not found.");
 
         return false;
     }
@@ -564,9 +565,9 @@ bool ExcelParser::loadFile(
         return loadDelimitedDataSet(filePath);
 
     m_lastError =
-        QStringLiteral(
-            "Desteklenmeyen dosya formatı. "
-            "Desteklenen formatlar: .xlsx, .csv, .txt");
+        QObject::tr(
+            "Unsupported file format. "
+            "Supported formats: .xlsx, .csv, .txt");
 
     return false;
 }
@@ -586,8 +587,8 @@ bool ExcelParser::loadExcelDataSet(
     if (!document.load()) {
 
         m_lastError =
-            QStringLiteral(
-                "Excel dosyası açılamadı.");
+            QObject::tr(
+                "Could not open Excel file.");
 
         return false;
     }
@@ -598,8 +599,8 @@ bool ExcelParser::loadExcelDataSet(
     if (sheets.isEmpty()) {
 
         m_lastError =
-            QStringLiteral(
-                "Excel dosyasında sheet bulunamadı.");
+            QObject::tr(
+                "No sheet found in Excel file.");
 
         return false;
     }
@@ -611,8 +612,8 @@ bool ExcelParser::loadExcelDataSet(
             selectedSheet)) {
 
         m_lastError =
-            QStringLiteral(
-                "Excel sheet seçilemedi.");
+            QObject::tr(
+                "Could not select Excel sheet.");
 
         return false;
     }
@@ -624,8 +625,8 @@ bool ExcelParser::loadExcelDataSet(
     if (!worksheet) {
 
         m_lastError =
-            QStringLiteral(
-                "Excel worksheet okunamadı.");
+            QObject::tr(
+                "Could not read Excel worksheet.");
 
         return false;
     }
@@ -643,8 +644,8 @@ bool ExcelParser::loadExcelDataSet(
         columnCount <= 0) {
 
         m_lastError =
-            QStringLiteral(
-                "Excel dosyası boş.");
+            QObject::tr(
+                "Excel file is empty.");
 
         return false;
     }
@@ -652,8 +653,8 @@ bool ExcelParser::loadExcelDataSet(
     if (rowCount < 2) {
 
         m_lastError =
-            QStringLiteral(
-                "Excel dosyasında veri satırı bulunamadı.");
+            QObject::tr(
+                "No data rows found in Excel file.");
 
         return false;
     }
@@ -733,8 +734,8 @@ bool ExcelParser::loadDelimitedDataSet(
             QIODevice::Text)) {
 
         m_lastError =
-            QStringLiteral(
-                "CSV/TXT dosyası açılamadı.");
+            QObject::tr(
+                "Could not open CSV/TXT file.");
 
         return false;
     }
@@ -762,8 +763,8 @@ bool ExcelParser::loadDelimitedDataSet(
     if (lines.isEmpty()) {
 
         m_lastError =
-            QStringLiteral(
-                "CSV/TXT dosyası boş.");
+            QObject::tr(
+                "CSV/TXT file is empty.");
 
         return false;
     }
@@ -771,8 +772,8 @@ bool ExcelParser::loadDelimitedDataSet(
     if (lines.size() < 2) {
 
         m_lastError =
-            QStringLiteral(
-                "CSV/TXT dosyasında veri satırı bulunamadı.");
+            QObject::tr(
+                "No data rows found in CSV/TXT file.");
 
         return false;
     }
@@ -790,8 +791,8 @@ bool ExcelParser::loadDelimitedDataSet(
     if (headerFields.isEmpty()) {
 
         m_lastError =
-            QStringLiteral(
-                "CSV/TXT sütun başlıkları okunamadı.");
+            QObject::tr(
+                "Could not parse CSV/TXT column headers.");
 
         return false;
     }
