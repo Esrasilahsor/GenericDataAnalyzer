@@ -878,25 +878,24 @@ Item {
                         }
 
                         // Canvas
-                        Canvas {
-                            id: compCanvas
+                        Item {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
 
-                            onPaint: {
-                                var ctx = getContext("2d")
-                                ctx.clearRect(0, 0, width, height)
+                            Canvas {
+                                id: compCanvas
+                                anchors.fill: parent
 
-                                var resList = page.comparisonResult.results || []
-                                if (resList.length === 0 || page.selectedComparisonIndex >= resList.length) {
-                                    ctx.fillStyle = theme.textSecondary
-                                    ctx.font = "13px sans-serif"
-                                    ctx.textAlign = "center"
-                                    ctx.fillText(qsTr("Select a mapping from the left to view comparison chart."), width / 2, height / 2)
-                                    return
-                                }
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.clearRect(0, 0, width, height)
 
-                                var dataItem = resList[page.selectedComparisonIndex]
+                                    var resList = page.comparisonResult.results || []
+                                    if (resList.length === 0 || page.selectedComparisonIndex >= resList.length) {
+                                        return
+                                    }
+
+                                    var dataItem = resList[page.selectedComparisonIndex]
                                 if (appController) {
                                     appController.setVisualizationAvailable(true)
                                 }
@@ -1312,6 +1311,31 @@ Item {
                                     ctx.fillText(Number(globalMin).toFixed(1), padL - 8, height - padB)
                                 }
                             }
+
+                            Item {
+                                anchors.fill: parent
+                                visible: (!page.comparisonResult || !page.comparisonResult.results || page.comparisonResult.results.length === 0)
+
+                                ColumnLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 10
+
+                                    Components.ByteMascot {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        mascotWidth: 120
+                                        mascotHeight: 120
+                                        source: "qrc:/assets/byte/byte_comparing.png"
+                                        animated: false
+                                    }
+
+                                    Label {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        text: qsTr("Select a mapping from the left to view comparison chart.")
+                                        color: theme.textSecondary
+                                        font.pixelSize: 13
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1320,4 +1344,5 @@ Item {
             Item { Layout.preferredHeight: 20 }
         }
     }
+}
 }

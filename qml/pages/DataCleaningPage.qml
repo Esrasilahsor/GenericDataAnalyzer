@@ -457,6 +457,19 @@ Item {
                     anchors.margins: 14
                     spacing: 12
 
+                    Components.ByteMascot {
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        mascotWidth: 36
+                        mascotHeight: 36
+                        source: (appController && appController.cleaningBusy)
+                                ? "qrc:/assets/byte/byte_cleaning.png"
+                                : (page.hasMissingCleaning(page.activeDs) || page.hasOutlierCleaning(page.activeDs)
+                                   ? "qrc:/assets/byte/byte_completed.png"
+                                   : "qrc:/assets/byte/byte_cleaning.png")
+                        animated: appController && appController.cleaningBusy
+                    }
+
                     Label {
                         text: qsTr("Active Dataset:")
                         color: theme.text

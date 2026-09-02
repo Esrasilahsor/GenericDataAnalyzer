@@ -757,31 +757,25 @@ Item {
                             }
                         }
 
-                        Canvas {
-                            id: chartCanvas1
+                        Item {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
 
-                            onPaint: {
-                                var ctx = getContext("2d")
-                                ctx.clearRect(0, 0, width, height)
+                            Canvas {
+                                id: chartCanvas1
+                                anchors.fill: parent
 
-                                if (page.chartType !== "correlation" && (page.selectedCol1 === "" || page.selectedCol1 === qsTr("-- Select Column --") || page.selectedCol1 === "-- Select Column --" || page.selectedCol1 === "-- Sütun Seçiniz --")) {
-                                    ctx.fillStyle = theme.textSecondary
-                                    ctx.font = "13px sans-serif"
-                                    ctx.textAlign = "center"
-                                    ctx.fillText(qsTr("Please select a column above and click 'Draw Chart'."), width / 2, height / 2)
-                                    return
-                                }
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.clearRect(0, 0, width, height)
 
-                                if (!page.chartData1 || !page.chartData1.success) {
-                                    ctx.fillStyle = theme.textSecondary
-                                    ctx.font = "13px sans-serif"
-                                    ctx.textAlign = "center"
-                                    var errMsg = (page.chartData1 && page.chartData1.errorMessage) ? (qsTr("Error: ") + page.chartData1.errorMessage) : qsTr("Select parameters above and click 'Draw Chart' to view the visualization.")
-                                    ctx.fillText(errMsg, width / 2, height / 2)
-                                    return
-                                }
+                                    if (page.chartType !== "correlation" && (page.selectedCol1 === "" || page.selectedCol1 === qsTr("-- Select Column --") || page.selectedCol1 === "-- Select Column --" || page.selectedCol1 === "-- Sütun Seçiniz --")) {
+                                        return
+                                    }
+
+                                    if (!page.chartData1 || !page.chartData1.success) {
+                                        return
+                                    }
 
                                 var padL = 60, padR = 25, padT = 30, padB = 45
                                 var plotW = width - padL - padR
@@ -1076,6 +1070,33 @@ Item {
                                     ctx.textAlign = "right"
                                     ctx.fillText(Number(maxComp).toFixed(1), padL - 8, padT + 10)
                                     ctx.fillText(Number(minComp).toFixed(1), padL - 8, height - padB)
+                                }
+                            }
+
+                            Item {
+                                anchors.fill: parent
+                                visible: !page.chartData1 || !page.chartData1.success
+
+                                ColumnLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 10
+
+                                    Components.ByteMascot {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        mascotWidth: 120
+                                        mascotHeight: 120
+                                        source: "qrc:/assets/byte/byte_visualization.png"
+                                        animated: false
+                                    }
+
+                                    Label {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        text: (page.chartData1 && page.chartData1.errorMessage)
+                                              ? (qsTr("Error: ") + page.chartData1.errorMessage)
+                                              : qsTr("Select parameters above and click 'Draw Chart' to view the visualization.")
+                                        color: theme.textSecondary
+                                        font.pixelSize: 13
+                                    }
                                 }
                             }
                         }
@@ -1441,4 +1462,5 @@ Item {
             Item { Layout.preferredHeight: 20 }
         }
     }
+}
 }

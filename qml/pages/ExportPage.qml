@@ -1,4 +1,4 @@
-﻿import QtQuick 2.15
+import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import Qt.labs.platform 1.1 as Platform
@@ -178,10 +178,18 @@ Item {
                     anchors.fill: parent
                     anchors.margins: 14
                     spacing: 8
-
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 10
+
+                        Components.ByteMascot {
+                            Layout.preferredWidth: 32
+                            Layout.preferredHeight: 32
+                            mascotWidth: 32
+                            mascotHeight: 32
+                            source: page.exportSuccess ? "qrc:/assets/byte/byte_completed.png" : "qrc:/assets/byte/byte_error.png"
+                            animated: false
+                        }
 
                         Label {
                             text: page.exportSuccess ? "✓ " + page.exportStatusMessage : page.exportStatusMessage
@@ -211,6 +219,32 @@ Item {
                             Layout.preferredWidth: 150
                             text: qsTr("Export Another File")
                             onClicked: page.clearStatus()
+                            contentItem: Text {
+                                text: parent.text
+                                color: theme.text
+                                font.pixelSize: 11
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 6
+                                color: theme.surface
+                                border.color: theme.border
+                                border.width: 1
+                            }
+                        }
+
+                        Button {
+                            Layout.preferredHeight: 32
+                            Layout.preferredWidth: 150
+                            text: qsTr("Open File Location")
+                            visible: page.lastExportedPath !== ""
+                            onClicked: {
+                                if (appController && page.lastExportedPath !== "") {
+                                    appController.openInExplorer(page.lastExportedPath)
+                                }
+                            }
                             contentItem: Text {
                                 text: parent.text
                                 color: theme.text
@@ -269,11 +303,25 @@ Item {
                     anchors.margins: 18
                     spacing: 14
 
-                    Label {
-                        text: qsTr("1. Select Dataset to Export")
-                        color: theme.text
-                        font.pixelSize: 14
-                        font.bold: true
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Components.ByteMascot {
+                            Layout.preferredWidth: 26
+                            Layout.preferredHeight: 26
+                            mascotWidth: 26
+                            mascotHeight: 26
+                            source: "qrc:/assets/byte/byte_exporting.png"
+                            animated: false
+                        }
+
+                        Label {
+                            text: qsTr("1. Select Dataset to Export")
+                            color: theme.text
+                            font.pixelSize: 14
+                            font.bold: true
+                        }
                     }
 
                     GridLayout {

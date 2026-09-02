@@ -519,6 +519,16 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    spacing: 10
+
+                    Components.ByteMascot {
+                        Layout.preferredWidth: 32
+                        Layout.preferredHeight: 32
+                        mascotWidth: 32
+                        mascotHeight: 32
+                        source: "qrc:/assets/byte/byte_analysis.png"
+                        animated: false
+                    }
 
                     Label {
                         text: qsTr("Batch Data Quality & Outlier Check")

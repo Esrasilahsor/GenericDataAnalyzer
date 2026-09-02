@@ -220,6 +220,16 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            spacing: 8
+
+                            Components.ByteMascot {
+                                Layout.preferredWidth: 28
+                                Layout.preferredHeight: 28
+                                mascotWidth: 28
+                                mascotHeight: 28
+                                source: page.dataset1Loaded ? "qrc:/assets/byte/byte_dataset_loaded.png" : "qrc:/assets/byte/byte_ready.png"
+                                animated: false
+                            }
 
                             Label {
                                 text: qsTr("Dataset 1")
@@ -361,6 +371,16 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            spacing: 8
+
+                            Components.ByteMascot {
+                                Layout.preferredWidth: 28
+                                Layout.preferredHeight: 28
+                                mascotWidth: 28
+                                mascotHeight: 28
+                                source: page.dataset2Loaded ? "qrc:/assets/byte/byte_dataset_loaded.png" : "qrc:/assets/byte/byte_ready.png"
+                                animated: false
+                            }
 
                             Label {
                                 text: qsTr("Dataset 2")

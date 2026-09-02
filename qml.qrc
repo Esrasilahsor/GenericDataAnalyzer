@@ -20,10 +20,23 @@
         <file>qml/components/SessionRestoreDialog.qml</file>
         <file>qml/components/WorkflowNavCard.qml</file>
         <file>qml/components/CompactProgress.qml</file>
+        <file>qml/components/ByteMascot.qml</file>
         <file>qml/qmldir</file>
         <file>qml/pages/DataCleaningPage.qml</file>
         <file>qml/pages/VisualizationPage.qml</file>
         <file>qml/pages/ExportPage.qml</file>
         <file>qml/pages/RawDataPage.qml</file>
+        <file>assets/byte/byte_welcome.png</file>
+        <file>assets/byte/byte_dataset_loaded.png</file>
+        <file>assets/byte/byte_parsing.png</file>
+        <file>assets/byte/byte_cleaning.png</file>
+        <file>assets/byte/byte_analysis.png</file>
+        <file>assets/byte/byte_comparing.png</file>
+        <file>assets/byte/byte_visualization.png</file>
+        <file>assets/byte/byte_exporting.png</file>
+        <file>assets/byte/byte_completed.png</file>
+        <file>assets/byte/byte_error.png</file>
+        <file>assets/byte/byte_investigating.png</file>
+        <file>assets/byte/byte_ready.png</file>
     </qresource>
 </RCC>

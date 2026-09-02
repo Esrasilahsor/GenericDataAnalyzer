@@ -638,7 +638,7 @@ Item {
                         }
                     }
 
-                    // Empty State
+                    // Empty / Parsing State
                     Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -646,17 +646,23 @@ Item {
 
                         ColumnLayout {
                             anchors.centerIn: parent
-                            spacing: 8
+                            spacing: 10
 
-                            Label {
+                            Components.ByteMascot {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: "📊"
-                                font.pixelSize: 32
+                                mascotWidth: 120
+                                mascotHeight: 120
+                                source: (appController && appController.rawParsing)
+                                        ? "qrc:/assets/byte/byte_parsing.png"
+                                        : "qrc:/assets/byte/byte_ready.png"
+                                animated: appController && appController.rawParsing
                             }
 
                             Label {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: qsTr("No parameters parsed yet.")
+                                text: (appController && appController.rawParsing)
+                                      ? qsTr("Parsing raw data packets...")
+                                      : qsTr("Load metadata and raw data to parse parameters.")
                                 color: theme.textSecondary
                                 font.pixelSize: 13
                             }

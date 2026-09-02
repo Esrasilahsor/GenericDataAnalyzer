@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
 import "../" as AppTheme
+import "../components" as Components
 
 Item {
     id: page
@@ -188,19 +189,15 @@ Item {
                     anchors.margins: 18
                     spacing: 16
 
-                    Rectangle {
-                        Layout.preferredWidth: 48
-                        Layout.preferredHeight: 48
-                        radius: 14
-                        color: theme.primary
-
-                        Label {
-                            anchors.centerIn: parent
-                            text: "▶"
-                            color: "#FFFFFF"
-                            font.pixelSize: 18
-                            font.bold: true
-                        }
+                    Components.ByteMascot {
+                        Layout.preferredWidth: 64
+                        Layout.preferredHeight: 64
+                        mascotWidth: 64
+                        mascotHeight: 64
+                        source: (page.loaded(1) || page.loaded(2))
+                                ? "qrc:/assets/byte/byte_dataset_loaded.png"
+                                : "qrc:/assets/byte/byte_welcome.png"
+                        animated: false
                     }
 
                     ColumnLayout {
