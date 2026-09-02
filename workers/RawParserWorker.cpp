@@ -21,8 +21,9 @@ public:
         const QList<ParameterDefinition> &definitions,
         QVector<QList<QList<ParsedParameter>>> &results,
         std::atomic<bool> &cancelFlag,
-        std::atomic<int> &completedChunks,
-        int totalChunks,
+        std::atomic<int> &processedPackets,
+        int totalPackets,
+        std::shared_ptr<std::atomic<int>> lastEmittedPercent,
         std::function<void(int)> progressNotifier
     )
         : m_chunkIndex(chunkIndex)
@@ -33,8 +34,9 @@ public:
         , m_definitions(definitions)
         , m_results(results)
         , m_cancelFlag(cancelFlag)
-        , m_completedChunks(completedChunks)
-        , m_totalChunks(totalChunks)
+        , m_processedPackets(processedPackets)
+        , m_totalPackets(totalPackets)
+        , m_lastEmittedPercent(lastEmittedPercent)
         , m_progressNotifier(progressNotifier)
     {
         setAutoDelete(true);
@@ -55,7 +57,36 @@ public:
 
         RawDataParser parser;
         QList<QList<ParsedParameter>> parsedChunk =
-            parser.parsePackets(chunkSlice, m_definitions, m_packetSize);
+            parser.parsePackets(
+                chunkSlice,
+                m_definitions,
+                m_packetSize,
+                [this](int processedInChunk, int totalInChunk) {
+                    Q_UNUSED(processedInChunk);
+                    Q_UNUSED(totalInChunk);
+                    if (m_cancelFlag.load(std::memory_order_relaxed))
+                    {
+                        return;
+                    }
+
+                    const int globalProcessed = ++m_processedPackets;
+                    if (m_totalPackets > 0)
+                    {
+                        const int pct = (globalProcessed * 100) / m_totalPackets;
+                        int last = m_lastEmittedPercent->load(std::memory_order_relaxed);
+                        if (pct > last && pct <= 100)
+                        {
+                            if (m_lastEmittedPercent->compare_exchange_strong(last, pct))
+                            {
+                                if (m_progressNotifier)
+                                {
+                                    m_progressNotifier(pct);
+                                }
+                            }
+                        }
+                    }
+                }
+            );
 
         if (m_cancelFlag.load(std::memory_order_relaxed))
         {
@@ -63,13 +94,6 @@ public:
         }
 
         m_results[m_chunkIndex] = std::move(parsedChunk);
-
-        const int done = ++m_completedChunks;
-        if (m_progressNotifier && m_totalChunks > 0)
-        {
-            const int pct = (done * 100) / m_totalChunks;
-            m_progressNotifier(pct);
-        }
     }
 
 private:
@@ -81,8 +105,9 @@ private:
     QList<ParameterDefinition> m_definitions;
     QVector<QList<QList<ParsedParameter>>> &m_results;
     std::atomic<bool> &m_cancelFlag;
-    std::atomic<int> &m_completedChunks;
-    int m_totalChunks;
+    std::atomic<int> &m_processedPackets;
+    int m_totalPackets;
+    std::shared_ptr<std::atomic<int>> m_lastEmittedPercent;
     std::function<void(int)> m_progressNotifier;
 };
 
@@ -152,7 +177,7 @@ void RawParserWorker::startParsing()
     const int chunkCount = (totalPackets + CHUNK_PACKET_SIZE - 1) / CHUNK_PACKET_SIZE;
     QVector<QList<QList<ParsedParameter>>> chunkResults(chunkCount);
 
-    std::atomic<int> completedChunks(0);
+    std::atomic<int> processedPackets(0);
 
     QThreadPool pool;
     const int maxThreads = qBound(1, QThread::idealThreadCount() - 1, 8);
@@ -160,15 +185,9 @@ void RawParserWorker::startParsing()
 
     std::shared_ptr<std::atomic<int>> lastEmittedPercent = std::make_shared<std::atomic<int>>(0);
     std::shared_ptr<QMutex> progressMutex = std::make_shared<QMutex>();
-    auto progressNotifier = [this, lastEmittedPercent, progressMutex](int percent) {
-        int currentLast = lastEmittedPercent->load();
-        while (percent > currentLast) {
-            if (lastEmittedPercent->compare_exchange_weak(currentLast, percent)) {
-                QMutexLocker locker(progressMutex.get());
-                emit progressChanged(percent);
-                break;
-            }
-        }
+    auto progressNotifier = [this, progressMutex](int percent) {
+        QMutexLocker locker(progressMutex.get());
+        emit progressChanged(percent);
     };
 
     emit progressChanged(0);
@@ -192,8 +211,9 @@ void RawParserWorker::startParsing()
             m_definitions,
             chunkResults,
             m_cancelRequested,
-            completedChunks,
-            chunkCount,
+            processedPackets,
+            totalPackets,
+            lastEmittedPercent,
             progressNotifier
         );
 

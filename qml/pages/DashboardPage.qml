@@ -13,8 +13,12 @@ Item {
     property var mainWindow
 
     function go(index) {
-        if (page.mainWindow)
-            page.mainWindow.currentPage = index
+        if (page.mainWindow) {
+            if (page.mainWindow.navigateToPage)
+                page.mainWindow.navigateToPage(index)
+            else
+                page.mainWindow.currentPage = index
+        }
     }
 
     function loaded(dataset) {
@@ -34,7 +38,9 @@ Item {
                 ? page.appController.dataset1Name
                 : page.appController.dataset2Name
 
-        return value !== "" ? value : qsTr("Not loaded")
+        return value === ""
+                ? qsTr("Not loaded")
+                : value
     }
 
     function rows(dataset) {
@@ -46,7 +52,7 @@ Item {
                 : page.appController.dataset2RowCount
     }
 
-    function columns(dataset) {
+    function cols(dataset) {
         if (!page.appController)
             return 0
 
@@ -65,36 +71,22 @@ Item {
     }
 
     function problemCount(dataset) {
-        if (!qualityAvailable(dataset))
+        if (!page.appController)
             return 0
 
-        var result = dataset === 1
+        var quality = dataset === 1
                 ? page.appController.dataset1QualityResult
                 : page.appController.dataset2QualityResult
 
-        var hasMissing = (Number(result.totalMissingValues || 0) > 0 || Number(result.columnsWithMissingValues || 0) > 0) ? 1 : 0
-        var hasDuplicates = Number(result.duplicateRowCount || 0) > 0 ? 1 : 0
-        var hasConstants = Number(result.constantColumnCount || 0) > 0 ? 1 : 0
+        if (!quality || quality.totalProblems === undefined)
+            return 0
 
-        var isOutlierAvail = dataset === 1
-                ? (page.appController && page.appController.dataset1OutlierAvailable)
-                : (page.appController && page.appController.dataset2OutlierAvailable)
-        var outResult = dataset === 1
-                ? (page.appController ? page.appController.dataset1OutlierResult : null)
-                : (page.appController ? page.appController.dataset2OutlierResult : null)
-        var hasOutliers = 0
-        if (isOutlierAvail && outResult) {
-            hasOutliers = Number(outResult.outlierCount || 0) > 0 ? 1 : 0
-        } else if (result && (result.hasOutliers === true || Number(result.outlierCount || 0) > 0)) {
-            hasOutliers = 1
-        }
-
-        return hasMissing + hasDuplicates + hasConstants + hasOutliers
+        return quality.totalProblems
     }
 
-    function datasetStatus(dataset) {
+    function datasetStatusText(dataset) {
         if (!loaded(dataset))
-            return qsTr("No file loaded")
+            return qsTr("Not loaded")
 
         if (!qualityAvailable(dataset))
             return qsTr("Pending analysis")
@@ -128,14 +120,13 @@ Item {
         case 1:
             return page.loaded(1) || page.loaded(2)
         case 2:
-            return (page.loaded(1) && page.qualityAvailable(1)) ||
-                   (page.loaded(2) && page.qualityAvailable(2))
+            return (page.appController.dataset1EdaAvailable || page.appController.dataset2EdaAvailable ||
+                    page.appController.dataset1CorrelationAvailable || page.appController.dataset2CorrelationAvailable)
         case 3:
             return (page.loaded(1) || page.loaded(2)) &&
                    (page.appController.cleaningCompleted ||
                     page.appController.dataset1Modified ||
-                    page.appController.dataset2Modified ||
-                    (page.qualityAvailable(1) && page.problemCount(1) === 0 && (!page.loaded(2) || page.problemCount(2) === 0)))
+                    page.appController.dataset2Modified)
         case 4:
             return page.appController.datasetComparisonAvailable
         case 5:
@@ -153,8 +144,14 @@ Item {
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
+        readonly property real containerWidth: pageScrollView.availableWidth
+        readonly property bool isWide: containerWidth >= 1100
+        readonly property bool isMedium: containerWidth >= 700 && containerWidth < 1100
+        readonly property bool isNarrow: containerWidth < 700
+
         ColumnLayout {
-            width: pageScrollView.availableWidth
+            id: mainCol
+            width: page.width
             spacing: 18
 
             // =================================================
@@ -174,70 +171,79 @@ Item {
             // =================================================
 
             Rectangle {
+                id: quickStartCard
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 118
+                implicitHeight: quickStartCol.implicitHeight + 36
 
                 radius: 18
                 color: theme.surfaceAlt
                 border.width: 1
                 border.color: theme.border
 
-                RowLayout {
+                ColumnLayout {
+                    id: quickStartCol
                     anchors.fill: parent
                     anchors.margins: 18
-                    spacing: 16
+                    spacing: 14
 
-                    Components.ByteMascot {
-                        Layout.preferredWidth: 64
-                        Layout.preferredHeight: 64
-                        mascotWidth: 64
-                        mascotHeight: 64
-                        source: (page.loaded(1) || page.loaded(2))
-                                ? "qrc:/assets/byte/byte_dataset_loaded.png"
-                                : "qrc:/assets/byte/byte_welcome.png"
-                        animated: false
-                    }
-
-                    ColumnLayout {
+                    Flow {
+                        id: quickStartFlow
                         Layout.fillWidth: true
-                        spacing: 4
+                        spacing: 16
 
-                        Label {
-                            text: qsTr("Start the analysis workflow")
-                            color: theme.text
-                            font.pixelSize: 16
-                            font.bold: true
+                        Components.ByteMascot {
+                            sizeVariant: "hero"
+                            source: (page.loaded(1) || page.loaded(2))
+                                    ? "qrc:/assets/byte/byte_dataset_loaded.png"
+                                    : "qrc:/assets/byte/byte_welcome.png"
+                            animated: false
                         }
 
-                        Label {
-                            text: qsTr("Load your datasets to complete data quality, statistics, outlier cleaning and comparison in one smooth workflow.")
-                            color: theme.textSecondary
-                            font.pixelSize: 12
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
+                        ColumnLayout {
+                            width: quickStartFlow.width < 600 ? quickStartFlow.width : Math.min(quickStartFlow.width - 290, 420)
+                            spacing: 4
+
+                            Label {
+                                text: qsTr("Start the analysis workflow")
+                                color: theme.text
+                                font.pixelSize: 17
+                                font.bold: true
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                            }
+
+                            Label {
+                                text: qsTr("Load your datasets to complete data quality, statistics, outlier cleaning and comparison in one smooth workflow.")
+                                color: theme.textSecondary
+                                font.pixelSize: 13
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                            }
                         }
-                    }
 
-                    Button {
-                        Layout.preferredWidth: 175
-                        Layout.preferredHeight: 42
-                        text: qsTr("Go to Datasets →")
-                        onClicked: page.go(1)
+                        Button {
+                            width: quickStartFlow.width < 600 ? quickStartFlow.width : 175
+                            height: 44
+                            text: qsTr("Go to Datasets →")
+                            onClicked: page.go(1)
 
-                        contentItem: Text {
-                            text: parent.text
-                            color: "#FFFFFF"
-                            font.pixelSize: 12
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
+                            contentItem: Text {
+                                text: parent.text
+                                color: "#FFFFFF"
+                                font.pixelSize: 12
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
 
-                        background: Rectangle {
-                            radius: 9
-                            color: theme.primary
+                            background: Rectangle {
+                                radius: 9
+                                color: theme.primary
+                            }
                         }
                     }
                 }
@@ -247,11 +253,13 @@ Item {
             // DATASET CARDS
             // =================================================
 
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
+                columns: pageScrollView.isNarrow ? 1 : 2
+                columnSpacing: 14
+                rowSpacing: 14
 
                 Repeater {
                     model: 2
@@ -260,7 +268,7 @@ Item {
                         id: datasetCard
 
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 180
+                        implicitHeight: dsCardCol.implicitHeight + 36
 
                         radius: 16
                         color: theme.surface
@@ -272,7 +280,10 @@ Item {
                         property bool hasProblems: page.problemCount(dataset) > 0
 
                         ColumnLayout {
-                            anchors.fill: parent
+                            id: dsCardCol
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
                             anchors.margins: 18
                             spacing: 8
 
@@ -331,15 +342,14 @@ Item {
                                 color:
                                     datasetCard.hasProblems ? theme.warning : (isMod ? theme.success : theme.textSecondary)
                                 font.pixelSize: 12
-                            }
-
-                            Item {
-                                Layout.fillHeight: true
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
                             }
 
                             Button {
                                 Layout.preferredWidth: 160
                                 Layout.preferredHeight: 36
+                                Layout.topMargin: 4
 
                                 text:
                                     !datasetCard.isLoaded
@@ -378,7 +388,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 185
+                implicitHeight: wfMainCol.implicitHeight + 36
 
                 radius: 16
                 color: theme.surface
@@ -386,27 +396,37 @@ Item {
                 border.color: theme.border
 
                 ColumnLayout {
-                    anchors.fill: parent
+                    id: wfMainCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 18
-                    spacing: 10
+                    spacing: 12
 
                     Label {
                         text: qsTr("Analysis Workflow")
                         color: theme.text
                         font.pixelSize: 16
                         font.bold: true
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        wrapMode: Text.WordWrap
                     }
 
                     Label {
                         text: qsTr("Each step guides you through the full data pipeline.")
                         color: theme.textSecondary
                         font.pixelSize: 12
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        wrapMode: Text.WordWrap
                     }
 
-                    RowLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        spacing: 10
+                        columns: pageScrollView.isWide ? 5 : (pageScrollView.isMedium ? 3 : 1)
+                        columnSpacing: 10
+                        rowSpacing: 10
 
                         Repeater {
                             model: [
@@ -446,7 +466,7 @@ Item {
                                 id: workflowCard
 
                                 Layout.fillWidth: true
-                                Layout.fillHeight: true
+                                implicitHeight: stepInnerCol.implicitHeight + 24
 
                                 radius: 11
                                 color: workflowMouse.containsMouse
@@ -456,9 +476,12 @@ Item {
                                 border.color: theme.primary
 
                                 ColumnLayout {
-                                    anchors.fill: parent
+                                    id: stepInnerCol
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
                                     anchors.margins: 12
-                                    spacing: 4
+                                    spacing: 6
 
                                     RowLayout {
                                         Layout.fillWidth: true
@@ -506,7 +529,6 @@ Item {
                                         font.pixelSize: 11
                                         wrapMode: Text.WordWrap
                                         Layout.fillWidth: true
-                                        Layout.fillHeight: true
                                     }
 
                                     Label {
@@ -514,6 +536,7 @@ Item {
                                         color: page.isStepCompleted(modelData.pageIndex) ? theme.success : theme.primary
                                         font.pixelSize: 12
                                         font.bold: true
+                                        Layout.topMargin: 4
                                     }
                                 }
 
@@ -540,45 +563,56 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 330
+                implicitHeight: histCol.implicitHeight + 36
                 radius: 16
                 color: theme.surface
                 border.width: 1
                 border.color: theme.border
 
                 ColumnLayout {
-                    anchors.fill: parent
+                    id: histCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 18
                     spacing: 12
 
                     // Card Header & Actions
-                    RowLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        spacing: 10
+                        columns: histCol.width < 580 ? 1 : 2
+                        rowSpacing: 8
+                        columnSpacing: 10
 
                         ColumnLayout {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             spacing: 2
 
                             RowLayout {
+                                Layout.fillWidth: true
                                 spacing: 8
                                 Label {
                                     text: qsTr("🕒 Recent Operations & Session History")
                                     color: theme.text
                                     font.pixelSize: 15
                                     font.bold: true
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    elide: Text.ElideRight
                                 }
 
                                 Rectangle {
                                     visible: page.appController && page.appController.sessionRestored
                                     Layout.preferredHeight: 20
-                                    Layout.preferredWidth: 140
+                                    Layout.preferredWidth: Math.max(180, sessionRestoredLbl.implicitWidth + 24)
                                     radius: 10
                                     color: "#E6F6EE"
                                     border.width: 1
                                     border.color: theme.success
 
                                     Label {
+                                        id: sessionRestoredLbl
                                         anchors.centerIn: parent
                                         text: qsTr("✓ Session Restored")
                                         color: theme.success
@@ -592,92 +626,102 @@ Item {
                                 text: qsTr("Files from your previous session and recent analysis / cleaning activities.")
                                 color: theme.textSecondary
                                 font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                             }
                         }
 
-                        Button {
-                            id: restoreSessionBtn
-                            visible: page.appController && page.appController.hasPreviousSession && !page.appController.sessionRestored
-                            Layout.preferredHeight: 34
-                            Layout.preferredWidth: 180
-                            text: qsTr("🔄 Restore Last Session")
-                            property bool clickFeedback: false
-                            Timer {
-                                id: restoreSessionTimer
-                                interval: 450
-                                onTriggered: restoreSessionBtn.clickFeedback = false
-                            }
-                            contentItem: Text {
-                                text: parent.text
-                                color: theme.text
-                                font.pixelSize: 11
-                                font.bold: true
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: Rectangle {
-                                radius: 8
-                                color: restoreSessionBtn.down ? theme.surfaceAlt : (restoreSessionBtn.hovered ? theme.surfaceAlt : theme.surface)
-                                border.color: restoreSessionBtn.clickFeedback ? theme.success : theme.border
-                                border.width: 1
-                            }
-                            onClicked: {
-                                clickFeedback = true
-                                restoreSessionTimer.restart()
-                                if (page.appController) {
-                                    page.appController.restoreLastSession()
+                        Flow {
+                            Layout.fillWidth: histCol.width < 580
+                            Layout.alignment: histCol.width < 580 ? Qt.AlignLeft : Qt.AlignRight
+                            spacing: 8
+
+                            Button {
+                                id: restoreSessionBtn
+                                visible: page.appController && page.appController.hasPreviousSession && !page.appController.sessionRestored
+                                implicitHeight: 34
+                                implicitWidth: 180
+                                text: qsTr("🔄 Restore Last Session")
+                                property bool clickFeedback: false
+                                Timer {
+                                    id: restoreSessionTimer
+                                    interval: 450
+                                    onTriggered: restoreSessionBtn.clickFeedback = false
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: theme.text
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                background: Rectangle {
+                                    radius: 8
+                                    color: restoreSessionBtn.down ? theme.surfaceAlt : (restoreSessionBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                    border.color: restoreSessionBtn.clickFeedback ? theme.success : theme.border
+                                    border.width: 1
+                                }
+                                onClicked: {
+                                    clickFeedback = true
+                                    restoreSessionTimer.restart()
+                                    if (page.appController) {
+                                        page.appController.restoreLastSession()
+                                    }
                                 }
                             }
-                        }
 
-                        Button {
-                            id: clearHistoryBtn
-                            visible: (page.appController && page.appController.recentActivities.length > 0) ||
-                                     (page.appController && page.appController.recentFiles.length > 0)
-                            Layout.preferredHeight: 34
-                            Layout.preferredWidth: 120
-                            text: qsTr("🗑 Clear History")
-                            property bool clickFeedback: false
-                            Timer {
-                                id: clearHistoryTimer
-                                interval: 450
-                                onTriggered: clearHistoryBtn.clickFeedback = false
-                            }
-                            contentItem: Text {
-                                text: parent.text
-                                color: theme.text
-                                font.pixelSize: 11
-                                font.bold: true
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: Rectangle {
-                                radius: 8
-                                color: clearHistoryBtn.down ? theme.surfaceAlt : (clearHistoryBtn.hovered ? theme.surfaceAlt : theme.surface)
-                                border.color: clearHistoryBtn.clickFeedback ? theme.success : theme.border
-                                border.width: 1
-                            }
-                            onClicked: {
-                                clickFeedback = true
-                                clearHistoryTimer.restart()
-                                if (page.appController) {
-                                    page.appController.clearRecentActivities()
-                                    page.appController.clearRecentFiles()
+                            Button {
+                                id: clearHistoryBtn
+                                visible: (page.appController && page.appController.recentActivities.length > 0) ||
+                                         (page.appController && page.appController.recentFiles.length > 0)
+                                implicitHeight: 34
+                                implicitWidth: 120
+                                text: qsTr("🗑 Clear History")
+                                property bool clickFeedback: false
+                                Timer {
+                                    id: clearHistoryTimer
+                                    interval: 450
+                                    onTriggered: clearHistoryBtn.clickFeedback = false
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: theme.text
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                background: Rectangle {
+                                    radius: 8
+                                    color: clearHistoryBtn.down ? theme.surfaceAlt : (clearHistoryBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                    border.color: clearHistoryBtn.clickFeedback ? theme.success : theme.border
+                                    border.width: 1
+                                }
+                                onClicked: {
+                                    clickFeedback = true
+                                    clearHistoryTimer.restart()
+                                    if (page.appController) {
+                                        page.appController.clearRecentActivities()
+                                        page.appController.clearRecentFiles()
+                                    }
                                 }
                             }
                         }
                     }
 
                     // Content Split: Left (Recent Files) & Right (Recent Activities Timeline)
-                    RowLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        spacing: 16
+                        columns: pageScrollView.isNarrow ? 1 : 2
+                        columnSpacing: 16
+                        rowSpacing: 16
 
                         // Left Column: Recent Files
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            Layout.preferredHeight: 240
                             radius: 12
                             color: theme.background
                             border.width: 1
@@ -829,7 +873,7 @@ Item {
                         // Right Column: Activity History Timeline
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            Layout.preferredHeight: 240
                             radius: 12
                             color: theme.background
                             border.width: 1
@@ -946,20 +990,26 @@ Item {
             // =================================================
 
             Rectangle {
+                id: nextStepCard
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 92
+                implicitHeight: nextStepGrid.implicitHeight + 32
 
                 radius: 14
                 color: theme.surfaceAlt
                 border.width: 1
                 border.color: theme.border
 
-                RowLayout {
-                    anchors.fill: parent
+                GridLayout {
+                    id: nextStepGrid
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 16
-                    spacing: 12
+                    columns: nextStepCard.width < 560 ? 1 : 3
+                    rowSpacing: 10
+                    columnSpacing: 12
 
                     Rectangle {
                         Layout.preferredWidth: 36
@@ -978,6 +1028,7 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 2
 
                         Label {
@@ -985,6 +1036,8 @@ Item {
                             color: theme.text
                             font.pixelSize: 13
                             font.bold: true
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                         }
 
                         Label {
@@ -1003,11 +1056,14 @@ Item {
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                         }
                     }
 
                     Button {
-                        Layout.preferredWidth: 170
+                        Layout.alignment: nextStepGrid.columns === 1 ? Qt.AlignHCenter : Qt.AlignVCenter
+                        Layout.preferredWidth: nextStepGrid.columns === 1 ? parent.width : 170
+                        Layout.fillWidth: nextStepGrid.columns === 1
                         Layout.preferredHeight: 38
 
                         text:

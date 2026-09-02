@@ -31,7 +31,6 @@ Item {
     property string saveStatusMessage: ""
     property bool saveSuccess: true
     property bool isRendering: false
-    property bool sessionPromptHandled: false
     property bool sessionRestored: false
 
     function checkSessionRestore() {
@@ -79,12 +78,6 @@ Item {
         ignoreUnknownSignals: true
         function onSessionRestoreDecisionChanged() {
             page.checkSessionRestore()
-        }
-        function onDataset1Changed() {
-            page.sessionPromptHandled = false
-        }
-        function onDataset2Changed() {
-            page.sessionPromptHandled = false
         }
     }
 
@@ -264,7 +257,10 @@ Item {
 
     function goToPage(index) {
         if (page.mainWindow) {
-            page.mainWindow.currentPage = index
+            if (page.mainWindow.navigateToPage)
+                page.mainWindow.navigateToPage(index)
+            else
+                page.mainWindow.currentPage = index
         }
     }
 
@@ -282,6 +278,10 @@ Item {
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
+        readonly property real containerWidth: pageScrollView.availableWidth
+        readonly property bool isNarrow: containerWidth < 750
+        readonly property bool isMediumOrNarrow: containerWidth < 950
+
         ColumnLayout {
             width: pageScrollView.availableWidth
             spacing: 16
@@ -295,7 +295,7 @@ Item {
             Components.WorkflowNavCard {
                 theme: page.theme
                 appController: page.appController
-                currentStepIndex: 5
+                currentStepIndex: 4
                 title: qsTr("Data Visualization")
                 subtitle: qsTr("Generate interactive charts, inspect distribution trends and save chart visualizations.")
                 buttonText: qsTr("Continue to Export →")
@@ -310,7 +310,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 40
+                implicitHeight: 40
                 radius: 8
                 color: page.saveSuccess ? "#1B5E20" : "#B71C1C"
                 RowLayout {
@@ -331,7 +331,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 42
+                implicitHeight: 42
                 radius: 8
                 color: theme.surfaceAlt
                 border.color: theme.primary
@@ -354,21 +354,25 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 185
+                implicitHeight: ctrlCol.implicitHeight + 32
                 radius: 16
                 color: theme.surface
                 border.color: theme.border
                 border.width: 1
 
                 ColumnLayout {
-                    anchors.fill: parent
+                    id: ctrlCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 16
                     spacing: 12
 
-                    // Row 1: Mode & Export
-                    RowLayout {
+                    // Row 1: Mode & Dataset Selection (Responsive Flow)
+                    Flow {
+                        width: ctrlCol.width
                         Layout.fillWidth: true
-                        spacing: 14
+                        spacing: 10
 
                         RowLayout {
                             spacing: 6
@@ -429,20 +433,22 @@ Item {
                                 }
                             }
                         }
-                        Item { Layout.fillWidth: true }
                     }
 
                     // Row 2: Selectors & Draw Button
-                    RowLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        spacing: 12
+                        columns: pageScrollView.isNarrow ? 2 : (pageScrollView.isMediumOrNarrow ? 3 : 5)
+                        columnSpacing: 10
+                        rowSpacing: 10
 
                         ColumnLayout {
+                            Layout.fillWidth: true
                             spacing: 2
                             Label { text: qsTr("Chart Type"); color: theme.textSecondary; font.pixelSize: 11 }
                             ComboBox {
                                 id: chartTypeCombo
-                                Layout.preferredWidth: 180
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 34
                                 model: [qsTr("Histogram"), qsTr("Box Plot"), qsTr("Scatter Plot"), qsTr("Line / Trend"), qsTr("Bar Chart"), qsTr("Correlation Heatmap"), qsTr("Comparison Chart")]
                                 currentIndex: 0
@@ -463,6 +469,7 @@ Item {
                         // Column 1
                         ColumnLayout {
                             visible: page.chartType !== "correlation" && page.chartType !== "bar"
+                            Layout.fillWidth: true
                             spacing: 2
                             Label {
                                 text: (page.isDualMode || page.chartType === "comparison") ? qsTr("Dataset 1 Column") : ((page.chartType === "timeseries" || page.chartType === "line") ? qsTr("Line Column") : qsTr("Analysis Column"))
@@ -472,7 +479,7 @@ Item {
                             }
                             ComboBox {
                                 id: col1Combo
-                                Layout.preferredWidth: 190
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: (page.isDualMode || page.chartType === "comparison") ? page.columnModel(1) : page.columnModel(page.activeDataset)
                                 textRole: "name"
@@ -488,6 +495,7 @@ Item {
                         // Column 2
                         ColumnLayout {
                             visible: (page.isDualMode || page.chartType === "comparison") && page.chartType !== "correlation" && page.chartType !== "bar"
+                            Layout.fillWidth: true
                             spacing: 2
                             Label {
                                 text: qsTr("Dataset 2 Column")
@@ -497,7 +505,7 @@ Item {
                             }
                             ComboBox {
                                 id: col2Combo
-                                Layout.preferredWidth: 190
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: page.columnModel(2)
                                 textRole: "name"
@@ -514,6 +522,7 @@ Item {
                         // Category Column (D1 or Single)
                         ColumnLayout {
                             visible: page.chartType === "bar"
+                            Layout.fillWidth: true
                             spacing: 2
                             Label {
                                 text: page.isDualMode ? qsTr("D1 Category Column") : qsTr("Category Column")
@@ -523,7 +532,7 @@ Item {
                             }
                             ComboBox {
                                 id: barCatCombo
-                                Layout.preferredWidth: 170
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: page.columnModel(page.isDualMode ? 1 : page.activeDataset)
                                 textRole: "name"
@@ -539,6 +548,7 @@ Item {
                         // Value Column (D1 or Single)
                         ColumnLayout {
                             visible: page.chartType === "bar"
+                            Layout.fillWidth: true
                             spacing: 2
                             Label {
                                 text: page.isDualMode ? qsTr("D1 Value Column") : qsTr("Value Column")
@@ -548,7 +558,7 @@ Item {
                             }
                             ComboBox {
                                 id: barValCombo
-                                Layout.preferredWidth: 170
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: page.columnModel(page.isDualMode ? 1 : page.activeDataset)
                                 textRole: "name"
@@ -564,6 +574,7 @@ Item {
                         // Dual Mode D2 Category Column
                         ColumnLayout {
                             visible: page.chartType === "bar" && page.isDualMode
+                            Layout.fillWidth: true
                             spacing: 2
                             Label {
                                 text: qsTr("D2 Category Column")
@@ -573,7 +584,7 @@ Item {
                             }
                             ComboBox {
                                 id: barCatCombo2
-                                Layout.preferredWidth: 170
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: page.columnModel(2)
                                 textRole: "name"
@@ -589,6 +600,7 @@ Item {
                         // Dual Mode D2 Value Column
                         ColumnLayout {
                             visible: page.chartType === "bar" && page.isDualMode
+                            Layout.fillWidth: true
                             spacing: 2
                             Label {
                                 text: qsTr("D2 Value Column")
@@ -598,7 +610,7 @@ Item {
                             }
                             ComboBox {
                                 id: barValCombo2
-                                Layout.preferredWidth: 170
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: page.columnModel(2)
                                 textRole: "name"
@@ -614,11 +626,12 @@ Item {
                         // Aggregation ComboBox (Bar Chart only)
                         ColumnLayout {
                             visible: page.chartType === "bar"
+                            Layout.fillWidth: true
                             spacing: 2
                             Label { text: qsTr("Aggregation"); color: theme.textSecondary; font.pixelSize: 11 }
                             ComboBox {
                                 id: barAggCombo
-                                Layout.preferredWidth: 120
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: ["Mean", "Sum", "Count", "Min", "Max"]
                                 currentIndex: Math.max(0, model.indexOf(page.barAggregation))
@@ -629,10 +642,11 @@ Item {
                         // Parameters
                         ColumnLayout {
                             visible: page.chartType === "histogram" || page.chartType === "distribution"
+                            Layout.fillWidth: true
                             spacing: 2
                             Label { text: qsTr("Bin Count"); color: theme.textSecondary; font.pixelSize: 11 }
                             ComboBox {
-                                Layout.preferredWidth: 90
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: [5, 10, 15, 20]
                                 currentIndex: 1
@@ -642,10 +656,11 @@ Item {
 
                         ColumnLayout {
                             visible: page.chartType === "boxplot"
+                            Layout.fillWidth: true
                             spacing: 2
                             Label { text: qsTr("IQR Multiplier"); color: theme.textSecondary; font.pixelSize: 11 }
                             ComboBox {
-                                Layout.preferredWidth: 90
+                                Layout.fillWidth: true
                                 Layout.preferredHeight: 36
                                 model: [1.5, 2.0, 3.0]
                                 currentIndex: 0
@@ -653,12 +668,11 @@ Item {
                             }
                         }
 
-                        Item { Layout.fillWidth: true }
-
                         Button {
                             id: drawChartBtn
-                            Layout.preferredWidth: 160
+                            Layout.fillWidth: true
                             Layout.preferredHeight: 38
+                            Layout.alignment: Qt.AlignBottom
                             text: page.isRendering ? qsTr("⏳ Drawing...") : qsTr("📊 Draw Chart")
                             property bool clickFeedback: false
                             Timer {
@@ -683,16 +697,17 @@ Item {
             }
 
             // Canvas Layout: Single or Dual Side-by-Side
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
+                columns: (page.isDualMode && !pageScrollView.isMediumOrNarrow) ? 2 : 1
+                columnSpacing: 14
+                rowSpacing: 14
 
                 // Panel 1 (Dataset 1 or Active Dataset or Overlaid Single Comparison)
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 340
                     Layout.preferredHeight: 500
                     radius: 16
                     color: theme.surface
@@ -704,9 +719,15 @@ Item {
                         anchors.margins: 16
                         spacing: 8
 
-                        RowLayout {
+                        GridLayout {
                             Layout.fillWidth: true
+                            columns: parent.width < 450 ? 1 : 2
+                            rowSpacing: 6
+                            columnSpacing: 10
+
                             Label {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 text: page.chartType === "comparison" && !page.isDualMode
                                       ? qsTr("Two Datasets Comparison Chart (D1: %1 vs D2: %2)").arg(page.name(1)).arg(page.name(2))
                                       : (page.isDualMode ? qsTr("Dataset 1: %1%2").arg(page.name(1)).arg(page.selectedCol1 !== "" ? " (" + page.selectedCol1 + ")" : "") : qsTr("%1%2 Chart").arg(page.name(page.activeDataset)).arg(page.selectedCol1 !== "" ? " (" + page.selectedCol1 + ")" : ""))
@@ -715,9 +736,9 @@ Item {
                                 font.bold: true
                                 elide: Text.ElideMiddle
                             }
-                            Item { Layout.fillWidth: true }
                             Button {
                                 id: saveChart1Btn
+                                Layout.alignment: parent.columns === 1 ? Qt.AlignLeft : Qt.AlignRight
                                 Layout.preferredWidth: 130
                                 Layout.preferredHeight: 30
                                 text: qsTr("💾 Save Chart")
@@ -1083,8 +1104,7 @@ Item {
 
                                     Components.ByteMascot {
                                         Layout.alignment: Qt.AlignHCenter
-                                        mascotWidth: 120
-                                        mascotHeight: 120
+                                        sizeVariant: "placeholder"
                                         source: "qrc:/assets/byte/byte_visualization.png"
                                         animated: false
                                     }
@@ -1107,7 +1127,6 @@ Item {
                 Rectangle {
                     visible: page.isDualMode
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 340
                     Layout.preferredHeight: 500
                     radius: 16
                     color: theme.surface
@@ -1119,18 +1138,24 @@ Item {
                         anchors.margins: 16
                         spacing: 8
 
-                        RowLayout {
+                        GridLayout {
                             Layout.fillWidth: true
+                            columns: parent.width < 450 ? 1 : 2
+                            rowSpacing: 6
+                            columnSpacing: 10
+
                             Label {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 text: qsTr("Dataset 2: %1%2").arg(page.name(2)).arg(page.selectedCol2 !== "" ? " (" + page.selectedCol2 + ")" : "")
                                 color: theme.text
                                 font.pixelSize: 14
                                 font.bold: true
                                 elide: Text.ElideMiddle
                             }
-                            Item { Layout.fillWidth: true }
                             Button {
                                 id: saveChart2Btn
+                                Layout.alignment: parent.columns === 1 ? Qt.AlignLeft : Qt.AlignRight
                                 Layout.preferredWidth: 130
                                 Layout.preferredHeight: 30
                                 text: qsTr("💾 Save Chart")

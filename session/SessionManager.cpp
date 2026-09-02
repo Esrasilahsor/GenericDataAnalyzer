@@ -350,7 +350,33 @@ bool SessionManager::loadCleaningSnapshot(int datasetIndex, DataSet &outDataSet)
         return false;
 
     outDataSet = parser.dataSet();
-    return !outDataSet.isEmpty();
+    if (outDataSet.isEmpty())
+        return false;
+
+    QString origName;
+    if (datasetIndex == 1)
+    {
+        origName = dataset1FileName().trimmed();
+        if (origName.isEmpty())
+            origName = dataset1FilePath().trimmed();
+    }
+    else
+    {
+        origName = dataset2FileName().trimmed();
+        if (origName.isEmpty())
+            origName = dataset2FilePath().trimmed();
+    }
+
+    QString baseName = QFileInfo(origName).completeBaseName();
+    if (baseName.isEmpty())
+        baseName = QFileInfo(origName).baseName();
+    if (baseName.endsWith(QStringLiteral("_cleaned_snapshot")))
+        baseName.chop(QStringLiteral("_cleaned_snapshot").length());
+    if (baseName.isEmpty())
+        baseName = QStringLiteral("dataset%1").arg(datasetIndex);
+
+    outDataSet.setName(QStringLiteral("%1_cleaned_snapshot").arg(baseName));
+    return true;
 }
 
 void SessionManager::removeCleaningSnapshot(int datasetIndex)

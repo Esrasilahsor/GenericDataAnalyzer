@@ -41,6 +41,14 @@ Item {
     property bool exportSuccess: true
     property string lastExportedPath: ""
 
+    // =========================================================
+    // RESPONSIVE DIMENSIONS & BREAKPOINTS
+    // =========================================================
+    readonly property real containerWidth: pageScrollView.availableWidth
+    readonly property bool isWide: containerWidth >= 1050
+    readonly property bool isMedium: containerWidth >= 700 && containerWidth < 1050
+    readonly property bool isNarrow: containerWidth < 700
+
     Connections {
         target: page.appController
         ignoreUnknownSignals: true
@@ -60,7 +68,10 @@ Item {
 
     function goToPage(index) {
         if (page.mainWindow) {
-            page.mainWindow.currentPage = index
+            if (page.mainWindow.navigateToPage)
+                page.mainWindow.navigateToPage(index)
+            else
+                page.mainWindow.currentPage = index
         }
     }
 
@@ -136,15 +147,19 @@ Item {
     ScrollView {
         id: pageScrollView
         anchors.fill: parent
+        clip: true
         contentWidth: availableWidth
+        contentHeight: mainCol.implicitHeight
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
+            id: mainCol
+            objectName: "mainCol"
             width: pageScrollView.availableWidth
             spacing: 16
 
-            Item { Layout.preferredHeight: 8 }
+            Item { Layout.preferredHeight: 4 }
 
             // =================================================
             // NAVIGATION & WORKFLOW PROGRESS
@@ -153,10 +168,121 @@ Item {
             Components.WorkflowNavCard {
                 theme: page.theme
                 appController: page.appController
-                currentStepIndex: 6
+                currentStepIndex: 5
                 title: qsTr("Dataset Export")
                 subtitle: qsTr("Export cleaned and analyzed datasets into Excel, CSV, or JSON formats.")
                 buttonVisible: false
+            }
+
+            // =================================================
+            // HERO / OVERVIEW CARD WITH PROMINENT BYTE MASCOT
+            // =================================================
+
+            Rectangle {
+                id: heroCard
+                objectName: "heroCard"
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                implicitHeight: heroLayout.implicitHeight + 36
+                radius: 14
+                color: theme.surfaceAlt
+                border.width: 1
+                border.color: theme.border
+
+                RowLayout {
+                    id: heroLayout
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 18
+                    spacing: 18
+
+                    // Prominent responsive Byte mascot
+                    Components.ByteMascot {
+                        Layout.alignment: Qt.AlignVCenter
+                        sizeVariant: "hero"
+                        source: page.exportStatusMessage !== ""
+                                ? (page.exportSuccess ? "qrc:/assets/byte/byte_completed.png" : "qrc:/assets/byte/byte_error.png")
+                                : (page.isLoaded(page.activeDataset) ? "qrc:/assets/byte/byte_exporting.png" : "qrc:/assets/byte/byte_ready.png")
+                        animated: false
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 6
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Label {
+                                text: qsTr("Dataset Export Studio")
+                                color: theme.text
+                                font.pixelSize: page.isNarrow ? 15 : 18
+                                font.bold: true
+                            }
+
+                            Rectangle {
+                                visible: page.isLoaded(page.activeDataset)
+                                Layout.preferredHeight: 22
+                                Layout.preferredWidth: 85
+                                radius: 11
+                                color: theme.darkMode ? "#1C3B2B" : "#E8F7EE"
+                                border.width: 1
+                                border.color: theme.success
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: qsTr("Ready")
+                                    color: theme.success
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: qsTr("Save your processed, cleaned and analyzed data. Choose between Excel (.xlsx) for spreadsheets, CSV (.csv) for database ingestion, or JSON (.json) for web applications.")
+                            color: theme.textSecondary
+                            font.pixelSize: page.isNarrow ? 11 : 12
+                            wrapMode: Text.WordWrap
+                        }
+
+                        // Selected Dataset Quick Summary Pill
+                        Rectangle {
+                            Layout.preferredHeight: 26
+                            Layout.preferredWidth: summaryPillRow.implicitWidth + 20
+                            radius: 13
+                            color: theme.surface
+                            border.color: theme.border
+                            border.width: 1
+
+                            RowLayout {
+                                id: summaryPillRow
+                                anchors.centerIn: parent
+                                spacing: 6
+
+                                Label {
+                                    text: qsTr("Target:")
+                                    color: theme.textSecondary
+                                    font.pixelSize: 11
+                                }
+
+                                Label {
+                                    text: qsTr("Dataset %1 (%2)").arg(page.activeDataset).arg(page.datasetName(page.activeDataset))
+                                    color: page.isLoaded(page.activeDataset) ? theme.primary : theme.textSecondary
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    elide: Text.ElideMiddle
+                                    Layout.maximumWidth: page.isNarrow ? 180 : 320
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // =================================================
@@ -164,41 +290,37 @@ Item {
             // =================================================
 
             Rectangle {
+                id: statusCard
                 visible: page.exportStatusMessage !== ""
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: page.exportSuccess ? 96 : 46
+                implicitHeight: visible ? (statusCol.implicitHeight + 28) : 0
                 radius: 12
                 color: page.exportSuccess ? (theme.darkMode ? "#143823" : "#EAF7EE") : (theme.darkMode ? "#3D1717" : "#FDE8E8")
                 border.width: 1
                 border.color: page.exportSuccess ? theme.success : theme.danger
 
                 ColumnLayout {
-                    anchors.fill: parent
+                    id: statusCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 14
-                    spacing: 8
+                    spacing: 10
+
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 10
-
-                        Components.ByteMascot {
-                            Layout.preferredWidth: 32
-                            Layout.preferredHeight: 32
-                            mascotWidth: 32
-                            mascotHeight: 32
-                            source: page.exportSuccess ? "qrc:/assets/byte/byte_completed.png" : "qrc:/assets/byte/byte_error.png"
-                            animated: false
-                        }
 
                         Label {
                             text: page.exportSuccess ? "✓ " + page.exportStatusMessage : page.exportStatusMessage
                             color: page.exportSuccess ? theme.success : theme.danger
                             font.pixelSize: 13
                             font.bold: true
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
                         }
-
-                        Item { Layout.fillWidth: true }
 
                         Label {
                             visible: page.exportSuccess && page.lastExportedPath !== ""
@@ -206,23 +328,27 @@ Item {
                             color: theme.textSecondary
                             font.pixelSize: 11
                             elide: Text.ElideMiddle
-                            Layout.maximumWidth: 400
+                            Layout.maximumWidth: page.isNarrow ? 160 : 360
                         }
                     }
 
-                    RowLayout {
+                    // Action buttons in a responsive flow
+                    GridLayout {
                         visible: page.exportSuccess
-                        spacing: 12
+                        Layout.fillWidth: true
+                        columns: page.isNarrow ? 1 : 3
+                        columnSpacing: 10
+                        rowSpacing: 8
 
                         Button {
-                            Layout.preferredHeight: 32
-                            Layout.preferredWidth: 150
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 34
                             text: qsTr("Export Another File")
                             onClicked: page.clearStatus()
                             contentItem: Text {
                                 text: parent.text
                                 color: theme.text
-                                font.pixelSize: 11
+                                font.pixelSize: 12
                                 font.bold: true
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -236,8 +362,8 @@ Item {
                         }
 
                         Button {
-                            Layout.preferredHeight: 32
-                            Layout.preferredWidth: 150
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 34
                             text: qsTr("Open File Location")
                             visible: page.lastExportedPath !== ""
                             onClicked: {
@@ -248,7 +374,7 @@ Item {
                             contentItem: Text {
                                 text: parent.text
                                 color: theme.text
-                                font.pixelSize: 11
+                                font.pixelSize: 12
                                 font.bold: true
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -262,14 +388,14 @@ Item {
                         }
 
                         Button {
-                            Layout.preferredHeight: 32
-                            Layout.preferredWidth: 160
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 34
                             text: qsTr("Back to Dashboard →")
                             onClicked: page.goToPage(0)
                             contentItem: Text {
                                 text: parent.text
                                 color: "#FFFFFF"
-                                font.pixelSize: 11
+                                font.pixelSize: 12
                                 font.bold: true
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -288,144 +414,183 @@ Item {
             // =================================================
 
             Rectangle {
+                id: datasetCard
+                objectName: "datasetCard"
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: selectCol.implicitHeight + 36
+                implicitHeight: datasetCol.implicitHeight + 36
                 radius: 14
                 color: theme.surface
                 border.width: 1
                 border.color: theme.border
 
                 ColumnLayout {
-                    id: selectCol
-                    anchors.fill: parent
+                    id: datasetCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 18
                     spacing: 14
 
-                    RowLayout {
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 8
-
-                        Components.ByteMascot {
-                            Layout.preferredWidth: 26
-                            Layout.preferredHeight: 26
-                            mascotWidth: 26
-                            mascotHeight: 26
-                            source: "qrc:/assets/byte/byte_exporting.png"
-                            animated: false
-                        }
+                        spacing: 2
 
                         Label {
                             text: qsTr("1. Select Dataset to Export")
                             color: theme.text
-                            font.pixelSize: 14
+                            font.pixelSize: 15
                             font.bold: true
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: qsTr("Choose the dataset to export. Any cleaning modifications will be reflected in the exported file.")
+                            color: theme.textSecondary
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
                         }
                     }
 
+                    // Responsive Dataset Selector & Status Area
                     GridLayout {
                         Layout.fillWidth: true
-                        columns: pageScrollView.availableWidth < 950 ? 1 : 2
+                        columns: page.isNarrow ? 1 : 2
                         columnSpacing: 14
                         rowSpacing: 12
 
-                        RowLayout {
+                        // Dataset 1 Selector Button
+                        Button {
+                            id: ds1SelectBtn
                             Layout.fillWidth: true
-                            spacing: 12
+                            Layout.preferredHeight: 52
+                            enabled: page.isLoaded(1)
+                            onClicked: {
+                                page.activeDataset = 1
+                                page.clearStatus()
+                            }
+                            contentItem: RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 14
+                                spacing: 8
 
-                            Button {
-                                id: ds1SelectBtn
-                                Layout.fillWidth: true
-                                Layout.maximumWidth: 320
-                                Layout.preferredHeight: 40
-                                text: qsTr("Dataset 1: %1").arg(page.datasetName(1))
-                                enabled: page.isLoaded(1)
-                                onClicked: {
-                                    page.activeDataset = 1
-                                    page.clearStatus()
-                                }
-                                contentItem: Text {
-                                    text: parent.text
-                                    color: !parent.enabled
-                                           ? theme.textSecondary
-                                           : (page.activeDataset === 1 ? theme.primary : theme.text)
-                                    font.pixelSize: 12
-                                    font.bold: page.activeDataset === 1
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    elide: Text.ElideMiddle
-                                }
-                                background: Rectangle {
-                                    radius: 8
+                                Rectangle {
+                                    Layout.preferredWidth: 10
+                                    Layout.preferredHeight: 10
+                                    radius: 5
                                     color: page.activeDataset === 1
-                                           ? (theme.darkMode ? "#1E2A38" : "#EBF3FB")
-                                           : (parent.enabled ? theme.surface : theme.surfaceAlt)
-                                    border.color: page.activeDataset === 1 ? theme.primary : theme.border
-                                    border.width: page.activeDataset === 1 ? 2 : 1
+                                           ? theme.primary
+                                           : (page.isLoaded(1) ? theme.success : theme.textSecondary)
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: qsTr("Dataset 1") + (page.isLoaded(1) ? ": " + page.datasetName(1) : qsTr(" (Not loaded)"))
+                                        color: !parent.enabled
+                                               ? theme.textSecondary
+                                               : (page.activeDataset === 1 ? theme.primary : theme.text)
+                                        font.pixelSize: 13
+                                        font.bold: page.activeDataset === 1
+                                        elide: Text.ElideMiddle
+                                    }
+
+                                    Label {
+                                        text: page.isLoaded(1)
+                                              ? qsTr("%1 rows · %2 columns").arg(page.datasetRows(1)).arg(page.datasetColumns(1))
+                                              : qsTr("No data loaded")
+                                        color: theme.textSecondary
+                                        font.pixelSize: 11
+                                    }
+                                }
+
+                                Label {
+                                    visible: page.activeDataset === 1
+                                    text: "✓"
+                                    color: theme.primary
+                                    font.pixelSize: 14
+                                    font.bold: true
                                 }
                             }
-
-                            Button {
-                                id: ds2SelectBtn
-                                Layout.fillWidth: true
-                                Layout.maximumWidth: 320
-                                Layout.preferredHeight: 40
-                                text: qsTr("Dataset 2: %1").arg(page.datasetName(2))
-                                enabled: page.isLoaded(2)
-                                onClicked: {
-                                    page.activeDataset = 2
-                                    page.clearStatus()
-                                }
-                                contentItem: Text {
-                                    text: parent.text
-                                    color: !parent.enabled
-                                           ? theme.textSecondary
-                                           : (page.activeDataset === 2 ? theme.primary : theme.text)
-                                    font.pixelSize: 12
-                                    font.bold: page.activeDataset === 2
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    elide: Text.ElideMiddle
-                                }
-                                background: Rectangle {
-                                    radius: 8
-                                    color: page.activeDataset === 2
-                                           ? (theme.darkMode ? "#1E2A38" : "#EBF3FB")
-                                           : (parent.enabled ? theme.surface : theme.surfaceAlt)
-                                    border.color: page.activeDataset === 2 ? theme.primary : theme.border
-                                    border.width: page.activeDataset === 2 ? 2 : 1
-                                }
+                            background: Rectangle {
+                                radius: 8
+                                color: page.activeDataset === 1
+                                       ? (theme.darkMode ? "#1E2A38" : "#EBF3FB")
+                                       : (parent.enabled ? theme.surfaceAlt : theme.surface)
+                                border.color: page.activeDataset === 1 ? theme.primary : theme.border
+                                border.width: page.activeDataset === 1 ? 2 : 1
                             }
                         }
 
-                        // Summary info
-                        RowLayout {
+                        // Dataset 2 Selector Button
+                        Button {
+                            id: ds2SelectBtn
                             Layout.fillWidth: true
-                            spacing: 16
-
-                            Item {
-                                visible: pageScrollView.availableWidth >= 950
-                                Layout.fillWidth: true
+                            Layout.preferredHeight: 52
+                            enabled: page.isLoaded(2)
+                            onClicked: {
+                                page.activeDataset = 2
+                                page.clearStatus()
                             }
+                            contentItem: RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 14
+                                spacing: 8
 
-                            ColumnLayout {
-                                spacing: 3
+                                Rectangle {
+                                    Layout.preferredWidth: 10
+                                    Layout.preferredHeight: 10
+                                    radius: 5
+                                    color: page.activeDataset === 2
+                                           ? theme.primary
+                                           : (page.isLoaded(2) ? theme.success : theme.textSecondary)
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: qsTr("Dataset 2") + (page.isLoaded(2) ? ": " + page.datasetName(2) : qsTr(" (Not loaded)"))
+                                        color: !parent.enabled
+                                               ? theme.textSecondary
+                                               : (page.activeDataset === 2 ? theme.primary : theme.text)
+                                        font.pixelSize: 13
+                                        font.bold: page.activeDataset === 2
+                                        elide: Text.ElideMiddle
+                                    }
+
+                                    Label {
+                                        text: page.isLoaded(2)
+                                              ? qsTr("%1 rows · %2 columns").arg(page.datasetRows(2)).arg(page.datasetColumns(2))
+                                              : qsTr("No data loaded")
+                                        color: theme.textSecondary
+                                        font.pixelSize: 11
+                                    }
+                                }
+
                                 Label {
-                                    text: qsTr("Rows: %1  |  Columns: %2")
-                                            .arg(page.datasetRows(page.activeDataset))
-                                            .arg(page.datasetColumns(page.activeDataset))
-                                    color: theme.text
-                                    font.pixelSize: 12
+                                    visible: page.activeDataset === 2
+                                    text: "✓"
+                                    color: theme.primary
+                                    font.pixelSize: 14
                                     font.bold: true
                                 }
-                                Label {
-                                    text: page.isLoaded(page.activeDataset)
-                                            ? qsTr("✓ Status: Loaded (%1)").arg(page.datasetName(page.activeDataset))
-                                            : qsTr("✕ Status: Not loaded")
-                                    color: page.isLoaded(page.activeDataset) ? theme.success : theme.textSecondary
-                                    font.pixelSize: 11
-                                }
+                            }
+                            background: Rectangle {
+                                radius: 8
+                                color: page.activeDataset === 2
+                                       ? (theme.darkMode ? "#1E2A38" : "#EBF3FB")
+                                       : (parent.enabled ? theme.surfaceAlt : theme.surface)
+                                border.color: page.activeDataset === 2 ? theme.primary : theme.border
+                                border.width: page.activeDataset === 2 ? 2 : 1
                             }
                         }
                     }
@@ -433,14 +598,16 @@ Item {
             }
 
             // =================================================
-            // EXPORT ACTIONS CARD
+            // EXPORT FORMAT CARDS (RESPONSIVE GRID)
             // =================================================
 
             Rectangle {
+                id: formatCard
+                objectName: "formatCard"
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: formatCol.implicitHeight + 36
+                implicitHeight: formatCol.implicitHeight + 36
                 radius: 14
                 color: theme.surface
                 border.width: 1
@@ -448,69 +615,113 @@ Item {
 
                 ColumnLayout {
                     id: formatCol
-                    anchors.fill: parent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 18
-                    spacing: 14
+                    spacing: 16
 
-                    Label {
-                        text: qsTr("2. Choose Format & Export")
-                        color: theme.text
-                        font.pixelSize: 14
-                        font.bold: true
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Label {
+                            text: qsTr("2. Choose Format & Export")
+                            color: theme.text
+                            font.pixelSize: 15
+                            font.bold: true
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: qsTr("Select your desired export format below. The file save dialog will prompt for destination.")
+                            color: theme.textSecondary
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                        }
                     }
 
+                    // Responsive Grid: Wide = 3 Columns, Medium = 2 Columns, Narrow = 1 Column
                     GridLayout {
                         id: formatGrid
                         Layout.fillWidth: true
-                        columns: pageScrollView.availableWidth < 880 ? 1 : (pageScrollView.availableWidth < 1220 ? 2 : 3)
-                        columnSpacing: 14
-                        rowSpacing: 14
+                        columns: page.isWide ? 3 : (page.isMedium ? 2 : 1)
+                        columnSpacing: 16
+                        rowSpacing: 16
 
-                        // Excel Card
+                        // =================================================
+                        // Excel Card (.xlsx)
+                        // =================================================
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 84
                             Layout.minimumWidth: 220
-                            radius: 10
+                            implicitHeight: excelCardCol.implicitHeight + 32
+                            radius: 12
                             color: theme.surfaceAlt
                             border.color: theme.border
                             border.width: 1
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 16
-                                anchors.rightMargin: 16
-                                anchors.topMargin: 12
-                                anchors.bottomMargin: 12
-                                spacing: 12
+                            ColumnLayout {
+                                id: excelCardCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 16
+                                spacing: 14
 
-                                ColumnLayout {
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.alignment: Qt.AlignVCenter
-                                    spacing: 3
-                                    Label {
-                                        text: qsTr("Excel Spreadsheet")
-                                        color: theme.text
-                                        font.pixelSize: 13
-                                        font.bold: true
+                                    spacing: 10
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 38
+                                        Layout.preferredHeight: 38
+                                        radius: 8
+                                        color: theme.darkMode ? "#143823" : "#EAF7EE"
+                                        border.color: theme.success
+                                        border.width: 1
+
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: "📊"
+                                            font.pixelSize: 18
+                                        }
                                     }
-                                    Label {
+
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        text: qsTr(".xlsx format with formatted headers")
-                                        color: theme.textSecondary
-                                        font.pixelSize: 11
-                                        wrapMode: Text.WordWrap
-                                        maximumLineCount: 2
-                                        elide: Text.ElideRight
+                                        spacing: 2
+
+                                        Label {
+                                            text: qsTr("Excel Spreadsheet")
+                                            color: theme.text
+                                            font.pixelSize: 14
+                                            font.bold: true
+                                        }
+
+                                        Label {
+                                            text: qsTr(".xlsx standard format")
+                                            color: theme.success
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
                                     }
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: qsTr("Full multi-column workbook with formatted headers and auto-detected cell types.")
+                                    color: theme.textSecondary
+                                    font.pixelSize: 12
+                                    wrapMode: Text.WordWrap
+                                    Layout.minimumHeight: 36
                                 }
 
                                 Button {
                                     id: exportXlsxBtn
-                                    Layout.alignment: Qt.AlignVCenter
-                                    Layout.preferredHeight: 36
-                                    Layout.preferredWidth: 120
-                                    text: qsTr("📥 Export Excel")
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 40
+                                    text: qsTr("📥 Export Excel (.xlsx)")
                                     enabled: page.isLoaded(page.activeDataset)
                                     property bool clickFeedback: false
                                     Timer {
@@ -521,16 +732,16 @@ Item {
                                     contentItem: Text {
                                         text: parent.text
                                         color: parent.enabled ? theme.text : theme.textSecondary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 13
                                         font.bold: true
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     background: Rectangle {
-                                        radius: 6
+                                        radius: 8
                                         color: exportXlsxBtn.down ? theme.surfaceAlt : (exportXlsxBtn.hovered ? theme.surfaceAlt : theme.surface)
-                                        border.color: exportXlsxBtn.clickFeedback ? theme.success : theme.border
-                                        border.width: 1
+                                        border.color: exportXlsxBtn.clickFeedback ? theme.success : (parent.enabled ? theme.primary : theme.border)
+                                        border.width: exportXlsxBtn.hovered ? 2 : 1
                                     }
                                     onClicked: {
                                         clickFeedback = true
@@ -541,51 +752,79 @@ Item {
                             }
                         }
 
-                        // CSV Card
+                        // =================================================
+                        // CSV Card (.csv)
+                        // =================================================
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 84
                             Layout.minimumWidth: 220
-                            radius: 10
+                            implicitHeight: csvCardCol.implicitHeight + 32
+                            radius: 12
                             color: theme.surfaceAlt
                             border.color: theme.border
                             border.width: 1
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 16
-                                anchors.rightMargin: 16
-                                anchors.topMargin: 12
-                                anchors.bottomMargin: 12
-                                spacing: 12
+                            ColumnLayout {
+                                id: csvCardCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 16
+                                spacing: 14
 
-                                ColumnLayout {
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.alignment: Qt.AlignVCenter
-                                    spacing: 3
-                                    Label {
-                                        text: qsTr("CSV Document")
-                                        color: theme.text
-                                        font.pixelSize: 13
-                                        font.bold: true
+                                    spacing: 10
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 38
+                                        Layout.preferredHeight: 38
+                                        radius: 8
+                                        color: theme.darkMode ? "#1E2A38" : "#EBF3FB"
+                                        border.color: theme.info
+                                        border.width: 1
+
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: "📄"
+                                            font.pixelSize: 18
+                                        }
                                     }
-                                    Label {
+
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        text: qsTr(".csv comma-separated tabular text")
-                                        color: theme.textSecondary
-                                        font.pixelSize: 11
-                                        wrapMode: Text.WordWrap
-                                        maximumLineCount: 2
-                                        elide: Text.ElideRight
+                                        spacing: 2
+
+                                        Label {
+                                            text: qsTr("CSV Document")
+                                            color: theme.text
+                                            font.pixelSize: 14
+                                            font.bold: true
+                                        }
+
+                                        Label {
+                                            text: qsTr(".csv tabular text")
+                                            color: theme.info
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
                                     }
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: qsTr("Comma-separated values text format, ideal for data pipelines, scripts, and SQL databases.")
+                                    color: theme.textSecondary
+                                    font.pixelSize: 12
+                                    wrapMode: Text.WordWrap
+                                    Layout.minimumHeight: 36
                                 }
 
                                 Button {
                                     id: exportCsvBtn
-                                    Layout.alignment: Qt.AlignVCenter
-                                    Layout.preferredHeight: 36
-                                    Layout.preferredWidth: 120
-                                    text: qsTr("📥 Export CSV")
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 40
+                                    text: qsTr("📥 Export CSV (.csv)")
                                     enabled: page.isLoaded(page.activeDataset)
                                     property bool clickFeedback: false
                                     Timer {
@@ -596,16 +835,16 @@ Item {
                                     contentItem: Text {
                                         text: parent.text
                                         color: parent.enabled ? theme.text : theme.textSecondary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 13
                                         font.bold: true
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     background: Rectangle {
-                                        radius: 6
+                                        radius: 8
                                         color: exportCsvBtn.down ? theme.surfaceAlt : (exportCsvBtn.hovered ? theme.surfaceAlt : theme.surface)
-                                        border.color: exportCsvBtn.clickFeedback ? theme.success : theme.border
-                                        border.width: 1
+                                        border.color: exportCsvBtn.clickFeedback ? theme.success : (parent.enabled ? theme.primary : theme.border)
+                                        border.width: exportCsvBtn.hovered ? 2 : 1
                                     }
                                     onClicked: {
                                         clickFeedback = true
@@ -616,51 +855,79 @@ Item {
                             }
                         }
 
-                        // JSON Card
+                        // =================================================
+                        // JSON Card (.json)
+                        // =================================================
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 84
                             Layout.minimumWidth: 220
-                            radius: 10
+                            implicitHeight: jsonCardCol.implicitHeight + 32
+                            radius: 12
                             color: theme.surfaceAlt
                             border.color: theme.border
                             border.width: 1
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 16
-                                anchors.rightMargin: 16
-                                anchors.topMargin: 12
-                                anchors.bottomMargin: 12
-                                spacing: 12
+                            ColumnLayout {
+                                id: jsonCardCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 16
+                                spacing: 14
 
-                                ColumnLayout {
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.alignment: Qt.AlignVCenter
-                                    spacing: 3
-                                    Label {
-                                        text: qsTr("JSON Array")
-                                        color: theme.text
-                                        font.pixelSize: 13
-                                        font.bold: true
+                                    spacing: 10
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 38
+                                        Layout.preferredHeight: 38
+                                        radius: 8
+                                        color: theme.darkMode ? "#362A1A" : "#FFF4E5"
+                                        border.color: theme.warning
+                                        border.width: 1
+
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: "🧩"
+                                            font.pixelSize: 18
+                                        }
                                     }
-                                    Label {
+
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        text: qsTr(".json structured key-value array")
-                                        color: theme.textSecondary
-                                        font.pixelSize: 11
-                                        wrapMode: Text.WordWrap
-                                        maximumLineCount: 2
-                                        elide: Text.ElideRight
+                                        spacing: 2
+
+                                        Label {
+                                            text: qsTr("JSON Array")
+                                            color: theme.text
+                                            font.pixelSize: 14
+                                            font.bold: true
+                                        }
+
+                                        Label {
+                                            text: qsTr(".json key-value array")
+                                            color: theme.warning
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
                                     }
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: qsTr("Structured array of row objects with key-value pairs, ready for REST APIs and web apps.")
+                                    color: theme.textSecondary
+                                    font.pixelSize: 12
+                                    wrapMode: Text.WordWrap
+                                    Layout.minimumHeight: 36
                                 }
 
                                 Button {
                                     id: exportJsonBtn
-                                    Layout.alignment: Qt.AlignVCenter
-                                    Layout.preferredHeight: 36
-                                    Layout.preferredWidth: 120
-                                    text: qsTr("📥 Export JSON")
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 40
+                                    text: qsTr("📥 Export JSON (.json)")
                                     enabled: page.isLoaded(page.activeDataset)
                                     property bool clickFeedback: false
                                     Timer {
@@ -671,16 +938,16 @@ Item {
                                     contentItem: Text {
                                         text: parent.text
                                         color: parent.enabled ? theme.text : theme.textSecondary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 13
                                         font.bold: true
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     background: Rectangle {
-                                        radius: 6
+                                        radius: 8
                                         color: exportJsonBtn.down ? theme.surfaceAlt : (exportJsonBtn.hovered ? theme.surfaceAlt : theme.surface)
-                                        border.color: exportJsonBtn.clickFeedback ? theme.success : theme.border
-                                        border.width: 1
+                                        border.color: exportJsonBtn.clickFeedback ? theme.success : (parent.enabled ? theme.primary : theme.border)
+                                        border.width: exportJsonBtn.hovered ? 2 : 1
                                     }
                                     onClicked: {
                                         clickFeedback = true

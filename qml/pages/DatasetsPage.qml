@@ -130,8 +130,12 @@ Item {
     }
 
     function goToPage(index) {
-        if (page.mainWindow)
-            page.mainWindow.currentPage = index
+        if (page.mainWindow) {
+            if (page.mainWindow.navigateToPage)
+                page.mainWindow.navigateToPage(index)
+            else
+                page.mainWindow.currentPage = index
+        }
     }
 
     // =========================================================
@@ -145,6 +149,9 @@ Item {
         contentWidth: availableWidth
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+        readonly property real containerWidth: pageScrollView.availableWidth
+        readonly property bool isNarrow: containerWidth < 700
 
         ColumnLayout {
             width: pageScrollView.availableWidth
@@ -171,7 +178,7 @@ Item {
             Components.WorkflowNavCard {
                 theme: page.theme
                 appController: page.appController
-                currentStepIndex: 1
+                currentStepIndex: 0
                 title: page.loadedCount === 2
                        ? qsTr("Both datasets ready")
                        : qsTr("Load your datasets")
@@ -187,13 +194,13 @@ Item {
             // DATASET KARTLARI
             // =================================================
 
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
-
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-
-                spacing: 14
+                columns: pageScrollView.isNarrow ? 1 : 2
+                columnSpacing: 14
+                rowSpacing: 14
 
                 // =================================================
                 // DATASET 1
@@ -201,42 +208,56 @@ Item {
 
                 Rectangle {
                     Layout.fillWidth: true
-
-                    Layout.preferredHeight: 225
+                    implicitHeight: ds1Col.implicitHeight + 40
 
                     radius: 17
-
                     color: theme.surface
-
                     border.width: 1
                     border.color: theme.border
 
                     ColumnLayout {
-                        anchors.fill: parent
-
+                        id: ds1Col
+                        width: parent.width - 40
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
                         anchors.margins: 20
-
                         spacing: 10
 
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 8
+                            Layout.minimumWidth: 0
+                            spacing: 12
 
                             Components.ByteMascot {
-                                Layout.preferredWidth: 28
-                                Layout.preferredHeight: 28
-                                mascotWidth: 28
-                                mascotHeight: 28
+                                sizeVariant: "section"
                                 source: page.dataset1Loaded ? "qrc:/assets/byte/byte_dataset_loaded.png" : "qrc:/assets/byte/byte_ready.png"
                                 animated: false
                             }
 
-                            Label {
-                                text: qsTr("Dataset 1")
-                                color: theme.text
-                                font.pixelSize: 18
-                                font.bold: true
+                            ColumnLayout {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 2
+
+                                Label {
+                                    text: qsTr("Dataset 1")
+                                    color: theme.text
+                                    font.pixelSize: 18
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    elide: Text.ElideRight
+                                }
+
+                                Label {
+                                    text: page.dataset1Loaded ? (page.dataset1Name || qsTr("Loaded")) : qsTr("Not loaded")
+                                    color: theme.textSecondary
+                                    font.pixelSize: 12
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                }
                             }
 
                             Rectangle {
@@ -257,6 +278,7 @@ Item {
 
                         Label {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             text: page.datasetName(1)
                             color: theme.textSecondary
                             font.pixelSize: 13
@@ -265,6 +287,7 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             spacing: 35
 
                             ColumnLayout {
@@ -306,14 +329,12 @@ Item {
                             }
                         }
 
-                        Item {
-                            Layout.fillHeight: true
-                        }
-
                         Button {
                             id: ds1Btn
                             Layout.fillWidth: true
+                            Layout.maximumWidth: ds1Col.width
                             Layout.preferredHeight: 42
+                            Layout.topMargin: 4
 
                             text:
                                 page.dataset1Loaded
@@ -358,36 +379,55 @@ Item {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 225
+                    implicitHeight: ds2Col.implicitHeight + 40
                     radius: 17
                     color: theme.surface
                     border.width: 1
                     border.color: theme.border
 
                     ColumnLayout {
-                        anchors.fill: parent
+                        id: ds2Col
+                        width: parent.width - 40
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
                         anchors.margins: 20
                         spacing: 10
 
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 8
+                            Layout.minimumWidth: 0
+                            spacing: 12
 
                             Components.ByteMascot {
-                                Layout.preferredWidth: 28
-                                Layout.preferredHeight: 28
-                                mascotWidth: 28
-                                mascotHeight: 28
+                                sizeVariant: "section"
                                 source: page.dataset2Loaded ? "qrc:/assets/byte/byte_dataset_loaded.png" : "qrc:/assets/byte/byte_ready.png"
                                 animated: false
                             }
 
-                            Label {
-                                text: qsTr("Dataset 2")
-                                color: theme.text
-                                font.pixelSize: 18
-                                font.bold: true
+                            ColumnLayout {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 2
+
+                                Label {
+                                    text: qsTr("Dataset 2")
+                                    color: theme.text
+                                    font.pixelSize: 18
+                                    font.bold: true
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    elide: Text.ElideRight
+                                }
+
+                                Label {
+                                    text: page.dataset2Loaded ? (page.dataset2Name || qsTr("Loaded")) : qsTr("Not loaded")
+                                    color: theme.textSecondary
+                                    font.pixelSize: 12
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                }
                             }
 
                             Rectangle {
@@ -457,14 +497,11 @@ Item {
                             }
                         }
 
-                        Item {
-                            Layout.fillHeight: true
-                        }
-
                         Button {
                             id: ds2Btn
                             Layout.fillWidth: true
                             Layout.preferredHeight: 42
+                            Layout.topMargin: 4
 
                             text:
                                 page.dataset2Loaded
@@ -549,14 +586,18 @@ Item {
                         model: page.appController ? page.appController.recentFiles : []
 
                         delegate: Rectangle {
+                            id: recentDelegate
                             width: parent.width
-                            height: 44
+                            readonly property bool isCompact: width < 520
+                            height: isCompact ? 76 : 44
                             radius: 8
                             color: theme.background
                             border.width: 1
                             border.color: theme.border
 
+                            // Wide Layout (single line)
                             RowLayout {
+                                visible: !recentDelegate.isCompact
                                 anchors.fill: parent
                                 anchors.margins: 8
                                 spacing: 10
@@ -568,6 +609,7 @@ Item {
 
                                 ColumnLayout {
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     spacing: 2
                                     Label {
                                         text: modelData.name || ""
@@ -576,6 +618,7 @@ Item {
                                         font.bold: true
                                         elide: Text.ElideMiddle
                                         Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
                                     }
                                     Label {
                                         text: (modelData.type || "") + " • " + (modelData.path || "")
@@ -583,6 +626,7 @@ Item {
                                         font.pixelSize: 10
                                         elide: Text.ElideMiddle
                                         Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
                                     }
                                 }
 
@@ -640,6 +684,88 @@ Item {
                                     }
                                 }
                             }
+
+                            // Compact Layout (2 lines)
+                            ColumnLayout {
+                                visible: recentDelegate.isCompact
+                                anchors.fill: parent
+                                anchors.margins: 6
+                                spacing: 4
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Label {
+                                        text: "📄"
+                                        font.pixelSize: 13
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        spacing: 1
+                                        Label {
+                                            text: modelData.name || ""
+                                            color: theme.text
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
+                                        }
+                                        Label {
+                                            text: (modelData.type || "") + " • " + (modelData.path || "")
+                                            color: theme.textSecondary
+                                            font.pixelSize: 9
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Button {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 26
+                                        text: qsTr("Set as Dataset 1")
+                                        font.pixelSize: 10
+                                        background: Rectangle {
+                                            radius: 5
+                                            color: parent.down ? theme.surfaceAlt : (parent.hovered ? theme.surfaceAlt : theme.surface)
+                                            border.color: theme.border
+                                            border.width: 1
+                                        }
+                                        onClicked: {
+                                            if (page.appController && modelData.path) {
+                                                page.appController.loadRecentFileAsDataset(1, modelData.path)
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 26
+                                        text: qsTr("Set as Dataset 2")
+                                        font.pixelSize: 10
+                                        background: Rectangle {
+                                            radius: 5
+                                            color: parent.down ? theme.surfaceAlt : (parent.hovered ? theme.surfaceAlt : theme.surface)
+                                            border.color: theme.border
+                                            border.width: 1
+                                        }
+                                        onClicked: {
+                                            if (page.appController && modelData.path) {
+                                                page.appController.loadRecentFileAsDataset(2, modelData.path)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -654,7 +780,6 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 380
 
                 title: qsTr("Dataset 1 Column Structure")
                 datasetName: page.datasetName(1)
@@ -671,17 +796,23 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 78
+                implicitHeight: rawBannerRow.implicitHeight + 32
                 radius: 14
                 color: theme.surfaceAlt
                 border.color: theme.border
 
-                RowLayout {
-                    anchors.fill: parent
+                GridLayout {
+                    id: rawBannerRow
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 16
-                    spacing: 14
+                    columns: pageScrollView.isNarrow ? 1 : 3
+                    rowSpacing: 12
+                    columnSpacing: 14
 
                     Rectangle {
+                        Layout.alignment: pageScrollView.isNarrow ? Qt.AlignLeft : Qt.AlignVCenter
                         Layout.preferredWidth: 42
                         Layout.preferredHeight: 42
                         radius: 10
@@ -697,22 +828,31 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.alignment: Qt.AlignVCenter
                         spacing: 2
                         Label {
                             text: qsTr("Raw Data & Metadata Parsing")
                             color: theme.text
                             font.pixelSize: 14
                             font.bold: true
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            wrapMode: Text.WordWrap
                         }
                         Label {
                             text: qsTr("Parse binary/text raw packet data streams using protocol metadata and inspect as tabular datasets.")
                             color: theme.textSecondary
                             font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                         }
                     }
 
                     Button {
-                        Layout.preferredWidth: 210
+                        Layout.alignment: pageScrollView.isNarrow ? Qt.AlignLeft : Qt.AlignVCenter
+                        Layout.preferredWidth: pageScrollView.isNarrow ? Math.min(240, rawBannerRow.width - 32) : 210
                         Layout.preferredHeight: 38
                         text: qsTr("⚡ Parse Raw Data →")
                         onClicked: page.goToPage(7)
@@ -725,7 +865,6 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 380
 
                 title: qsTr("Dataset 2 Column Structure")
                 datasetName: page.datasetName(2)
@@ -747,7 +886,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 72
+                implicitHeight: errorLabel.implicitHeight + 30
 
                 radius: 12
                 color: theme.surfaceAlt
@@ -755,7 +894,10 @@ Item {
                 border.color: theme.error
 
                 Label {
-                    anchors.fill: parent
+                    id: errorLabel
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 15
                     text: page.appController ? page.appController.lastError : ""
                     color: theme.error

@@ -114,6 +114,9 @@ class AppController : public QObject
     Q_PROPERTY(bool cleaningBusy READ cleaningBusy NOTIFY cleaningBusyChanged)
     Q_PROPERTY(int cleaningProgress READ cleaningProgress NOTIFY cleaningProgressChanged)
     Q_PROPERTY(QString cleaningStatusText READ cleaningStatusText NOTIFY cleaningStatusTextChanged)
+    Q_PROPERTY(int activeCleaningDataset READ activeCleaningDataset NOTIFY cleaningBusyChanged)
+    Q_PROPERTY(QString activeCleaningOperation READ activeCleaningOperation NOTIFY cleaningBusyChanged)
+    Q_PROPERTY(QString activeCleaningColumn READ activeCleaningColumn NOTIFY cleaningBusyChanged)
 
     Q_PROPERTY(QVariantList recentActivities READ recentActivities NOTIFY recentActivitiesChanged)
     Q_PROPERTY(QVariantList recentFiles READ recentFiles NOTIFY recentFilesChanged)
@@ -129,6 +132,8 @@ class AppController : public QObject
     Q_PROPERTY(bool hasRestorableSession READ hasRestorableSession NOTIFY sessionAvailabilityChanged)
     Q_PROPERTY(int sessionRestoreDecision READ sessionRestoreDecision WRITE setSessionRestoreDecision NOTIFY sessionRestoreDecisionChanged)
     Q_PROPERTY(bool sessionRestored READ sessionRestored NOTIFY sessionRestoreDecisionChanged)
+    Q_PROPERTY(bool sessionChoiceHandled READ sessionChoiceHandled NOTIFY sessionRestoreDecisionChanged)
+    Q_PROPERTY(bool datasetsChangedSinceStartup READ datasetsChangedSinceStartup NOTIFY datasetsChangedSinceStartupChanged)
 
 public:
     enum SessionRestoreDecision {
@@ -221,6 +226,9 @@ public:
     bool cleaningBusy() const;
     int cleaningProgress() const;
     QString cleaningStatusText() const;
+    int activeCleaningDataset() const;
+    QString activeCleaningOperation() const;
+    QString activeCleaningColumn() const;
 
     QVariantList recentActivities() const;
     QVariantList recentFiles() const;
@@ -228,6 +236,8 @@ public:
     QString lastDataset2Path() const;
     bool hasPreviousSession() const;
     bool sessionRestored() const;
+    bool sessionChoiceHandled() const;
+    bool datasetsChangedSinceStartup() const;
     bool autoRestoreEnabled() const;
     void setAutoRestoreEnabled(bool enabled);
 
@@ -558,6 +568,7 @@ signals:
     void autoRestoreEnabledChanged();
     void sessionAvailabilityChanged();
     void sessionRestoreDecisionChanged();
+    void datasetsChangedSinceStartupChanged();
 
 private slots:
     void onRawParseProgress(int percent);
@@ -606,6 +617,7 @@ private:
     QString m_lastRawDataPath;
     bool m_autoRestoreEnabled = true;
     int m_sessionRestoreDecision = 0; // NotAsked = 0, Restore = 1, StartFresh = 2
+    bool m_datasetsChangedSinceStartup = false;
     bool m_restoringSession = false;
 
     ExcelParser m_parser1;

@@ -15,8 +15,8 @@ ApplicationWindow {
     width: 1440
     height: 900
 
-    minimumWidth: 1100
-    minimumHeight: 700
+    minimumWidth: 800
+    minimumHeight: 600
 
     title: qsTr("Generic Data Analyzer")
 
@@ -24,6 +24,26 @@ ApplicationWindow {
 
     property int currentPage: 0
     property var controller: AppController
+
+    function navigateToPage(targetPage) {
+        if (targetPage === 2) {
+            // Restore decision only requested when transitioning to Data Analysis with unchanged datasets
+            if (window.controller &&
+                window.controller.hasRestorableSession &&
+                !window.controller.datasetsChangedSinceStartup &&
+                !window.controller.sessionChoiceHandled) {
+
+                sessionRestoreDialog.showPrompt(
+                    qsTr("Restore Previous Session"),
+                    qsTr("Would you like to restore the last workspace session?"),
+                    qsTr("Previous analysis results, cleaning operations and visualization settings will be restored for the loaded datasets.")
+                )
+                return
+            }
+        }
+
+        window.currentPage = targetPage
+    }
 
     // =========================================================
     // GLOBAL ALERT / WARNING POPUP
@@ -151,7 +171,7 @@ ApplicationWindow {
             currentPage: window.currentPage
 
             onPageSelected: {
-                window.currentPage = index
+                window.navigateToPage(index)
             }
         }
 
@@ -309,6 +329,30 @@ ApplicationWindow {
             if (window.controller && window.controller.lastError !== "") {
                 window.controller.clearError()
             }
+        }
+    }
+
+    // =========================================================
+    // MERKEZİ MODAL SESSION RESTORE DİYALOĞU
+    // =========================================================
+
+    Components.SessionRestoreDialog {
+        id: sessionRestoreDialog
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+
+        onRestoreClicked: {
+            if (window.controller) {
+                window.controller.applyGlobalRestoreDecision(true)
+            }
+            window.currentPage = 2
+        }
+
+        onStartFreshClicked: {
+            if (window.controller) {
+                window.controller.applyGlobalRestoreDecision(false)
+            }
+            window.currentPage = 2
         }
     }
 }

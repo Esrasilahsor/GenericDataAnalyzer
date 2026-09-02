@@ -20,24 +20,14 @@ Item {
     property double outlierParameter: 1.5
 
     property string analysisError: ""
-    property bool sessionPromptHandled: false
-
-    function checkSessionRestore() {
-        if (page.sessionPromptHandled) return
-        if (page.appController &&
-            page.appController.sessionRestoreDecision === 0 &&
-            page.appController.hasRestorableSession) {
-            sessionRestoreDialog.showPrompt(
-                qsTr("Restore Session"),
-                qsTr("Would you like to restore the last session?"),
-                qsTr("Previous analysis results, cleaning operations and visualization settings will be restored.")
-            )
-        }
-    }
 
     function goToPage(index) {
-        if (page.mainWindow)
-            page.mainWindow.currentPage = index
+        if (page.mainWindow) {
+            if (page.mainWindow.navigateToPage)
+                page.mainWindow.navigateToPage(index)
+            else
+                page.mainWindow.currentPage = index
+        }
     }
 
     function loaded(dataset) {
@@ -364,9 +354,6 @@ Item {
             if (page.loaded(2) && !page.qualityAvailable(2))
                 page.runQualityAnalysis(2)
         }
-        if (page.visible) {
-            page.checkSessionRestore()
-        }
     }
 
     Connections {
@@ -374,12 +361,10 @@ Item {
         ignoreUnknownSignals: true
 
         function onDataset1Changed() {
-            page.sessionPromptHandled = false
             page.runQualityAnalysis(1)
         }
 
         function onDataset2Changed() {
-            page.sessionPromptHandled = false
             page.runQualityAnalysis(2)
         }
     }
@@ -391,6 +376,10 @@ Item {
         contentWidth: availableWidth
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+        readonly property real containerWidth: pageScrollView.availableWidth
+        readonly property bool isNarrow: containerWidth < 750
+        readonly property bool isMediumOrNarrow: containerWidth < 900
 
         ColumnLayout {
             width: pageScrollView.availableWidth
@@ -407,7 +396,7 @@ Item {
             Components.WorkflowNavCard {
                 theme: page.theme
                 appController: page.appController
-                currentStepIndex: 2
+                currentStepIndex: 1
                 title: qsTr("Next step: Data Cleaning")
                 subtitle: qsTr("Apply missing value imputation, duplicate removal, constant column drop and analyzed outlier actions in Data Cleaning.")
                 buttonText: qsTr("Go to Data Cleaning →")
@@ -427,11 +416,13 @@ Item {
             // DATASET SUMMARY
             // =================================================
 
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
+                columns: pageScrollView.isNarrow ? 1 : 2
+                columnSpacing: 14
+                rowSpacing: 14
 
                 Repeater {
                     model: 2
@@ -440,14 +431,17 @@ Item {
                         property int dataset: index + 1
 
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 88
+                        implicitHeight: sumCardRow.implicitHeight + 32
                         radius: 14
                         color: theme.surface
                         border.width: 1
                         border.color: theme.border
 
                         RowLayout {
-                            anchors.fill: parent
+                            id: sumCardRow
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
                             anchors.margins: 16
                             spacing: 14
 
@@ -472,6 +466,7 @@ Item {
 
                             ColumnLayout {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 spacing: 2
 
                                 Label {
@@ -490,6 +485,7 @@ Item {
                                     font.bold: true
                                     elide: Text.ElideMiddle
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                 }
 
                                 Label {
@@ -505,8 +501,6 @@ Item {
                 }
             }
 
-
-
             // =================================================
             // TOPLU VERİ KONTROLÜ
             // =================================================
@@ -517,47 +511,61 @@ Item {
                 Layout.rightMargin: 28
                 spacing: 4
 
-                RowLayout {
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: 10
+                    columns: parent.width < 680 ? 1 : 3
+                    rowSpacing: 8
+                    columnSpacing: 12
 
                     Components.ByteMascot {
-                        Layout.preferredWidth: 32
-                        Layout.preferredHeight: 32
-                        mascotWidth: 32
-                        mascotHeight: 32
+                        Layout.alignment: Qt.AlignVCenter
+                        sizeVariant: "section"
                         source: "qrc:/assets/byte/byte_analysis.png"
                         animated: false
                     }
 
-                    Label {
-                        text: qsTr("Batch Data Quality & Outlier Check")
-                        color: theme.text
-                        font.pixelSize: 18
-                        font.bold: true
+                    ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        spacing: 2
+
+                        Label {
+                            text: qsTr("Batch Data Quality & Outlier Check")
+                            color: theme.text
+                            font.pixelSize: 18
+                            font.bold: true
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Label {
+                            text: qsTr("Inspect quality issues and outliers in both datasets on a single screen before cleaning.")
+                            color: theme.textSecondary
+                            font.pixelSize: 12
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            wrapMode: Text.WordWrap
+                        }
                     }
 
                     Label {
+                        Layout.alignment: parent.columns === 1 ? Qt.AlignLeft : Qt.AlignRight
                         text: qsTr("Data Quality + Outliers")
                         color: theme.primary
                         font.pixelSize: 12
                         font.bold: true
                     }
                 }
-
-                Label {
-                    text: qsTr("Inspect quality issues and outliers in both datasets on a single screen before cleaning.")
-                    color: theme.textSecondary
-                    font.pixelSize: 12
-                }
             }
 
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
+                columns: pageScrollView.isMediumOrNarrow ? 1 : 2
+                columnSpacing: 14
+                rowSpacing: 14
 
                 Repeater {
                     model: 2
@@ -611,7 +619,7 @@ Item {
                             : (qualityCard.available ? Number(page.qualityValue(qualityCard.dataset, "outlierCount", 0)) : 0)
 
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 265
+                        implicitHeight: qCardCol.implicitHeight + 32
 
                         radius: 16
                         color: theme.surface
@@ -619,15 +627,22 @@ Item {
                         border.color: theme.border
 
                         ColumnLayout {
-                            anchors.fill: parent
+                            id: qCardCol
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
                             anchors.margins: 16
                             spacing: 10
 
-                            RowLayout {
+                            GridLayout {
                                 Layout.fillWidth: true
+                                columns: parent.width < 540 ? 1 : 2
+                                columnSpacing: 10
+                                rowSpacing: 6
 
                                 ColumnLayout {
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     spacing: 2
 
                                     Label {
@@ -644,12 +659,14 @@ Item {
                                         font.bold: true
                                         elide: Text.ElideMiddle
                                         Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
                                     }
                                 }
 
                                 Rectangle {
                                     Layout.preferredWidth: 140
                                     Layout.preferredHeight: 30
+                                    Layout.alignment: parent.columns === 1 ? Qt.AlignLeft : Qt.AlignRight
                                     radius: 9
                                     color:
                                         !qualityCard.available
@@ -678,10 +695,12 @@ Item {
                                 }
                             }
 
-                            // Ana kalite metrikleri
-                            RowLayout {
+                            // Ana kalite metrikleri (2x2 on narrow, 4x1 on wider)
+                            GridLayout {
                                 Layout.fillWidth: true
-                                spacing: 8
+                                columns: parent.width < 380 ? 1 : (parent.width < 520 ? 2 : 4)
+                                columnSpacing: 8
+                                rowSpacing: 8
 
                                 Repeater {
                                     model: [
@@ -708,6 +727,8 @@ Item {
                                                 text: modelData.title
                                                 color: theme.textSecondary
                                                 font.pixelSize: 11
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
                                             }
 
                                             Label {
@@ -756,19 +777,25 @@ Item {
                             // Veri yapısı
                             Rectangle {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 58
+                                implicitHeight: structGrid.implicitHeight + 20
                                 radius: 9
                                 color: theme.surfaceAlt
                                 border.width: 1
                                 border.color: theme.border
 
-                                RowLayout {
-                                    anchors.fill: parent
+                                GridLayout {
+                                    id: structGrid
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
                                     anchors.margins: 10
-                                    spacing: 12
+                                    columns: parent.width < 340 ? 1 : 2
+                                    columnSpacing: 14
+                                    rowSpacing: 6
 
                                     ColumnLayout {
                                         Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
                                         spacing: 1
 
                                         Label {
@@ -788,23 +815,25 @@ Item {
                                             color: theme.text
                                             font.pixelSize: 12
                                             font.bold: true
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                         }
                                     }
 
-                                    Rectangle {
-                                        Layout.preferredWidth: 1
-                                        Layout.fillHeight: true
-                                        color: theme.border
-                                    }
-
                                     ColumnLayout {
-                                        Layout.preferredWidth: 120
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: parent.columns === 1 ? -1 : 160
+                                        Layout.minimumWidth: 0
                                         spacing: 1
 
                                         Label {
                                             text: qsTr("Missing columns")
                                             color: theme.textSecondary
                                             font.pixelSize: 11
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
+                                            wrapMode: Text.WordWrap
                                         }
 
                                         Label {
@@ -825,6 +854,7 @@ Item {
 
                             Label {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 text:
                                     !qualityCard.available
                                     ? qsTr("Quality analysis not yet executed.")
@@ -832,12 +862,13 @@ Item {
                                       ? qsTr("⚠ Outlier results ready; can be applied in Data Cleaning.")
                                       : qualityCard.constants > 0
                                         ? qsTr("⚠ Constant columns flagged for review.")
-                                        : qualityCard.missing > 0
-                                          ? qsTr("⚠ Missing values can be managed in Data Cleaning.")
-                                          : qualityCard.duplicates > 0
-                                            ? qsTr("⚠ Duplicate records can be managed in Data Cleaning.")
-                                            : qsTr("✓ No issues detected in current quality checks.")
-                                color: page.qualityStatusColor(qualityCard.dataset)
+                                        : qsTr("✓ No critical quality anomalies detected.")
+                                color:
+                                    !qualityCard.available
+                                    ? theme.textSecondary
+                                    : (qualityCard.outliers > 0 || qualityCard.constants > 0)
+                                      ? theme.warning
+                                      : theme.success
                                 font.pixelSize: 11
                                 font.bold: true
                                 wrapMode: Text.WordWrap
@@ -871,11 +902,13 @@ Item {
                 }
             }
 
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
+                columns: pageScrollView.isMediumOrNarrow ? 1 : 2
+                columnSpacing: 14
+                rowSpacing: 14
 
                 Repeater {
                     model: 2
@@ -927,6 +960,7 @@ Item {
                                 RowLayout {
                                     anchors.fill: parent
                                     anchors.margins: 8
+                                    spacing: 6
 
                                     Label {
                                         text: qsTr("Column")
@@ -934,6 +968,8 @@ Item {
                                         font.pixelSize: 11
                                         font.bold: true
                                         Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        elide: Text.ElideRight
                                     }
 
                                     Label {
@@ -941,7 +977,9 @@ Item {
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                         font.bold: true
-                                        Layout.preferredWidth: 75
+                                        Layout.preferredWidth: 65
+                                        Layout.minimumWidth: 0
+                                        elide: Text.ElideRight
                                     }
 
                                     Label {
@@ -949,7 +987,9 @@ Item {
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                         font.bold: true
-                                        Layout.preferredWidth: 65
+                                        Layout.preferredWidth: 70
+                                        Layout.minimumWidth: 0
+                                        elide: Text.ElideRight
                                         horizontalAlignment: Text.AlignRight
                                     }
 
@@ -958,7 +998,9 @@ Item {
                                         color: theme.textSecondary
                                         font.pixelSize: 11
                                         font.bold: true
-                                        Layout.preferredWidth: 60
+                                        Layout.preferredWidth: 55
+                                        Layout.minimumWidth: 0
+                                        elide: Text.ElideRight
                                         horizontalAlignment: Text.AlignRight
                                     }
                                 }
@@ -994,13 +1036,16 @@ Item {
                                             font.pixelSize: 12
                                             elide: Text.ElideMiddle
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                         }
 
                                         Label {
                                             text: model.dataType || "Unknown"
                                             color: theme.textSecondary
                                             font.pixelSize: 11
-                                            Layout.preferredWidth: 75
+                                            Layout.preferredWidth: 65
+                                            Layout.minimumWidth: 0
+                                            elide: Text.ElideRight
                                         }
 
                                         Label {
@@ -1016,7 +1061,9 @@ Item {
                                                 ? theme.warning
                                                 : theme.textSecondary
                                             font.pixelSize: 11
-                                            Layout.preferredWidth: 65
+                                            Layout.preferredWidth: 70
+                                            Layout.minimumWidth: 0
+                                            elide: Text.ElideRight
                                             horizontalAlignment: Text.AlignRight
                                         }
 
@@ -1024,7 +1071,9 @@ Item {
                                             text: String(model.uniqueCount || 0)
                                             color: theme.text
                                             font.pixelSize: 11
-                                            Layout.preferredWidth: 60
+                                            Layout.preferredWidth: 55
+                                            Layout.minimumWidth: 0
+                                            elide: Text.ElideRight
                                             horizontalAlignment: Text.AlignRight
                                         }
                                     }
@@ -1039,26 +1088,39 @@ Item {
             // SIDE-BY-SIDE STATISTICS
             // =================================================
 
-            Label {
-                Layout.leftMargin: 28
-                text: qsTr("Column Statistics")
-                color: theme.text
-                font.pixelSize: 18
-                font.bold: true
-            }
-
-            Label {
-                Layout.leftMargin: 28
-                text: qsTr("Select a column from each dataset to compare their descriptive statistics simultaneously.")
-                color: theme.textSecondary
-                font.pixelSize: 12
-            }
-
-            RowLayout {
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
+                spacing: 4
+
+                Label {
+                    text: qsTr("Column Statistics")
+                    color: theme.text
+                    font.pixelSize: 18
+                    font.bold: true
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    wrapMode: Text.WordWrap
+                }
+
+                Label {
+                    text: qsTr("Select a column from each dataset to compare their descriptive statistics simultaneously.")
+                    color: theme.textSecondary
+                    font.pixelSize: 12
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                Layout.rightMargin: 28
+                columns: pageScrollView.isMediumOrNarrow ? 1 : 2
+                columnSpacing: 14
+                rowSpacing: 14
 
                 Repeater {
                     model: 2
@@ -1073,7 +1135,7 @@ Item {
                             : page.dataset2Column
 
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 430
+                        Layout.preferredHeight: statisticsCard.width < 460 ? 490 : 450
 
                         radius: 16
                         color: theme.surface
@@ -1090,6 +1152,7 @@ Item {
 
                                 ColumnLayout {
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     spacing: 2
 
                                     Label {
@@ -1108,6 +1171,7 @@ Item {
                                         font.bold: true
                                         elide: Text.ElideMiddle
                                         Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
                                     }
                                 }
 
@@ -1123,9 +1187,11 @@ Item {
                                 }
                             }
 
-                            RowLayout {
+                            GridLayout {
                                 Layout.fillWidth: true
-                                spacing: 8
+                                columns: statisticsCard.width < 460 ? 1 : 2
+                                rowSpacing: 8
+                                columnSpacing: 8
 
                                 ComboBox {
                                     id: statisticsColumnCombo
@@ -1147,7 +1213,8 @@ Item {
 
                                 Button {
                                     id: viewStatsBtn
-                                    Layout.preferredWidth: 145
+                                    Layout.preferredWidth: parent.columns === 1 ? parent.width : 145
+                                    Layout.fillWidth: parent.columns === 1
                                     Layout.preferredHeight: 38
 
                                     text: qsTr("View Statistics")
@@ -1219,7 +1286,7 @@ Item {
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 56
                                             radius: 8
-                                            color: theme.surface
+                                            color: theme.background
                                             border.width: 1
                                             border.color: theme.border
 
@@ -1259,26 +1326,37 @@ Item {
             // OUTLIER ANALYSIS
             // =================================================
 
-            Label {
+            ColumnLayout {
+                Layout.fillWidth: true
                 Layout.leftMargin: 28
-                text: qsTr("Outlier Analysis")
-                color: theme.text
-                font.pixelSize: 18
-                font.bold: true
-            }
+                Layout.rightMargin: 28
+                spacing: 4
 
-            Label {
-                Layout.leftMargin: 28
-                text: qsTr("The selected method is applied to all eligible numeric columns. Results are passed to the Data Cleaning page.")
-                color: theme.textSecondary
-                font.pixelSize: 12
+                Label {
+                    text: qsTr("Outlier Analysis")
+                    color: theme.text
+                    font.pixelSize: 18
+                    font.bold: true
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    wrapMode: Text.WordWrap
+                }
+
+                Label {
+                    text: qsTr("The selected method is applied to all eligible numeric columns. Results are passed to the Data Cleaning page.")
+                    color: theme.textSecondary
+                    font.pixelSize: 12
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    wrapMode: Text.WordWrap
+                }
             }
 
             Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 255
+                implicitHeight: outlierMainCol.implicitHeight + 32
 
                 radius: 16
                 color: theme.surface
@@ -1286,16 +1364,21 @@ Item {
                 border.color: theme.border
 
                 ColumnLayout {
-                    anchors.fill: parent
+                    id: outlierMainCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 16
                     spacing: 12
 
-                    RowLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        spacing: 10
+                        columns: outlierMainCol.width < 460 ? 1 : (outlierMainCol.width < 720 ? 2 : 4)
+                        columnSpacing: 10
+                        rowSpacing: 10
 
                         ColumnLayout {
-                            Layout.preferredWidth: 150
+                            Layout.fillWidth: true
                             spacing: 4
 
                             Label {
@@ -1317,7 +1400,7 @@ Item {
                         }
 
                         ColumnLayout {
-                            Layout.preferredWidth: 150
+                            Layout.fillWidth: true
                             spacing: 4
 
                             Label {
@@ -1378,8 +1461,9 @@ Item {
 
                         Button {
                             id: analyzeOutlierBtn
-                            Layout.preferredWidth: 135
+                            Layout.fillWidth: true
                             Layout.preferredHeight: 38
+                            Layout.alignment: Qt.AlignBottom
                             text: qsTr("Analyze")
                             enabled:
                                 page.loaded(page.outlierDataset) &&
@@ -1420,14 +1504,19 @@ Item {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
+                        implicitHeight: outlierStatGrid.implicitHeight + 28
                         radius: 11
                         color: theme.surfaceAlt
 
-                        RowLayout {
-                            anchors.fill: parent
+                        GridLayout {
+                            id: outlierStatGrid
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
                             anchors.margins: 14
-                            spacing: 18
+                            columns: pageScrollView.isNarrow ? 1 : 3
+                            columnSpacing: 18
+                            rowSpacing: 14
 
                             ColumnLayout {
                                 Layout.fillWidth: true
@@ -1459,14 +1548,8 @@ Item {
                                 }
                             }
 
-                            Rectangle {
-                                Layout.preferredWidth: 1
-                                Layout.fillHeight: true
-                                color: theme.border
-                            }
-
                             ColumnLayout {
-                                Layout.preferredWidth: 160
+                                Layout.fillWidth: true
                                 spacing: 3
 
                                 Label {
@@ -1498,12 +1581,6 @@ Item {
                                     color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
-                            }
-
-                            Rectangle {
-                                Layout.preferredWidth: 1
-                                Layout.fillHeight: true
-                                color: theme.border
                             }
 
                             ColumnLayout {
@@ -1547,8 +1624,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight:
-                    Math.max(75, 60 + outlierColumnCount(page.outlierDataset) * 34)
+                implicitHeight: outlierColDetails.implicitHeight + 28
 
                 radius: 14
                 color: theme.surfaceAlt
@@ -1556,7 +1632,10 @@ Item {
                 border.color: theme.border
 
                 ColumnLayout {
-                    anchors.fill: parent
+                    id: outlierColDetails
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 14
                     spacing: 6
 
@@ -1608,26 +1687,6 @@ Item {
 
             Item {
                 Layout.preferredHeight: 24
-            }
-        }
-    }
-
-    Components.SessionRestoreDialog {
-        id: sessionRestoreDialog
-        x: Math.round((page.width - width) / 2)
-        y: Math.round((page.height - height) / 2)
-
-        onRestoreClicked: {
-            page.sessionPromptHandled = true
-            if (page.appController) {
-                page.appController.applyGlobalRestoreDecision(true)
-            }
-        }
-
-        onStartFreshClicked: {
-            page.sessionPromptHandled = true
-            if (page.appController) {
-                page.appController.applyGlobalRestoreDecision(false)
             }
         }
     }

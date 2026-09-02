@@ -142,18 +142,21 @@ Item {
         }
 
         function onDataset1Changed() {
-            page.sessionRestored = false
             loadSuggestedMappings()
         }
 
         function onDataset2Changed() {
-            page.sessionRestored = false
             loadSuggestedMappings()
         }
     }
 
     function goToPage(index) {
-        if (mainWindow) mainWindow.currentPage = index
+        if (mainWindow) {
+            if (mainWindow.navigateToPage)
+                mainWindow.navigateToPage(index)
+            else
+                mainWindow.currentPage = index
+        }
     }
 
     function isLoaded(ds) {
@@ -316,6 +319,10 @@ Item {
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
+        readonly property real containerWidth: pageScrollView.availableWidth
+        readonly property bool isNarrow: containerWidth < 750
+        readonly property bool isMediumOrNarrow: containerWidth < 900
+
         ColumnLayout {
             width: pageScrollView.availableWidth
             spacing: 16
@@ -329,7 +336,7 @@ Item {
             Components.WorkflowNavCard {
                 theme: page.theme
                 appController: page.appController
-                currentStepIndex: 4
+                currentStepIndex: 3
                 title: qsTr("Next Step: Visualization")
                 subtitle: qsTr("Create interactive charts and inspect visual distribution trends for your datasets.")
                 buttonText: qsTr("Proceed to Visualization →")
@@ -344,7 +351,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: 40
+                implicitHeight: 40
                 radius: 8
                 color: page.saveSuccess ? "#1B5E20" : "#B71C1C"
                 RowLayout {
@@ -364,87 +371,107 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                Layout.preferredHeight: Math.max(220, 160 + mappingRows.count * 54)
+                implicitHeight: Math.max(220, mappingMainCol.implicitHeight + 32)
                 radius: 16
                 color: theme.surface
                 border.color: theme.border
                 border.width: 1
 
                 ColumnLayout {
-                    anchors.fill: parent
+                    id: mappingMainCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: 16
                     spacing: 10
 
-                    RowLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        spacing: 10
+                        columns: parent.width < 680 ? 1 : 2
+                        rowSpacing: 8
+                        columnSpacing: 10
+
                         ColumnLayout {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             spacing: 2
                             Label {
                                 text: qsTr("Column Mapping (Dataset 1 ⇆ Dataset 2)")
                                 color: theme.text
                                 font.pixelSize: 15
                                 font.bold: true
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                wrapMode: Text.WordWrap
                             }
                             Label {
                                 text: qsTr("Sorted by automatic similarity algorithm. Only selected column pairs will be compared.")
                                 color: theme.textSecondary
                                 font.pixelSize: 12
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                wrapMode: Text.WordWrap
                             }
                         }
 
-                        Button {
-                            id: autoMapBtn
-                            Layout.preferredWidth: 210
-                            Layout.preferredHeight: 38
-                            text: qsTr("⚡ Suggest Auto Mapping")
-                            property bool clickFeedback: false
-                            Timer {
-                                id: autoMapTimer
-                                interval: 450
-                                onTriggered: autoMapBtn.clickFeedback = false
-                            }
-                            background: Rectangle {
-                                radius: 8
-                                color: autoMapBtn.down ? theme.surfaceAlt : (autoMapBtn.hovered ? theme.surfaceAlt : theme.surface)
-                                border.color: autoMapBtn.clickFeedback ? theme.success : theme.border
-                                border.width: 1
-                            }
-                            onClicked: {
-                                clickFeedback = true
-                                autoMapTimer.restart()
-                                page.loadSuggestedMappings()
-                            }
-                        }
+                        Flow {
+                            Layout.fillWidth: parent.columns === 1
+                            Layout.alignment: parent.columns === 1 ? Qt.AlignLeft : Qt.AlignRight
+                            spacing: 8
 
-                        Button {
-                            id: addManualBtn
-                            Layout.preferredWidth: 140
-                            Layout.preferredHeight: 38
-                            text: qsTr("+ Add Manual")
-                            property bool clickFeedback: false
-                            Timer {
-                                id: addManualTimer
-                                interval: 450
-                                onTriggered: addManualBtn.clickFeedback = false
+                            Button {
+                                id: autoMapBtn
+                                implicitWidth: 190
+                                implicitHeight: 38
+                                text: qsTr("⚡ Suggest Auto Mapping")
+                                property bool clickFeedback: false
+                                Timer {
+                                    id: autoMapTimer
+                                    interval: 450
+                                    onTriggered: autoMapBtn.clickFeedback = false
+                                }
+                                background: Rectangle {
+                                    radius: 8
+                                    color: autoMapBtn.down ? theme.surfaceAlt : (autoMapBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                    border.color: autoMapBtn.clickFeedback ? theme.success : theme.border
+                                    border.width: 1
+                                }
+                                onClicked: {
+                                    clickFeedback = true
+                                    autoMapTimer.restart()
+                                    page.loadSuggestedMappings()
+                                }
                             }
-                            background: Rectangle {
-                                radius: 8
-                                color: addManualBtn.down ? theme.surfaceAlt : (addManualBtn.hovered ? theme.surfaceAlt : theme.surface)
-                                border.color: addManualBtn.clickFeedback ? theme.success : theme.border
-                                border.width: 1
-                            }
-                            onClicked: {
-                                clickFeedback = true
-                                addManualTimer.restart()
-                                page.addMapping()
+
+                            Button {
+                                id: addManualBtn
+                                implicitWidth: 120
+                                implicitHeight: 38
+                                text: qsTr("+ Add Manual")
+                                property bool clickFeedback: false
+                                Timer {
+                                    id: addManualTimer
+                                    interval: 450
+                                    onTriggered: addManualBtn.clickFeedback = false
+                                }
+                                background: Rectangle {
+                                    radius: 8
+                                    color: addManualBtn.down ? theme.surfaceAlt : (addManualBtn.hovered ? theme.surfaceAlt : theme.surface)
+                                    border.color: addManualBtn.clickFeedback ? theme.success : theme.border
+                                    border.width: 1
+                                }
+                                onClicked: {
+                                    clickFeedback = true
+                                    addManualTimer.restart()
+                                    page.addMapping()
+                                }
                             }
                         }
                     }
 
                     // Sütun Başlıkları
                     Rectangle {
+                        visible: mappingMainCol.width >= 620
                         Layout.fillWidth: true
                         Layout.preferredHeight: 36
                         radius: 8
@@ -461,7 +488,7 @@ Item {
                                 font.pixelSize: 11
                                 font.bold: true
                             }
-                            Item { Layout.preferredWidth: 110 }
+                            Item { Layout.preferredWidth: 100 }
                             Label {
                                 Layout.fillWidth: true
                                 text: qsTr("DATASET 2: %1").arg(page.name(2))
@@ -469,7 +496,7 @@ Item {
                                 font.pixelSize: 11
                                 font.bold: true
                             }
-                            Item { Layout.preferredWidth: 140 }
+                            Item { Layout.preferredWidth: 135 }
                         }
                     }
 
@@ -477,22 +504,26 @@ Item {
                     Repeater {
                         model: mappingRows
                         delegate: Rectangle {
+                            id: mapRowDelegate
                             property int rowIndex: index
                             property var itemData: model
+                            readonly property bool isCompact: mappingMainCol.width < 620
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 46
+                            implicitHeight: isCompact ? (mapRowCompactLayout.implicitHeight + 16) : 46
                             radius: 8
                             color: itemData && itemData.selected ? theme.surfaceAlt : "transparent"
                             border.color: theme.border
                             border.width: 1
 
+                            // Wide Layout (1 row)
                             RowLayout {
+                                id: mapRowWideLayout
+                                visible: !mapRowDelegate.isCompact
                                 anchors.fill: parent
                                 anchors.margins: 8
                                 spacing: 10
 
                                 CheckBox {
-                                    id: rowCheck
                                     checked: itemData && itemData.selected !== undefined ? itemData.selected : true
                                     onToggled: mappingRows.setProperty(rowIndex, "selected", checked)
                                 }
@@ -532,7 +563,7 @@ Item {
 
                                 // Similarity Badge
                                 Rectangle {
-                                    Layout.preferredWidth: 110
+                                    Layout.preferredWidth: 100
                                     Layout.preferredHeight: 28
                                     radius: 14
                                     color: (itemData && itemData.similarityScore >= 75) ? "#E6F6EE" : ((itemData && itemData.similarityScore >= 40) ? "#FFF4E5" : theme.surface)
@@ -635,6 +666,165 @@ Item {
                                     }
                                 }
                             }
+
+                            // Compact Layout (2 rows)
+                            ColumnLayout {
+                                id: mapRowCompactLayout
+                                visible: mapRowDelegate.isCompact
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 8
+                                spacing: 6
+
+                                // Row 1: Checkbox, D1 ComboBox, Delete
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    CheckBox {
+                                        checked: itemData && itemData.selected !== undefined ? itemData.selected : true
+                                        onToggled: mappingRows.setProperty(rowIndex, "selected", checked)
+                                    }
+
+                                    Label {
+                                        text: "D1:"
+                                        color: "#FF4081"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+
+                                    ComboBox {
+                                        id: sourceComboCompact
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 34
+                                        model: page.columnModel(1)
+                                        textRole: "name"
+                                        valueRole: "name"
+
+                                        function syncIndex() {
+                                            var colName = (itemData && itemData.sourceColumn) ? itemData.sourceColumn : ""
+                                            if (colName !== "") {
+                                                var idx = find(colName)
+                                                if (idx >= 0 && idx !== currentIndex) {
+                                                    currentIndex = idx
+                                                }
+                                            }
+                                        }
+
+                                        Component.onCompleted: syncIndex()
+                                        onModelChanged: syncIndex()
+
+                                        onActivated: {
+                                            if (currentText !== "") {
+                                                mappingRows.setProperty(rowIndex, "sourceColumn", currentText)
+                                            }
+                                        }
+                                        onCurrentTextChanged: {
+                                            if (currentText !== "" && activeFocus) {
+                                                mappingRows.setProperty(rowIndex, "sourceColumn", currentText)
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        Layout.preferredWidth: 32
+                                        Layout.preferredHeight: 32
+                                        text: "×"
+                                        background: Rectangle {
+                                            radius: 6
+                                            color: parent.down ? theme.surfaceAlt : (parent.hovered ? theme.surfaceAlt : theme.surface)
+                                            border.color: theme.border
+                                            border.width: 1
+                                        }
+                                        onClicked: page.removeMapping(rowIndex)
+                                    }
+                                }
+
+                                // Row 2: Similarity Badge, D2 ComboBox, Compare Button
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 85
+                                        Layout.preferredHeight: 26
+                                        radius: 13
+                                        color: (itemData && itemData.similarityScore >= 75) ? "#E6F6EE" : ((itemData && itemData.similarityScore >= 40) ? "#FFF4E5" : theme.surface)
+                                        border.color: (itemData && itemData.similarityScore >= 75) ? "#00E676" : ((itemData && itemData.similarityScore >= 40) ? "#FFAB00" : theme.border)
+                                        border.width: 1
+
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: itemData && itemData.similarityScore > 0 ? ("⚡ " + itemData.similarityScore + "%") : qsTr("↔ Manual")
+                                            color: (itemData && itemData.similarityScore >= 75) ? "#00C853" : ((itemData && itemData.similarityScore >= 40) ? "#FF8F00" : theme.textSecondary)
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "D2:"
+                                        color: "#7C4DFF"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+
+                                    ComboBox {
+                                        id: targetComboCompact
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 34
+                                        model: page.columnModel(2)
+                                        textRole: "name"
+                                        valueRole: "name"
+
+                                        function syncIndex() {
+                                            var colName = (itemData && itemData.targetColumn) ? itemData.targetColumn : ""
+                                            if (colName !== "") {
+                                                var idx = find(colName)
+                                                if (idx >= 0 && idx !== currentIndex) {
+                                                    currentIndex = idx
+                                                }
+                                            }
+                                        }
+
+                                        Component.onCompleted: syncIndex()
+                                        onModelChanged: syncIndex()
+
+                                        onActivated: {
+                                            if (currentText !== "") {
+                                                mappingRows.setProperty(rowIndex, "targetColumn", currentText)
+                                            }
+                                        }
+                                        onCurrentTextChanged: {
+                                            if (currentText !== "" && activeFocus) {
+                                                mappingRows.setProperty(rowIndex, "targetColumn", currentText)
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        Layout.preferredWidth: 85
+                                        Layout.preferredHeight: 32
+                                        text: qsTr("▶ Compare")
+                                        background: Rectangle {
+                                            radius: 6
+                                            color: parent.down ? theme.surfaceAlt : (parent.hovered ? theme.surfaceAlt : theme.surface)
+                                            border.color: theme.border
+                                            border.width: 1
+                                        }
+                                        onClicked: {
+                                            var src = sourceComboCompact.currentText
+                                            var tgt = targetComboCompact.currentText
+                                            if (src && tgt && src !== "" && tgt !== "") {
+                                                mappingRows.setProperty(rowIndex, "sourceColumn", src)
+                                                mappingRows.setProperty(rowIndex, "targetColumn", tgt)
+                                                page.runSingleComparison(src, tgt)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -649,18 +839,26 @@ Item {
                         font.pixelSize: 12
                     }
 
-                    RowLayout {
+                    GridLayout {
                         Layout.fillWidth: true
+                        columns: parent.width < 560 ? 1 : 2
+                        rowSpacing: 8
+                        columnSpacing: 10
+
                         Label {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             text: qsTr("%1 selected mappings will be compared").arg(validMappingCount())
                             color: theme.textSecondary
                             font.pixelSize: 12
                             font.bold: true
+                            wrapMode: Text.WordWrap
                         }
                         Button {
                             id: compareSelectedBtn
-                            Layout.preferredWidth: 240
+                            Layout.alignment: parent.columns === 1 ? Qt.AlignLeft : Qt.AlignRight
+                            Layout.preferredWidth: parent.columns === 1 ? parent.width : 240
+                            Layout.fillWidth: parent.columns === 1
                             Layout.preferredHeight: 42
                             enabled: validMappingCount() > 0
                             text: qsTr("📊 Compare Selected (%1) →").arg(validMappingCount())
@@ -687,16 +885,18 @@ Item {
             }
 
             // Results & Interactive Comparison Chart
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 Layout.rightMargin: 28
-                spacing: 14
+                columns: pageScrollView.isMediumOrNarrow ? 1 : 2
+                columnSpacing: 14
+                rowSpacing: 14
 
                 // Left: Comparison Results List
                 Rectangle {
-                    Layout.preferredWidth: 380
-                    Layout.preferredHeight: 480
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: pageScrollView.isMediumOrNarrow ? 280 : 500
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -705,7 +905,7 @@ Item {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 16
-                                 Label {
+                        Label {
                             text: qsTr("Comparison Results")
                             color: theme.text
                             font.pixelSize: 15
@@ -792,7 +992,7 @@ Item {
                 // Right: Multi-Type Comparative Chart Panel & Save Button
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 480
+                    Layout.preferredHeight: 500
                     radius: 16
                     color: theme.surface
                     border.color: theme.border
@@ -804,9 +1004,11 @@ Item {
                         spacing: 10
 
                         // Header & Chart Type Selector & Save Button
-                        RowLayout {
+                        GridLayout {
                             Layout.fillWidth: true
-                            spacing: 10
+                            columns: pageScrollView.isNarrow ? 1 : 3
+                            columnSpacing: 10
+                            rowSpacing: 8
 
                             Label {
                                 property var curr: (page.comparisonResult.results && page.comparisonResult.results.length > page.selectedComparisonIndex)
@@ -822,7 +1024,8 @@ Item {
 
                             ComboBox {
                                 id: chartTypeCombo
-                                Layout.preferredWidth: 190
+                                Layout.fillWidth: pageScrollView.isNarrow
+                                Layout.preferredWidth: pageScrollView.isNarrow ? -1 : 190
                                 Layout.preferredHeight: 34
                                 model: [qsTr("Column Statistics"), qsTr("Distribution / Density"), qsTr("Box Plot"), qsTr("Trend / Line")]
                                 onActivated: {
@@ -839,7 +1042,8 @@ Item {
 
                             Button {
                                 id: saveCompChartBtn
-                                Layout.preferredWidth: 140
+                                Layout.fillWidth: pageScrollView.isNarrow
+                                Layout.preferredWidth: pageScrollView.isNarrow ? -1 : 140
                                 Layout.preferredHeight: 34
                                 text: qsTr("💾 Save Chart")
                                 property bool clickFeedback: false
@@ -1322,8 +1526,7 @@ Item {
 
                                     Components.ByteMascot {
                                         Layout.alignment: Qt.AlignHCenter
-                                        mascotWidth: 120
-                                        mascotHeight: 120
+                                        sizeVariant: "placeholder"
                                         source: "qrc:/assets/byte/byte_comparing.png"
                                         animated: false
                                     }

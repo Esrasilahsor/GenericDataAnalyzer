@@ -268,6 +268,47 @@ bool AppController::cleaningBusy() const { return m_cleaningBusy; }
 int AppController::cleaningProgress() const { return m_cleaningProgress; }
 QString AppController::cleaningStatusText() const { return m_cleaningStatusText; }
 
+int AppController::activeCleaningDataset() const
+{
+    return m_cleaningBusy ? m_currentCleaningTask.datasetIndex : 0;
+}
+
+QString AppController::activeCleaningOperation() const
+{
+    if (!m_cleaningBusy)
+        return QString();
+
+    switch (m_currentCleaningTask.operation)
+    {
+    case CleaningTask::BulkMissing:
+    case CleaningTask::RemoveMissingRows:
+    case CleaningTask::FillMissingMean:
+    case CleaningTask::FillMissingMedian:
+    case CleaningTask::FillMissingMode:
+        return QStringLiteral("missing");
+
+    case CleaningTask::BulkOutliers:
+        return QStringLiteral("outliers");
+
+    case CleaningTask::ApplyOutlierAction:
+        return QStringLiteral("single_outlier");
+
+    case CleaningTask::RemoveDuplicates:
+        return QStringLiteral("duplicates");
+
+    case CleaningTask::RemoveColumn:
+        return QStringLiteral("column");
+
+    default:
+        return QString();
+    }
+}
+
+QString AppController::activeCleaningColumn() const
+{
+    return m_cleaningBusy ? m_currentCleaningTask.columnName : QString();
+}
+
 QString AppController::rawMetadataFilePath() const
 {
     return m_rawMetadataFilePath;
@@ -313,6 +354,16 @@ bool AppController::hasPreviousSession() const
 bool AppController::sessionRestored() const
 {
     return m_sessionRestoreDecision == 1;
+}
+
+bool AppController::sessionChoiceHandled() const
+{
+    return m_sessionRestoreDecision != 0 || m_datasetsChangedSinceStartup;
+}
+
+bool AppController::datasetsChangedSinceStartup() const
+{
+    return m_datasetsChangedSinceStartup;
 }
 
 bool AppController::autoRestoreEnabled() const
@@ -469,6 +520,7 @@ void AppController::clearRecentFiles()
 bool AppController::autoRestoreDatasets()
 {
     m_restoringSession = true;
+    m_datasetsChangedSinceStartup = false;
 
     QElapsedTimer totalRestoreTimer;
     totalRestoreTimer.start();
@@ -542,12 +594,14 @@ bool AppController::autoRestoreDatasets()
     }
 
     m_restoringSession = false;
+    m_datasetsChangedSinceStartup = false;
 
     // Do NOT automatically apply Analysis, Cleaning, Comparison states.
     // They will remain preserved in m_sessionManager for the user to restore via "Restore Last Session".
     m_sessionRestoreDecision = 0; // Unapplied/Ready
 
     emit lastSessionChanged();
+    emit datasetsChangedSinceStartupChanged();
     emit sessionAvailabilityChanged();
     emit sessionRestoreDecisionChanged();
 
@@ -682,6 +736,9 @@ bool AppController::hasRestorableComparisonSession() const
 
 bool AppController::hasRestorableSession() const
 {
+    if (m_datasetsChangedSinceStartup)
+        return false;
+
     return hasRestorableAnalysisSession() ||
            hasRestorableCleaningSession() ||
            hasRestorableVisualizationSession() ||
@@ -710,6 +767,9 @@ void AppController::applyGlobalRestoreDecision(bool restore)
         restoreCleaningSession();
         restoreAnalysisSession();
         restoreComparisonSession();
+        recordActivity(tr("Session Restored"),
+                       tr("Previous workspace state and dataset analysis restored"),
+                       tr("Session"));
     }
     else
     {
@@ -803,6 +863,22 @@ bool AppController::restoreCleaningSession()
         DataSet workingDs;
         if (m_sessionManager.loadCleaningSnapshot(1, workingDs))
         {
+            QString origName = m_sessionManager.dataset1FileName().trimmed();
+            if (origName.isEmpty())
+                origName = m_lastDataset1Path.trimmed();
+            if (origName.isEmpty())
+                origName = m_sessionManager.dataset1FilePath().trimmed();
+
+            QString baseName = QFileInfo(origName).completeBaseName();
+            if (baseName.isEmpty())
+                baseName = QFileInfo(origName).baseName();
+            if (baseName.endsWith(QStringLiteral("_cleaned_snapshot")))
+                baseName.chop(QStringLiteral("_cleaned_snapshot").length());
+            if (baseName.isEmpty())
+                baseName = QStringLiteral("dataset1");
+
+            workingDs.setName(QStringLiteral("%1_cleaned_snapshot").arg(baseName));
+
             m_dataset1 = workingDs;
             m_dataset1Modified = true;
             m_dataset1ColumnModel.setColumns(m_dataset1.columns());
@@ -819,6 +895,22 @@ bool AppController::restoreCleaningSession()
         DataSet workingDs;
         if (m_sessionManager.loadCleaningSnapshot(2, workingDs))
         {
+            QString origName = m_sessionManager.dataset2FileName().trimmed();
+            if (origName.isEmpty())
+                origName = m_lastDataset2Path.trimmed();
+            if (origName.isEmpty())
+                origName = m_sessionManager.dataset2FilePath().trimmed();
+
+            QString baseName = QFileInfo(origName).completeBaseName();
+            if (baseName.isEmpty())
+                baseName = QFileInfo(origName).baseName();
+            if (baseName.endsWith(QStringLiteral("_cleaned_snapshot")))
+                baseName.chop(QStringLiteral("_cleaned_snapshot").length());
+            if (baseName.isEmpty())
+                baseName = QStringLiteral("dataset2");
+
+            workingDs.setName(QStringLiteral("%1_cleaned_snapshot").arg(baseName));
+
             m_dataset2 = workingDs;
             m_dataset2Modified = true;
             m_dataset2ColumnModel.setColumns(m_dataset2.columns());
@@ -1086,8 +1178,16 @@ bool AppController::loadDataset1(const QString &filePath)
 
     if (!m_restoringSession)
     {
+        m_datasetsChangedSinceStartup = true;
+        m_sessionRestoreDecision = 2;
+        dismissAnalysisSession();
+        dismissCleaningSession();
+        dismissVisualizationSession();
+        dismissComparisonSession();
         m_sessionManager.setDataset1Info(true, normalizedPath, m_dataset1.name(), m_dataset1.rowCount(), m_dataset1.columnCount());
         m_sessionManager.saveSession();
+        emit datasetsChangedSinceStartupChanged();
+        emit sessionRestoreDecisionChanged();
         qInfo() << "[SESSION] Dataset1 changed -> session updated";
     }
     emit sessionAvailabilityChanged();
@@ -1161,8 +1261,16 @@ bool AppController::loadDataset2(const QString &filePath)
 
     if (!m_restoringSession)
     {
+        m_datasetsChangedSinceStartup = true;
+        m_sessionRestoreDecision = 2;
+        dismissAnalysisSession();
+        dismissCleaningSession();
+        dismissVisualizationSession();
+        dismissComparisonSession();
         m_sessionManager.setDataset2Info(true, normalizedPath, m_dataset2.name(), m_dataset2.rowCount(), m_dataset2.columnCount());
         m_sessionManager.saveSession();
+        emit datasetsChangedSinceStartupChanged();
+        emit sessionRestoreDecisionChanged();
         qInfo() << "[SESSION] Dataset2 changed -> session updated";
     }
     emit sessionAvailabilityChanged();
@@ -1199,15 +1307,22 @@ void AppController::clearDataset1()
 
     if (!m_restoringSession)
     {
-        m_sessionManager.clearDataset1Info();
+        m_datasetsChangedSinceStartup = true;
+        m_sessionRestoreDecision = 2;
+        dismissAnalysisSession();
+        dismissCleaningSession();
+        dismissVisualizationSession();
+        dismissComparisonSession();
+        m_sessionManager.setDataset1Info(false, QString(), QString(), 0, 0);
         m_sessionManager.saveSession();
-        qInfo() << "[SESSION] Dataset1 cleared -> session updated";
+        emit datasetsChangedSinceStartupChanged();
+        emit sessionRestoreDecisionChanged();
     }
-
-    emit lastSessionChanged();
     emit sessionAvailabilityChanged();
+
     emit dataset1Changed();
-    emit mappingsChanged();
+    emit lastSessionChanged();
+    saveSettings();
 }
 
 void AppController::clearDataset2()
@@ -1233,14 +1348,22 @@ void AppController::clearDataset2()
 
     if (!m_restoringSession)
     {
-        m_sessionManager.clearDataset2Info();
+        m_datasetsChangedSinceStartup = true;
+        m_sessionRestoreDecision = 2;
+        dismissAnalysisSession();
+        dismissCleaningSession();
+        dismissVisualizationSession();
+        dismissComparisonSession();
+        m_sessionManager.setDataset2Info(false, QString(), QString(), 0, 0);
         m_sessionManager.saveSession();
-        qInfo() << "[SESSION] Dataset2 cleared -> session updated";
+        emit datasetsChangedSinceStartupChanged();
+        emit sessionRestoreDecisionChanged();
     }
-
-    emit lastSessionChanged();
     emit sessionAvailabilityChanged();
+
     emit dataset2Changed();
+    emit lastSessionChanged();
+    saveSettings();
     emit mappingsChanged();
 }
 

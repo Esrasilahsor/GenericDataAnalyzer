@@ -49,7 +49,8 @@ QList<ParsedParameter> RawDataParser::parse(
 QList<QList<ParsedParameter>> RawDataParser::parsePackets(
     const QByteArray &rawData,
     const QList<ParameterDefinition> &definitions,
-    int packetSize) const
+    int packetSize,
+    std::function<void(int processedInSlice, int totalInSlice)> progressCallback) const
 {
     QList<QList<ParsedParameter>> allPackets;
 
@@ -153,6 +154,11 @@ QList<QList<ParsedParameter>> RawDataParser::parsePackets(
 
         allPackets.append(
             parsedPacket);
+
+        if (progressCallback)
+        {
+            progressCallback(packetIndex + 1, packetCount);
+        }
     }
 
     /*

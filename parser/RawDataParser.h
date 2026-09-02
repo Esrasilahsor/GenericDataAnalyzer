@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QList>
 #include <QString>
+#include <functional>
 
 #include "ParserTypes.h"
 #include "RawDataBuffer.h"
@@ -31,7 +32,8 @@ public:
     QList<QList<ParsedParameter>> parsePackets(
         const QByteArray &rawData,
         const QList<ParameterDefinition> &definitions,
-        int packetSize) const;
+        int packetSize,
+        std::function<void(int processedInSlice, int totalInSlice)> progressCallback = nullptr) const;
 
 
     // =====================================================
